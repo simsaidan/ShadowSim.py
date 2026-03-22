@@ -1,22 +1,39 @@
-# ShadowSim
+---
+hide:
+  - navigation
+  - toc
+---
 
-Welcome to the ShadowSim documentation. This site is generated with [MkDocs](https://www.mkdocs.org/) and can grow alongside the library.
+<div class="grid cards" markdown>
 
-## Status
+-   :material-book-open-variant:{ .lg .middle } __Docs__
 
-The API is still evolving. Treat public interfaces as **draft** until the first stable release.
+    ---
+
+    Narrative guides and API reference will land here as the library stabilizes.
+
+-   :material-github:{ .lg .middle } __Source__
+
+    ---
+
+    [:octicons-arrow-right-24: Repository](https://github.com/simsaidan/ShadowSim.py)
+
+</div>
+
+---
+
+!!! note "Work in progress"
+    Public APIs are still **draft** until a stable release. Expect changes.
 
 ## Local preview
-
-From the repository root:
 
 ```bash
 pip install -r requirements-docs.txt
 mkdocs serve
 ```
 
-Then open the URL shown in the terminal (usually `http://127.0.0.1:8000`).
+Open the URL printed in the terminal (usually `http://127.0.0.1:8000`).
 
-## Source
+## Customizing this site
 
-The project lives at [github.com/simsaidan/ShadowSim.py](https://github.com/simsaidan/ShadowSim.py).
+Edit **`mkdocs.yml`** (theme, colors, fonts, nav) and add Markdown files under **`docs/`**. Push to `main` to redeploy.

@@ -3,26 +3,52 @@ site_description: Quantum simulation utilities (work in progress)
 site_url: https://simsaidan.github.io/ShadowSim.py/
 repo_url: https://github.com/simsaidan/ShadowSim.py
 repo_name: simsaidan/ShadowSim.py
+edit_uri: edit/main/docs/
 
 theme:
   name: material
+  language: en
+  icon:
+    repo: fontawesome/brands/github
+  font:
+    text: IBM Plex Sans
+    code: IBM Plex Mono
   palette:
-    - scheme: default
-      primary: indigo
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: teal
+      accent: deep orange
       toggle:
         icon: material/brightness-7
         name: Switch to dark mode
-    - scheme: slate
-      primary: indigo
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: teal
+      accent: deep orange
       toggle:
         icon: material/brightness-4
         name: Switch to light mode
+  features:
+    - navigation.instant
+    - navigation.tracking
+    - navigation.indexes
+    - content.code.copy
+    - content.code.annotate
+    - search.suggest
+    - search.highlight
+    - toc.follow
 
 markdown_extensions:
   - pymdownx.superfences
   - pymdownx.inlinehilite
   - pymdownx.snippets
   - admonition
+  - pymdownx.details
+  - attr_list
+  - md_in_html
+  - pymdownx.emoji:
+      emoji_index: !!python/name:material.extensions.emoji.twemoji
+      emoji_generator: !!python/name:material.extensions.emoji.to_svg
   - toc:
       permalink: true
 
@@ -30,4 +56,11 @@ nav:
   - Home: index.md
 
 plugins:
+  - meta
   - search
+
+extra:
+  social:
+    - icon: fontawesome/brands/github
+      link: https://github.com/simsaidan/ShadowSim.py
+      name: ShadowSim on GitHub

@@ -2,8 +2,9 @@ import numpy as np
 
 
 class Operator:
-    def __init__(self, matrix: np.ndarray):
+    def __init__(self, matrix: np.ndarray, name: str = None):
         self.matrix = matrix
+        self.name = name
         self.dimension = matrix.shape[0]
         self.is_hermitian = np.allclose(matrix, matrix.conj().T)
         self.is_unitary = np.allclose(matrix @ matrix.conj().T, np.eye(self.dimension))

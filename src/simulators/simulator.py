@@ -1,21 +1,89 @@
+from __future__ import annotations
+
+from datetime import datetime
+from pathlib import Path
+
+import matplotlib.pyplot as plt
+import numpy as np
+
 from src.core.hamiltonian import Hamiltonian
+from src.core.state import State
 
 
 class Simulator:
     def __init__(
-        self, H: Hamiltonian, num_qubits: int, total_time: float, time_steps: int
+        self,
+        H: Hamiltonian,
+        initial_state: State,
+        num_qubits: int,
+        total_time: float,
+        time_steps: int,
+        id: str,
     ):
         self.H = H
+        self.initial_state = initial_state
         self.num_qubits = num_qubits
         self.total_time = total_time
         self.time_steps = time_steps
+        self.id = id
         self.results = None
+        self.tlist = np.linspace(0, self.total_time, self.time_steps)
 
     def get_results(self, index: int = None):
-        pass
+        if self.results is None:
+            raise ValueError(
+                "Results are not available. Please run the simulation first."
+            )
+        if index is None:
+            return self.results
+        return self.results[index]
 
-    def plot_results(self, index: int = None):
-        pass
+    def plot_results(self, indices: list[int] = None):
+        if indices is None:
+            indices = list(range(len(self.results)))
+        for index in indices:
+            plt.plot(self.tlist, self.get_results(index))
+        plt.legend()
+        plt.show()
 
-    def save_result_plot(self, index: int = None):
-        pass
+    def save_result_plot(
+        self,
+        indices: list[int] | None = None,
+        *,
+        dpi: float = 150,
+        labels: list[str] | None = None,
+        title: str | None = None,
+    ) -> Path:
+        """
+        Plot expectation traces vs `tlist` and save under ``results/`` as
+        ``{id}_{timestamp}.png`` (``id`` is set per simulator subclass). Does not
+        open an interactive window.
+        """
+        if indices is None:
+            indices = list(range(len(self.results)))
+        stamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+        path = Path("results") / f"{self.id}_{stamp}.png"
+        path.parent.mkdir(parents=True, exist_ok=True)
+
+        fig, ax = plt.subplots()
+        try:
+            for plot_i, index in enumerate(indices):
+                curve_label = (
+                    labels[plot_i]
+                    if labels is not None and plot_i < len(labels)
+                    else str(index)
+                )
+                ax.plot(
+                    self.tlist,
+                    self.get_results(index),
+                    label=curve_label,
+                )
+            ax.set_xlabel("Time")
+            ax.set_ylabel("Expectation")
+            if title:
+                ax.set_title(title)
+            ax.legend()
+            fig.savefig(path, dpi=dpi, bbox_inches="tight")
+        finally:
+            plt.close(fig)
+        return path
