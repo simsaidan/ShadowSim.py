@@ -15,6 +15,23 @@ _PAULI_MATRICES: dict[str, np.ndarray] = {
     "Z": _Z,
 }
 
+_PHASES = (1, -1, 1j, -1j)
+
+
+def _multiply_labels(a: str, b: str) -> tuple[complex, str]:
+    """Return (phase, c) with ``a * b = phase * c`` in the Pauli group."""
+    m = _PAULI_MATRICES[a] @ _PAULI_MATRICES[b]
+    for c in "IXYZ":
+        base = _PAULI_MATRICES[c]
+        for ph in _PHASES:
+            if np.allclose(m, ph * base):
+                return (complex(ph), c)
+    raise RuntimeError(f"unreachable: could not factor {a} @ {b}")
+
+
+def _single_qubit_anticommutes(a: str, b: str) -> bool:
+    return a != b and a != "I" and b != "I"
+
 
 class Pauli:
     """Single-qubit Pauli operator: I, X, Y, or Z."""
@@ -46,6 +63,26 @@ class Pauli:
         if not isinstance(other, Pauli):
             return NotImplemented
         return self._label == other._label
+
+    def multiply(self, other: Pauli) -> tuple[complex, Pauli]:
+        """
+        Multiply in the Pauli group: ``self * other = phase * result``,
+        with ``phase`` in ``{±1, ±i}``.
+        """
+        phase, label = _multiply_labels(self._label, other._label)
+        return phase, Pauli(label)
+
+    def commutator(self, other: Pauli) -> tuple[complex | None, Pauli | None]:
+        """
+        Return ``[self, other] = self @ other - other @ self`` as ``phase * P``,
+        or ``(None, None)`` when the commutator is zero.
+
+        For single-qubit Paulis this is either ``0`` or ``2i`` times the third Pauli.
+        """
+        if not _single_qubit_anticommutes(self._label, other._label):
+            return None, None
+        phase, res = self.multiply(other)
+        return 2 * phase, res
 
 
 class PauliString:
@@ -100,3 +137,45 @@ class PauliString:
         if not isinstance(other, PauliString):
             return NotImplemented
         return self._paulis == other._paulis
+
+    def multiply(self, other: PauliString) -> tuple[complex, PauliString]:
+        """
+        Tensor product multiplication: ``self * other = phase * result``,
+        qubit-by-qubit in matching order (leftmost = qubit 0).
+        """
+        if len(self._paulis) != len(other._paulis):
+            raise ValueError(
+                f"PauliString length mismatch: {len(self._paulis)} vs {len(other._paulis)}"
+            )
+        phase = 1 + 0j
+        out_labels: list[str] = []
+        for pa, pb in zip(self._paulis, other._paulis, strict=True):
+            p, lab = _multiply_labels(pa.label, pb.label)
+            phase *= p
+            out_labels.append(lab)
+        return phase, PauliString([Pauli(ch) for ch in out_labels])
+
+    def commutator(
+        self, other: PauliString
+    ) -> tuple[complex | None, PauliString | None]:
+        """
+        Return ``[self, other]`` as ``coeff * R`` with ``R`` a ``PauliString``,
+        or ``(None, None)`` when commutators vanish.
+
+        Uses ``P Q - Q P``: for Pauli strings this is either ``0`` or
+        ``2 * (phase from P*Q) * R`` with an odd number of pairwise
+        anticommuting single-qubit factors.
+        """
+        if len(self._paulis) != len(other._paulis):
+            raise ValueError(
+                f"PauliString length mismatch: {len(self._paulis)} vs {len(other._paulis)}"
+            )
+        m = sum(
+            1
+            for pa, pb in zip(self._paulis, other._paulis, strict=True)
+            if _single_qubit_anticommutes(pa.label, pb.label)
+        )
+        if m % 2 == 0:
+            return None, None
+        phase_pq, res = self.multiply(other)
+        return 2 * phase_pq, res

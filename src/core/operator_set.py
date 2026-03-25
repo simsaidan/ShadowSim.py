@@ -48,6 +48,21 @@ class Operator:
     def to_operator_set(self):
         return OperatorSet([self])
 
+    def to_local_operator(self, local_dim: int = 2):
+        local_dim = int(local_dim)
+        dim = self.dimension
+        n_sites = 0
+        p = 1
+        while p < dim:
+            p *= local_dim
+            n_sites += 1
+        if p != dim:
+            raise ValueError(
+                f"operator dimension {dim} is not {local_dim}**n for a non-negative "
+                "integer n; cannot wrap as LocalOperator on a contiguous block"
+            )
+        return LocalOperator(self.matrix, list(range(n_sites)), local_dim)
+
 
 class LocalOperator(Operator):
     """

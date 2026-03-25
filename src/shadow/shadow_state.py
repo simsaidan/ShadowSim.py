@@ -17,8 +17,9 @@ class ShadowState(State):
         self.A = 0
         exp_vals: list[complex] = []
 
+        psi = state.get_state()
         for op in operator_set.operators:
-            exp_Om = np.trace(op.matrix @ state.get_state())
+            exp_Om = np.vdot(psi, op.matrix @ psi)
             self.A += np.abs(exp_Om) ** 2
             exp_vals.append(exp_Om)
 

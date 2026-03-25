@@ -22,6 +22,10 @@ class Hamiltonian(Operator):
     def to_hamiltonian_set(self):
         return HamiltonianSet([self])
 
+    def to_local_hamiltonian(self, local_dim: int = 2):
+        lo = self.to_local_operator(local_dim)
+        return LocalHamiltonian(lo.matrix, lo.sites, lo.local_dim)
+
 
 class LocalHamiltonian(LocalOperator, Hamiltonian):
     """

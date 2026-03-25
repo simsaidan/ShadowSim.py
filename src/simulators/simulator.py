@@ -29,6 +29,12 @@ class Simulator:
         self.results = None
         self.tlist = np.linspace(0, self.total_time, self.time_steps)
 
+    def run(self):
+        return self.simulate()
+
+    def simulate(self):
+        raise NotImplementedError("Subclasses must implement simulate()")
+
     def get_results(self, index: int = None):
         if self.results is None:
             raise ValueError(
