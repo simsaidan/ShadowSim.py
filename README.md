@@ -149,7 +149,7 @@ for path in paths:
     print(f"Saved: {path}")
 ```
 
-**Output** — figures are stored in [`images/`](images/) at the repo root (not under `docs/`).
+**Output**
 
 *QuTiP (reference):*
 
