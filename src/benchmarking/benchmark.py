@@ -43,11 +43,18 @@ class Benchmark:
         pb = self.simulator_b.save_result_plot(
             indices=indices, dpi=dpi, labels=labels, title=title_b
         )
-        pdiff = self._save_abs_diff_plot(indices=indices, dpi=dpi, title=title)
+        pdiff = self._save_abs_diff_plot(
+            indices=indices, dpi=dpi, title=title, labels=labels
+        )
         return pa, pb, pdiff
 
     def _save_abs_diff_plot(
-        self, indices: list[int] | None, *, dpi: float, title: str | None
+        self,
+        indices: list[int] | None,
+        *,
+        dpi: float,
+        title: str | None,
+        labels: list[str] | None = None,
     ) -> Path:
         ra = self.simulator_a.results
         rb = self.simulator_b.results
@@ -67,9 +74,13 @@ class Benchmark:
         try:
             t = self.simulator_a.tlist
             for plot_i, index in enumerate(indices):
-                label = str(index)
+                curve_label = (
+                    labels[plot_i]
+                    if labels is not None and plot_i < len(labels)
+                    else str(index)
+                )
                 diff = np.abs(np.asarray(ra[index]) - np.asarray(rb[index]))
-                ax.plot(t, diff, label=label)
+                ax.plot(t, diff, label=curve_label)
             ax.set_xlabel("Time")
             ax.set_ylabel("|expectation A − expectation B|")
             if title:

@@ -83,7 +83,7 @@ qutip_simulator = QutipSimulator(
     ],
     3,
     0.25,
-    100,
+    301,
 )
 # Run Split JMatrix simulator
 splitjmatrix_simulator = SplitJMatrixSimulator(
@@ -92,8 +92,8 @@ splitjmatrix_simulator = SplitJMatrixSimulator(
     psi_0,
     3,
     0.25,
-    100,
-    30,
+    301,
+    40,
     measurement_groups=[[1, 2], 3],
     reducers=[_cavity_population, _population_one],
 )
