@@ -8,19 +8,24 @@ import numpy as np
 
 from src.core.hamiltonian import Hamiltonian
 from src.core.state import State
+from src.core.operator_set import Operator
 
 
 class Simulator:
     def __init__(
         self,
-        H: Hamiltonian,
+        hamiltonians: list[Hamiltonian],
+        lindblads: list[Operator],
         initial_state: State,
         num_qubits: int,
         total_time: float,
         time_steps: int,
         id: str,
     ):
-        self.H = H
+        if not hamiltonians:
+            raise ValueError("hamiltonians must be a non-empty list")
+        self.hamiltonians = list(hamiltonians)
+        self.lindblads = list(lindblads)
         self.initial_state = initial_state
         self.num_qubits = num_qubits
         self.total_time = total_time

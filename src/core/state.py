@@ -34,20 +34,19 @@ class State:
     def __init__(self, state: np.ndarray, num_qubits: int, local_dim: int = 2):
         self._num_qubits = int(num_qubits)
         self._local_dim = int(local_dim)
-        self.state = _as_valid_state_vector(
-            state, self._num_qubits, self._local_dim
-        )
+        self.state = _as_valid_state_vector(state, self._num_qubits, self._local_dim)
 
     def get_state(self):
         return self.state
 
     def set_state(self, state: np.ndarray):
-        self.state = _as_valid_state_vector(
-            state, self._num_qubits, self._local_dim
-        )
+        self.state = _as_valid_state_vector(state, self._num_qubits, self._local_dim)
 
     def get_num_qubits(self):
         return self._num_qubits
 
     def get_local_dim(self):
         return self._local_dim
+
+    def to_numpy(self):
+        return self.state

@@ -8,6 +8,7 @@ import numpy as np
 from src.core.hamiltonian import Hamiltonian
 from src.core.operator_set import OperatorSet
 from src.core.pauli import PauliString
+from src.core.utils import unitary
 
 
 class ShadowHamiltonian:
@@ -106,7 +107,7 @@ class ShadowHamiltonian:
         return self.H_S
 
     def is_unitary(self):
-        return np.allclose(self.H_S.conj().T @ self.H_S, np.eye(self.H_S.shape[0]))
+        return unitary(self.H_S)
 
     def is_hermitian(self):
         return np.allclose(self.H_S, self.H_S.conj().T)

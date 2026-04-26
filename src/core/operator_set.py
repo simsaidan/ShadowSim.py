@@ -1,5 +1,7 @@
 import numpy as np
 
+from src.core.utils import unitary
+
 
 class Operator:
     def __init__(self, matrix: np.ndarray, name: str = None):
@@ -7,7 +9,7 @@ class Operator:
         self.name = name
         self.dimension = matrix.shape[0]
         self.is_hermitian = np.allclose(matrix, matrix.conj().T)
-        self.is_unitary = np.allclose(matrix @ matrix.conj().T, np.eye(self.dimension))
+        self.is_unitary = unitary(matrix)
         self.is_positive_semidefinite = np.all(np.linalg.eigvals(matrix) >= 0)
         self.is_negative_semidefinite = np.all(np.linalg.eigvals(matrix) <= 0)
         self.is_indefinite = np.any(np.linalg.eigvals(matrix) > 0) and np.any(
@@ -18,9 +20,7 @@ class Operator:
             return np.allclose(self.matrix, self.matrix.conj().T)
 
         def is_unitary(self):
-            return np.allclose(
-                self.matrix @ self.matrix.conj().T, np.eye(self.dimension)
-            )
+            return unitary(self.matrix)
 
         def is_positive_semidefinite(self):
             return np.all(np.linalg.eigvals(self.matrix) >= 0)

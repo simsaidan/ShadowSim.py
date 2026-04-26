@@ -2,8 +2,6 @@
 
 ## Overview
 
-## Author
-
 ## Installation
 
 ## Usage
@@ -18,7 +16,7 @@
 
 ## Citing
 
-
+## Author
 ## References
 
 [arXiv:2407.21775](https://arxiv.org/pdf/2407.21775)
