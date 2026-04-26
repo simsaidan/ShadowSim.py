@@ -4,9 +4,18 @@ site/
 # local doc build env
 .venv-docs/
 
+# macOS / tools
+.DS_Store
+.mplconfig/
+
 # Python
 __pycache__/
 *.py[cod]
+.coverage
+coverage.xml
+coverage_html_report/
+htmlcov/
+
 
 /results/**
 !/results/.gitkeep

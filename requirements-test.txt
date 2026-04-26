@@ -1,0 +1,10 @@
+# Runtime deps (align with README) + test tooling
+numpy
+scipy
+matplotlib
+qutip
+qiskit
+qiskit-aer
+pytest
+pytest-cov
+coverage

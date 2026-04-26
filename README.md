@@ -1,5 +1,8 @@
 # ShadowSim.py
 
+[![Test and coverage](https://github.com/simsaidan/ShadowSim.py/actions/workflows/test-coverage.yml/badge.svg)](https://github.com/simsaidan/ShadowSim.py/actions/workflows/test-coverage.yml)
+[![codecov](https://codecov.io/gh/simsaidan/ShadowSim.py/branch/main/graph/badge.svg)](https://app.codecov.io/gh/simsaidan/ShadowSim.py)
+
 ## Overview
 
 ShadowSim.py is an open-source Python library with two main purposes:
@@ -33,6 +36,15 @@ pip install numpy scipy matplotlib qutip qiskit qiskit-aer
 ### Install with pip (coming soon)
 
 `pip install ShadowSim.py` support is coming soon.
+
+## Tests and coverage
+
+```bash
+pip install -r requirements-test.txt
+python -m pytest --cov=src --cov-config=.coveragerc --cov-report=term-missing
+```
+
+Pushes to `main` run the same in GitHub Actions and upload coverage to [Codecov](https://app.codecov.io/gh/simsaidan/ShadowSim.py) (enable the [Codecov GitHub app](https://github.com/apps/codecov) for this repo the first time so uploads succeed).
 
 ## Usage
 
