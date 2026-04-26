@@ -200,6 +200,6 @@ This project is licensed under the MIT License. See `LICENSE` for details.
 
 ## References
 
-- Somma, R. D., King, R., Kothari, R., O'Brien, T., and Babbush, R. *Shadow Hamiltonian Simulation*. [`arXiv:2407.21775`](https://arxiv.org/abs/2407.21775), [PDF](https://arxiv.org/pdf/2407.21775).
-- Sims, A. N., Patel, D., Philip, A., Rubin, A. H., Bandyopadhyay, R., Radulaski, M., and Wilde, M. M. *Digital Quantum Simulations of the Non-Resonant Open Tavis-Cummings Model*. [`arXiv:2501.18522v2`](https://arxiv.org/abs/2501.18522v2), [PDF](https://arxiv.org/pdf/2501.18522v2).
+- [![arXiv](https://img.shields.io/static/v1?label=arXiv&message=2407.21775&color=inactive&style=flat-square)](https://arxiv.org/abs/2407.21775) Somma, R. D., King, R., Kothari, R., O'Brien, T., and Babbush, R. *Shadow Hamiltonian Simulation*. [PDF](https://arxiv.org/pdf/2407.21775)
+- [![arXiv](https://img.shields.io/static/v1?label=arXiv&message=2501.18522&color=inactive&style=flat-square)](https://arxiv.org/abs/2501.18522v2) Sims, A. N., Patel, D., Philip, A., Rubin, A. H., Bandyopadhyay, R., Radulaski, M., and Wilde, M. M. *Digital Quantum Simulations of the Non-Resonant Open Tavis-Cummings Model*. [PDF](https://arxiv.org/pdf/2501.18522v2)
 
