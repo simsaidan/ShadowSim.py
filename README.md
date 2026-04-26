@@ -54,8 +54,6 @@ The following simulators are supported by the package:
 
 Imagine a scenario in which you want to compare the results of a new quantum
 simulation algorithm against a source of truth like QuTiP. 
-```python
-```
 
 We first define some constants used in our system:
 ```python
@@ -151,19 +149,19 @@ for path in paths:
     print(f"Saved: {path}")
 ```
 
-**Output**
+**Output** — figures are stored in [`images/`](images/) at the repo root (not under `docs/`).
 
 *QuTiP (reference):*
 
-![QuTiP expectations](docs/images/example2_qutip.png)
+![QuTiP expectations](./images/example2_qutip.png)
 
 *Split JMatrix:*
 
-![Split JMatrix expectations](docs/images/example2_split_jmatrix.png)
+![Split JMatrix expectations](./images/example2_split_jmatrix.png)
 
 *Absolute difference between the two:*
 
-![Absolute difference between the two simulators](docs/images/example2_abs_diff.png)
+![Absolute difference between the two simulators](./images/example2_abs_diff.png)
 
 ## Documentation
 
