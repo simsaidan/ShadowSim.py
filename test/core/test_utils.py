@@ -3,7 +3,18 @@
 import numpy as np
 import pytest
 
-from src.core.utils import flip_dict, hermitian, next_power_of_two, tensor, unitary
+from src.core.utils import (
+    flip_dict,
+    hermitian,
+    indefinite,
+    negative_definite,
+    negative_semidefinite,
+    next_power_of_two,
+    positive_definite,
+    positive_semidefinite,
+    tensor,
+    unitary,
+)
 
 
 # --- Pauli / small fixed matrices ---
@@ -157,3 +168,50 @@ def test_tensor_three_single_qubits():
     c = np.array([3.0, 4.0])
     out = tensor([a, b, c])
     assert np.allclose(out, np.kron(np.kron(a, b), c))
+
+
+def test_positive_semidefinite_true_cases():
+    assert positive_semidefinite(np.eye(3))
+    assert positive_semidefinite(np.diag([0.0, 1.0, 4.0]))
+
+
+def test_positive_semidefinite_false_for_indefinite_matrix():
+    assert not positive_semidefinite(np.diag([-1.0, 2.0]))
+
+
+def test_positive_definite_true_cases():
+    assert positive_definite(np.eye(3))
+    assert positive_definite(np.diag([0.5, 1.0, 4.0]))
+
+
+def test_positive_definite_false_with_zero_or_negative_eigenvalue():
+    assert not positive_definite(np.diag([0.0, 1.0, 2.0]))
+    assert not positive_definite(np.diag([-1.0, 2.0]))
+
+
+def test_negative_semidefinite_true_cases():
+    assert negative_semidefinite(-np.eye(3))
+    assert negative_semidefinite(np.diag([-4.0, -1.0, 0.0]))
+
+
+def test_negative_definite_true_cases():
+    assert negative_definite(-np.eye(3))
+    assert negative_definite(np.diag([-4.0, -1.0, -0.5]))
+
+
+def test_negative_definite_false_with_zero_or_positive_eigenvalue():
+    assert not negative_definite(np.diag([-2.0, -1.0, 0.0]))
+    assert not negative_definite(np.diag([-1.0, 2.0]))
+
+
+def test_negative_semidefinite_false_for_indefinite_matrix():
+    assert not negative_semidefinite(np.diag([-1.0, 2.0]))
+
+
+def test_indefinite_true_for_mixed_sign_spectrum():
+    assert indefinite(np.diag([-2.0, 0.0, 3.0]))
+
+
+def test_indefinite_false_for_semidefinite_matrices():
+    assert not indefinite(np.diag([0.0, 1.0, 2.0]))
+    assert not indefinite(np.diag([-2.0, -1.0, 0.0]))

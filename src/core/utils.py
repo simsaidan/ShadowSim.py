@@ -30,6 +30,37 @@ def hermitian(H):
     return np.allclose(H, H.conjugate().T)
 
 
+def _real_parts_of_eigenvalues(matrix):
+    eigvals = np.linalg.eigvals(matrix)
+    return np.real_if_close(eigvals, tol=1000).real
+
+
+def positive_semidefinite(matrix):
+    """Returns whether a matrix is positive semidefinite."""
+    return np.all(_real_parts_of_eigenvalues(matrix) >= 0)
+
+
+def positive_definite(matrix):
+    """Returns whether a matrix is positive definite."""
+    return np.all(_real_parts_of_eigenvalues(matrix) > 0)
+
+
+def negative_semidefinite(matrix):
+    """Returns whether a matrix is negative semidefinite."""
+    return np.all(_real_parts_of_eigenvalues(matrix) <= 0)
+
+
+def negative_definite(matrix):
+    """Returns whether a matrix is negative definite."""
+    return np.all(_real_parts_of_eigenvalues(matrix) < 0)
+
+
+def indefinite(matrix):
+    """Returns whether a matrix has both positive and negative eigenvalues."""
+    eigvals = _real_parts_of_eigenvalues(matrix)
+    return np.any(eigvals > 0) and np.any(eigvals < 0)
+
+
 def flip_dict(d):
     """
     Given a dictionary d with a string key, it returns a new dictionary with
