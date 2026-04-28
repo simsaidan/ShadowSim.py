@@ -1,29 +1,103 @@
 from __future__ import annotations
 
 from collections import deque
+from collections.abc import Sequence
 from itertools import product
 
 import numpy as np
 
-from src.core.hamiltonian import Hamiltonian
+from src.core.hamiltonian import (
+    Hamiltonian,
+    LocalHamiltonian,
+    combined_hamiltonian_matrix,
+)
 from src.core.operator_set import OperatorSet
 from src.core.pauli import PauliString
-from src.core.utils import unitary
+from src.core.utils import hermitian, unitary
+
+
+def _infer_num_qubits(terms: list[Hamiltonian]) -> int:
+    """
+    Infer ``num_qubits`` from full-domain terms. All such terms must share the
+    same matrix dimension ``2**n`` (assumed here).
+    """
+    d_ref: int | None = None
+    for h in terms:
+        if isinstance(h, LocalHamiltonian):
+            continue
+        d = int(np.asarray(h.matrix).shape[0])
+        if d <= 0 or (d & (d - 1)) != 0:
+            raise ValueError(
+                "full-domain Hamiltonian matrix dimension must be a power of 2, "
+                f"got {d}"
+            )
+        if d_ref is None:
+            d_ref = d
+        elif d != d_ref:
+            raise ValueError(
+                "all full-domain Hamiltonian terms must have the same matrix size; "
+                f"expected {d_ref}x{d_ref}, got {d}x{d}"
+            )
+    if d_ref is None:
+        raise ValueError(
+            "pass num_qubits= when all terms are LocalHamiltonian; otherwise "
+            "include at least one full-domain Hamiltonian to infer qubit count."
+        )
+    return d_ref.bit_length() - 1
 
 
 class ShadowHamiltonian:
+    """
+    There are two matrices:
+
+    - ``self.H``: the **input** model on the full qubit space, always ``(2^n, 2^n)``,
+      because you represent Pauli operators in that space. It is *not* “the
+      shadow Hamiltonian” in the sense of the construction; it is just what
+      you passed in, summed.
+    - ``self.H_S`` (also ``.shadow`` / ``get_H_S()``): the **actual shadow
+      object**—commutator matrix in the **closed Pauli label basis** only, shape
+      **``(m, m)``** with **``m = |closure|``**. That size does **not** have to
+      equal ``2^n``; it is whatever the closure step produces. So the shadow
+      Hamiltonian’s *dimension* is fixed by the **closure** (and which labels
+      show up in ``H`` and ``operator_set``), not by “same as ``H``’s size.”
+
+    We still use the full ``(2^n)``-dimensional ``H`` in step 5 only to form
+    commutators ``H @ P - P @ H`` with full Pauli matrices—implementation detail.
+    """
+
     def __init__(
         self,
         operator_set: OperatorSet,
-        H: Hamiltonian,
+        H: Hamiltonian | Sequence[Hamiltonian],
         *,
+        num_qubits: int | None = None,
         tol: float = 1e-10,
     ):
+        """
+        ``H`` may be a single ``Hamiltonian`` or a non-empty sequence of terms;
+        terms are summed on the full ``num_qubits``-qubit space (see
+        ``combined_hamiltonian_matrix``). ``self.H`` is always that summed
+        ``Hamiltonian``. Full-domain terms are assumed to share one
+        ``2**n x 2**n`` size; ``num_qubits`` is then ``n`` unless you pass
+        ``num_qubits`` explicitly (required if every term is a
+        ``LocalHamiltonian``). After closure, ``self.H_S`` is the reduced matrix.
+        """
         self.operator_set = operator_set
-        self.H = H
         self.tol = float(tol)
 
-        matrix = np.asarray(H.matrix, dtype=np.complex128)
+        if isinstance(H, Hamiltonian):
+            terms: list[Hamiltonian] = [H]
+        else:
+            terms = list(H)
+            if not terms:
+                raise ValueError("hamiltonians must be a non-empty sequence")
+
+        nq = num_qubits if num_qubits is not None else _infer_num_qubits(terms)
+        matrix_total = combined_hamiltonian_matrix(terms, nq)
+        # Input model: always (2^n, 2^n). Output "shadow" matrix is H_S, (m, m), m = |closure|.
+        self.H = Hamiltonian(matrix_total)
+
+        matrix = np.asarray(self.H.matrix, dtype=np.complex128)
         if matrix.ndim != 2 or matrix.shape[0] != matrix.shape[1]:
             raise ValueError("H.matrix must be a square matrix")
 
@@ -103,11 +177,39 @@ class ShadowHamiltonian:
                 H_S[m, mp] = -np.trace(O_mp @ C) / norm_sq
         self.H_S = H_S
 
-    def get_H_S(self):
+    @property
+    def shadow(self) -> np.ndarray:
+        """The shadow Hamiltonian: ``(m, m)`` with ``m = |closure|``; not ``(2^n, 2^n)`` in general."""
+        return self.H_S
+
+    def get_H_S(self) -> np.ndarray:
+        """
+        Same as :attr:`shadow` — the shadow Hamiltonian in the closed Pauli
+        basis, shape ``(m, m)`` with ``m = len(self.basis)``, independent of
+        ``2^n`` (unless m happens to match by coincidence).
+        """
         return self.H_S
 
     def is_unitary(self):
         return unitary(self.H_S)
 
     def is_hermitian(self):
-        return np.allclose(self.H_S, self.H_S.conj().T)
+        return hermitian(self.H_S)
+
+    def __str__(self):
+        return (
+            "ShadowHamiltonian("
+            f"full_H.shape={self.H.matrix.shape}, "
+            f"shadow.shape={self.H_S.shape}, "
+            f"n_qubits={self.num_qubits}"
+            ")"
+        )
+
+    def __repr__(self):
+        return (
+            "ShadowHamiltonian("
+            f"H.shape={self.H.matrix.shape}, "
+            f"H_S.shape={self.H_S.shape}, "
+            f"basis_size={len(self.basis)}, "
+            f"tol={self.tol!r})"
+        )

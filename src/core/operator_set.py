@@ -1,6 +1,6 @@
 import numpy as np
 
-from src.core.utils import unitary
+from src.core.utils import hermitian, unitary
 
 
 class Operator:
@@ -8,7 +8,7 @@ class Operator:
         self.matrix = matrix
         self.name = name
         self.dimension = matrix.shape[0]
-        self.is_hermitian = np.allclose(matrix, matrix.conj().T)
+        self.is_hermitian = hermitian(matrix)
         self.is_unitary = unitary(matrix)
         self.is_positive_semidefinite = np.all(np.linalg.eigvals(matrix) >= 0)
         self.is_negative_semidefinite = np.all(np.linalg.eigvals(matrix) <= 0)
@@ -17,7 +17,7 @@ class Operator:
         )
 
         def is_hermitian(self):
-            return np.allclose(self.matrix, self.matrix.conj().T)
+            return hermitian(self.matrix)
 
         def is_unitary(self):
             return unitary(self.matrix)
@@ -116,8 +116,41 @@ class LocalOperator(Operator):
         self.sites = sites_list
         self.local_dim = local_dim
 
+    def __str__(self):
+        return (
+            "LocalOperator("
+            f"sites={self.sites}, "
+            f"local_dim={self.local_dim}, "
+            f"shape={self.matrix.shape}"
+            ")"
+        )
+
+    def __repr__(self):
+        return (
+            "LocalOperator("
+            f"matrix={self.matrix!r}, "
+            f"sites={self.sites!r}, "
+            f"local_dim={self.local_dim}"
+            ")"
+        )
+
 
 class OperatorSet:
     def __init__(self, operators: list[Operator]):
         self.operators = operators
         self.operator_count = len(operators)
+
+    def __iter__(self):
+        return iter(self.operators)
+
+    def __len__(self):
+        return len(self.operators)
+
+    def __getitem__(self, item):
+        return self.operators[item]
+
+    def __str__(self):
+        return f"OperatorSet(operator_count={self.operator_count})"
+
+    def __repr__(self):
+        return f"OperatorSet(operators={self.operators!r})"

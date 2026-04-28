@@ -214,3 +214,28 @@ class SplitJMatrixSimulator(Simulator):
                 results[j].append(float(reducer(traced[j])))
         self.results = results
         return results
+
+    def __str__(self):
+        return (
+            "SplitJMatrixSimulator("
+            f"num_qubits={self.num_qubits}, "
+            f"num_steps={self.num_steps}, "
+            f"trotter_depth={self.trotter_depth}, "
+            f"time_steps={self.time_steps}"
+            ")"
+        )
+
+    def __repr__(self):
+        return (
+            "SplitJMatrixSimulator("
+            f"hamiltonians={self.hamiltonians!r}, "
+            f"lindblads={self.lindblads!r}, "
+            f"initial_state={self.initial_state!r}, "
+            f"num_qubits={self.num_qubits}, "
+            f"total_time={self.total_time}, "
+            f"time_steps={self.time_steps}, "
+            f"num_steps={self.num_steps}, "
+            f"trotter_depth={self.trotter_depth}, "
+            f"measurement_groups={self.measurement_groups!r}"
+            ")"
+        )

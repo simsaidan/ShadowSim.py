@@ -49,11 +49,26 @@ class Simulator:
             return self.results
         return self.results[index]
 
-    def plot_results(self, indices: list[int] = None):
+    def plot_results(
+        self,
+        indices: list[int] | None = None,
+        *,
+        labels: list[str] | None = None,
+        title: str | None = None,
+    ):
         if indices is None:
             indices = list(range(len(self.results)))
-        for index in indices:
-            plt.plot(self.tlist, self.get_results(index))
+        for plot_i, index in enumerate(indices):
+            curve_label = (
+                labels[plot_i]
+                if labels is not None and plot_i < len(labels)
+                else str(index)
+            )
+            plt.plot(self.tlist, self.get_results(index), label=curve_label)
+        if title:
+            plt.title(title)
+        plt.xlabel("Time")
+        plt.ylabel("Expectation")
         plt.legend()
         plt.show()
 
@@ -98,3 +113,25 @@ class Simulator:
         finally:
             plt.close(fig)
         return path
+
+    def __str__(self):
+        return (
+            f"{self.__class__.__name__}("
+            f"id={self.id}, "
+            f"num_qubits={self.num_qubits}, "
+            f"time_steps={self.time_steps}"
+            ")"
+        )
+
+    def __repr__(self):
+        return (
+            f"{self.__class__.__name__}("
+            f"hamiltonians={self.hamiltonians!r}, "
+            f"lindblads={self.lindblads!r}, "
+            f"initial_state={self.initial_state!r}, "
+            f"num_qubits={self.num_qubits}, "
+            f"total_time={self.total_time}, "
+            f"time_steps={self.time_steps}, "
+            f"id={self.id!r}"
+            ")"
+        )

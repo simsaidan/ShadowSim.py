@@ -42,11 +42,35 @@ class LocalHamiltonian(LocalOperator, Hamiltonian):
     ):
         super().__init__(matrix, sites, local_dim)
 
+    def __str__(self):
+        return (
+            "LocalHamiltonian("
+            f"sites={self.sites}, "
+            f"local_dim={self.local_dim}, "
+            f"shape={self.matrix.shape}"
+            ")"
+        )
+
+    def __repr__(self):
+        return (
+            "LocalHamiltonian("
+            f"matrix={self.matrix!r}, "
+            f"sites={self.sites!r}, "
+            f"local_dim={self.local_dim}"
+            ")"
+        )
+
 
 class HamiltonianSet:
     def __init__(self, hamiltonians: list[Hamiltonian]):
         self.hamiltonians = hamiltonians
         self.hamiltonian_count = len(hamiltonians)
+
+    def __str__(self):
+        return f"HamiltonianSet(hamiltonian_count={self.hamiltonian_count})"
+
+    def __repr__(self):
+        return f"HamiltonianSet(hamiltonians={self.hamiltonians!r})"
 
 
 def combined_hamiltonian_matrix(

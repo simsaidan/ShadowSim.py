@@ -90,3 +90,19 @@ class Benchmark:
         finally:
             plt.close(fig)
         return path
+
+    def __str__(self):
+        return (
+            "Benchmark("
+            f"simulator_a={self.simulator_a.__class__.__name__}, "
+            f"simulator_b={self.simulator_b.__class__.__name__}"
+            ")"
+        )
+
+    def __repr__(self):
+        return (
+            "Benchmark("
+            f"simulator_a={self.simulator_a!r}, "
+            f"simulator_b={self.simulator_b!r}"
+            ")"
+        )

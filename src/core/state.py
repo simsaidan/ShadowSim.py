@@ -32,17 +32,22 @@ def _as_valid_state_vector(
 
 class State:
     def __init__(self, state: np.ndarray, num_qubits: int, local_dim: int = 2):
+        assert num_qubits >= 0, "num_qubits must be non-negative"
+        assert local_dim > 0, "local_dim must be a positive integer"
         self._num_qubits = int(num_qubits)
         self._local_dim = int(local_dim)
         self.state = _as_valid_state_vector(state, self._num_qubits, self._local_dim)
 
     def get_state(self):
+        """Returns the state vector as a numpy array."""
         return self.state
 
     def set_state(self, state: np.ndarray):
+        """Sets the state vector to a new numpy array."""
         self.state = _as_valid_state_vector(state, self._num_qubits, self._local_dim)
 
     def get_num_qubits(self):
+        """Returns the number of qubits the state is defined on."""
         return self._num_qubits
 
     def get_local_dim(self):
@@ -50,3 +55,21 @@ class State:
 
     def to_numpy(self):
         return self.state
+
+    def __str__(self):
+        return (
+            "State("
+            f"num_qubits={self._num_qubits}, "
+            f"local_dim={self._local_dim}, "
+            f"shape={self.state.shape}"
+            ")"
+        )
+
+    def __repr__(self):
+        return (
+            "State("
+            f"state={self.state!r}, "
+            f"num_qubits={self._num_qubits}, "
+            f"local_dim={self._local_dim}"
+            ")"
+        )
