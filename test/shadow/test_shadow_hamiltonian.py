@@ -1,7 +1,8 @@
 import numpy as np
 
 from src.core.hamiltonian import Hamiltonian
-from src.core.operator_set import Operator, OperatorSet
+from src.core.operator import Operator
+from src.core.operator_set import OperatorSet
 from src.shadow.shadow_hamiltonian import ShadowHamiltonian
 
 

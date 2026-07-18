@@ -1,14 +1,16 @@
-from src.core.hamiltonian import Hamiltonian, LocalHamiltonian
+from src.core.hamiltonian import Hamiltonian
+from src.core.local_operator import LocalOperator
+from src.core.local_hamiltonian import LocalHamiltonian
+from src.core.operator import Operator
 from src.core.state import State
 from src.simulators.simulator import Simulator
-from src.core.operator_set import Operator, LocalOperator
+from src.utils.flip_dict import flip_dict
 from qiskit import QuantumCircuit, transpile, QuantumRegister
 from qiskit.circuit.library import UnitaryGate
 from qiskit_aer import AerSimulator
 import scipy
 import numpy as np
 from typing import Callable, List
-from src.core.utils import flip_dict
 
 
 def _trace_qubits(

@@ -10,8 +10,9 @@ if ROOT not in sys.path:
 import numpy as np
 
 from src.core.hamiltonian import Hamiltonian
-from src.core.operator_set import Operator, OperatorSet
-from src.core.pauli import PauliString
+from src.core.operator import Operator
+from src.core.operator_set import OperatorSet
+from src.core.pauli_string import PauliString
 from src.simulators.qutip_simulator import QutipSimulator
 from src.core.state import State
 from src.shadow.shadow_hamiltonian import ShadowHamiltonian
