@@ -94,6 +94,7 @@ def _split_jmatrix(
     t: float,
     num_steps: int,
     trotter_depth: int = 1,
+    verbose: bool = False,
 ):
     Hgates = [_make_H_gate(H_i.matrix, t, num_steps, trotter_depth) for H_i in H]
     Jgates = [_make_J_gate(L_i.matrix, t, num_steps) for L_i in Lindblads]
@@ -108,7 +109,7 @@ def _split_jmatrix(
     for i in range(num_steps):
         # Notebook split-J step: (1) all J (one per Lindblad), (2) all H in list order
         circ.reset(ancilla[0])
-        if i % 10 == 0:
+        if verbose and i % 10 == 0:
             print(f"Working on iteration {i} out of {num_steps}")
         for gate, L_i in zip(Jgates, Lindblads):
             circ.append(gate, reversed([ancilla[0]] + [body[j] for j in L_i.sites]))
@@ -163,6 +164,7 @@ class SplitJMatrixSimulator(Simulator):
         trotter_depth: int = 1,
         measurement_groups: list[int | list[int]] | None = None,
         reducers: list[Callable[[dict[str, int]], float]] | None = None,
+        verbose: bool = False,
     ):
         super().__init__(
             hamiltonians,
@@ -181,6 +183,7 @@ class SplitJMatrixSimulator(Simulator):
                 )
         self.num_steps = num_steps
         self.trotter_depth = trotter_depth
+        self.verbose = verbose
         if measurement_groups is None:
             measurement_groups = list(range(self.num_qubits))
         self.measurement_groups = measurement_groups
@@ -196,7 +199,8 @@ class SplitJMatrixSimulator(Simulator):
     def simulate(self):
         results = [[] for _ in range(len(self.measurement_groups))]
         for t in self.tlist:
-            print(f"Working on time step {round(t, 3)}")
+            if self.verbose:
+                print(f"Working on time step {round(t, 3)}")
             counts = _split_jmatrix(
                 self.hamiltonians,
                 self.lindblads,
@@ -205,6 +209,7 @@ class SplitJMatrixSimulator(Simulator):
                 t,
                 self.num_steps,
                 self.trotter_depth,
+                verbose=self.verbose,
             )
             counts = flip_dict(counts)
             traced = _trace_qubits(counts, self.measurement_groups)
@@ -236,6 +241,7 @@ class SplitJMatrixSimulator(Simulator):
             f"time_steps={self.time_steps}, "
             f"num_steps={self.num_steps}, "
             f"trotter_depth={self.trotter_depth}, "
-            f"measurement_groups={self.measurement_groups!r}"
+            f"measurement_groups={self.measurement_groups!r}, "
+            f"verbose={self.verbose!r}"
             ")"
         )
