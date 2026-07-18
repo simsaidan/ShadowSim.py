@@ -72,6 +72,7 @@ class ShadowHamiltonian:
         *,
         num_qubits: int | None = None,
         tol: float = 1e-10,
+        verbose: bool = False,
     ):
         """
         ``H`` may be a single ``Hamiltonian`` or a non-empty sequence of terms;
@@ -81,9 +82,11 @@ class ShadowHamiltonian:
         ``2**n x 2**n`` size; ``num_qubits`` is then ``n`` unless you pass
         ``num_qubits`` explicitly (required if every term is a
         ``LocalHamiltonian``). After closure, ``self.H_S`` is the reduced matrix.
+        Set ``verbose=True`` to print Pauli-set and closure progress.
         """
         self.operator_set = operator_set
         self.tol = float(tol)
+        self.verbose = verbose
 
         if isinstance(H, Hamiltonian):
             terms: list[Hamiltonian] = [H]
@@ -139,11 +142,12 @@ class ShadowHamiltonian:
                 if abs(coeff) > self.tol:
                     operator_pauli_set.add(label)
         self.operator_pauli_set = operator_pauli_set
-        print(
-            "Pauli counts -> "
-            f"Hamiltonian set: {len(self.pauli_set)}, "
-            f"Operator set union: {len(self.operator_pauli_set)}"
-        )
+        if self.verbose:
+            print(
+                "Pauli counts -> "
+                f"Hamiltonian set: {len(self.pauli_set)}, "
+                f"Operator set union: {len(self.operator_pauli_set)}"
+            )
 
         # Step 4: close operator Pauli strings under [·, h] for every Hamiltonian Pauli h.
         closure: set[str] = set(self.operator_pauli_set)
@@ -162,7 +166,8 @@ class ShadowHamiltonian:
                 closure.add(r_label)
                 q.append(r_label)
         self.operator_pauli_closure = closure
-        print(f"Operator closure size: {len(self.operator_pauli_closure)}")
+        if self.verbose:
+            print(f"Operator closure size: {len(self.operator_pauli_closure)}")
 
         # Step 5: build H_S on the closure basis via commutator projection.
         self.basis = sorted(self.operator_pauli_closure)
@@ -211,5 +216,6 @@ class ShadowHamiltonian:
             f"H.shape={self.H.matrix.shape}, "
             f"H_S.shape={self.H_S.shape}, "
             f"basis_size={len(self.basis)}, "
-            f"tol={self.tol!r})"
+            f"tol={self.tol!r}, "
+            f"verbose={self.verbose!r})"
         )
