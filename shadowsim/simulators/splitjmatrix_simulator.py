@@ -1,10 +1,10 @@
-from src.core.hamiltonian import Hamiltonian
-from src.core.local_operator import LocalOperator
-from src.core.local_hamiltonian import LocalHamiltonian
-from src.core.operator import Operator
-from src.core.state import State
-from src.simulators.simulator import Simulator
-from src.utils.flip_dict import flip_dict
+from shadowsim.core.hamiltonian import Hamiltonian
+from shadowsim.core.local_operator import LocalOperator
+from shadowsim.core.local_hamiltonian import LocalHamiltonian
+from shadowsim.core.operator import Operator
+from shadowsim.core.state import State
+from shadowsim.simulators.simulator import Simulator
+from shadowsim.utils.flip_dict import flip_dict
 from qiskit import QuantumCircuit, transpile, QuantumRegister
 from qiskit.circuit.library import UnitaryGate
 from qiskit_aer import AerSimulator
@@ -130,7 +130,7 @@ def _split_jmatrix(
     return result.get_counts()
 
 
-def _population_one(counts: dict[str, int]) -> float:
+def population_one(counts: dict[str, int]) -> float:
     """Return the empirical probability of measuring '1'."""
     total = sum(counts.values())
     if total == 0:
@@ -138,7 +138,7 @@ def _population_one(counts: dict[str, int]) -> float:
     return counts.get("1", 0) / total
 
 
-def _cavity_population(counts: dict[str, int]) -> float:
+def cavity_population(counts: dict[str, int]) -> float:
     """
     Cavity population reducer for two-bit cavity readout.
 
@@ -191,7 +191,7 @@ class SplitJMatrixSimulator(Simulator):
         self.measurement_groups = measurement_groups
 
         if reducers is None:
-            reducers = [_population_one for _ in self.measurement_groups]
+            reducers = [population_one for _ in self.measurement_groups]
         if len(reducers) != len(self.measurement_groups):
             raise ValueError(
                 "reducers and measurement_groups must have the same length"

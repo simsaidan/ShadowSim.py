@@ -1,9 +1,9 @@
 import numpy as np
 
-import src.simulators.splitjmatrix_simulator as splitjmatrix_module
-from src.core.local_hamiltonian import LocalHamiltonian
-from src.core.state import State
-from src.simulators.splitjmatrix_simulator import SplitJMatrixSimulator
+import shadowsim.simulators.splitjmatrix_simulator as splitjmatrix_module
+from shadowsim.core import LocalHamiltonian
+from shadowsim.core import State
+from shadowsim.simulators import SplitJMatrixSimulator
 
 
 Z = np.array([[1, 0], [0, -1]], dtype=np.complex128)

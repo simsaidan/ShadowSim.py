@@ -6,11 +6,10 @@ from pathlib import Path
 import matplotlib.pyplot as plt
 import numpy as np
 
-from src.simulators.simulator import Simulator
+from shadowsim.simulators.simulator import Simulator
 
 
 class Benchmark:
-
     def __init__(self, simulator_a: Simulator, simulator_b: Simulator):
         if not np.array_equal(simulator_a.tlist, simulator_b.tlist):
             raise ValueError("simulators must use the same time grid (tlist)")

@@ -1,9 +1,9 @@
 import numpy as np
 
-from src.core.hamiltonian import Hamiltonian
-from src.core.local_operator import LocalOperator
-from src.utils.hermitian import hermitian
-from src.utils.tensor import tensor
+from shadowsim.core.hamiltonian import Hamiltonian
+from shadowsim.core.local_operator import LocalOperator
+from shadowsim.utils.hermitian import hermitian
+from shadowsim.utils.tensor import tensor
 
 
 class LocalHamiltonian(LocalOperator, Hamiltonian):

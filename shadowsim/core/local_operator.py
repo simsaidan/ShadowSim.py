@@ -1,7 +1,7 @@
 import numpy as np
 
-from src.core.operator import Operator
-from src.utils.tensor import tensor
+from shadowsim.core.operator import Operator
+from shadowsim.utils.tensor import tensor
 
 
 class LocalOperator(Operator):

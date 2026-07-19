@@ -1,0 +1,45 @@
+[project]
+name = "shadowsim"
+version = "0.1.0"
+description = "Tools for shadow Hamiltonian research and quantum simulation benchmarking."
+readme = "README.md"
+requires-python = ">=3.12"
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [
+    { name = "Aidan Sims" },
+]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Science/Research",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Scientific/Engineering :: Physics",
+    "Topic :: Scientific/Engineering :: Quantum Computing",
+]
+dependencies = [
+    "matplotlib",
+    "numpy",
+    "qiskit",
+    "qiskit-aer",
+    "qutip",
+    "scipy",
+]
+
+[project.optional-dependencies]
+test = [
+    "coverage",
+    "pytest",
+    "pytest-cov",
+]
+
+[project.urls]
+Repository = "https://github.com/simsaidan/ShadowSim.py"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["shadowsim*"]
+
+[build-system]
+requires = ["setuptools>=77.0.3"]
+build-backend = "setuptools.build_meta"

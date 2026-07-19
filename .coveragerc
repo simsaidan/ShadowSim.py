@@ -1,6 +1,6 @@
 # coverage.py (used by pytest-cov)
 [run]
-source = src
+source = shadowsim
 branch = True
 
 [report]

@@ -1,8 +1,8 @@
 import numpy as np
 import pytest
 
-from src.core.pauli import Pauli
-from src.core.pauli_string import PauliString
+from shadowsim.core import Pauli
+from shadowsim.core import PauliString
 
 
 def test_pauli_string_from_string_and_protocols():

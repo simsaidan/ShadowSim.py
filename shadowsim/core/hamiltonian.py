@@ -1,7 +1,7 @@
 import numpy as np
 
-from src.core.operator import Operator
-from src.utils.hermitian import hermitian
+from shadowsim.core.operator import Operator
+from shadowsim.utils.hermitian import hermitian
 
 
 class Hamiltonian(Operator):
@@ -42,7 +42,7 @@ class Hamiltonian(Operator):
 
     def to_hamiltonian_set(self):
         """Returns a HamiltonianSet containing the Hamiltonian."""
-        from src.core.hamiltonian_set import HamiltonianSet
+        from shadowsim.core.hamiltonian_set import HamiltonianSet
 
         return HamiltonianSet([self])
 
@@ -56,7 +56,7 @@ class Hamiltonian(Operator):
         assert isinstance(local_dim, int), "local_dim must be an integer"
         assert local_dim > 0, "local_dim must be a positive integer"
 
-        from src.core.local_hamiltonian import LocalHamiltonian
+        from shadowsim.core.local_hamiltonian import LocalHamiltonian
 
         lo = self.to_local_operator(local_dim)
         return LocalHamiltonian(lo.matrix, lo.sites, lo.local_dim)

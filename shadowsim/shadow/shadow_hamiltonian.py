@@ -6,13 +6,13 @@ from itertools import product
 
 import numpy as np
 
-from src.core.combined_hamiltonian_matrix import combined_hamiltonian_matrix
-from src.core.hamiltonian import Hamiltonian
-from src.core.local_hamiltonian import LocalHamiltonian
-from src.core.operator_set import OperatorSet
-from src.core.pauli_string import PauliString
-from src.utils.hermitian import hermitian
-from src.utils.unitary import unitary
+from shadowsim.core.combined_hamiltonian_matrix import combined_hamiltonian_matrix
+from shadowsim.core.hamiltonian import Hamiltonian
+from shadowsim.core.local_hamiltonian import LocalHamiltonian
+from shadowsim.core.operator_set import OperatorSet
+from shadowsim.core.pauli_string import PauliString
+from shadowsim.utils.hermitian import hermitian
+from shadowsim.utils.unitary import unitary
 
 
 def _infer_num_qubits(terms: list[Hamiltonian]) -> int:

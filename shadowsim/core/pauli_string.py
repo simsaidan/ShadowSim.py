@@ -4,7 +4,7 @@ from collections.abc import Sequence
 
 import numpy as np
 
-from src.core.pauli import Pauli, _multiply_labels, _single_qubit_anticommutes
+from shadowsim.core.pauli import Pauli, _multiply_labels, _single_qubit_anticommutes
 
 
 class PauliString:

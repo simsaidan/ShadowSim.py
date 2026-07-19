@@ -1,7 +1,7 @@
 import numpy as np
 
-from src.core.hamiltonian import Hamiltonian
-from src.core.local_hamiltonian import LocalHamiltonian
+from shadowsim.core.hamiltonian import Hamiltonian
+from shadowsim.core.local_hamiltonian import LocalHamiltonian
 
 
 def combined_hamiltonian_matrix(

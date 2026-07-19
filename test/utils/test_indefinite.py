@@ -1,6 +1,6 @@
 import numpy as np
 
-from src.utils.indefinite import indefinite
+from shadowsim.utils.indefinite import indefinite
 
 
 def test_indefinite_true_for_mixed_sign_spectrum():

@@ -1,7 +1,7 @@
 import numpy as np
 import pytest
 
-from src.utils.tensor import tensor
+from shadowsim.utils import tensor
 
 
 _X = np.array([[0.0, 1.0], [1.0, 0.0]], dtype=np.complex128)

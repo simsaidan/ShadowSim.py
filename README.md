@@ -12,41 +12,51 @@ ShadowSim.py is an open-source Python library with two main purposes:
 
 ## Installation
 
-### Install from GitHub
+### Development installation
 
-#### 1) Fork and clone the repository
-Fork this repository to your own GitHub account, then clone your fork:
+Fork and clone the repository, then enter the project directory:
 ```bash
 git clone https://github.com/<your-github-username>/ShadowSim.py.git
 cd ShadowSim.py
 ```
 
-#### 2) Create and activate a virtual environment (recommended)
+Create and activate a virtual environment:
 ```bash
 python3 -m venv .venv
 source .venv/bin/activate
 ```
 
-#### 3) Install dependencies
+Install ShadowSim and its runtime dependencies in editable mode:
 ```bash
-pip install --upgrade pip
-pip install numpy scipy matplotlib qutip qiskit qiskit-aer
+python -m pip install --upgrade pip
+python -m pip install -e .
 ```
 
-### Install with pip (coming soon)
+### Install directly from GitHub
 
-`pip install ShadowSim.py` support is coming soon.
+```bash
+python -m pip install git+https://github.com/simsaidan/ShadowSim.py.git
+```
+
+The package can then be imported as `shadowsim`.
 
 ## Tests and coverage
 
 ```bash
-pip install -r requirements-test.txt
-python -m pytest --cov=src --cov-config=.coveragerc --cov-report=term-missing
+python -m pip install -e ".[test]"
+python -m pytest --cov=shadowsim --cov-config=.coveragerc --cov-report=term-missing
 ```
 
 Pushes to `main` run the same in GitHub Actions and upload coverage to [Codecov](https://app.codecov.io/gh/simsaidan/ShadowSim.py) (enable the [Codecov GitHub app](https://github.com/apps/codecov) for this repo the first time so uploads succeed).
 
 ## Usage
+
+Public objects are imported from their domain subpackages:
+```python
+from shadowsim.core import Hamiltonian, Operator, State
+from shadowsim.shadow import ShadowHamiltonian
+from shadowsim.simulators import QutipSimulator
+```
 
 The following simulators are supported by the package:
 
@@ -62,6 +72,12 @@ The following simulators are supported by the package:
 
 ### Example 1: Exploring a simple shadow simulation example
 
+The complete example is in [`examples/simple_shadow.py`](examples/simple_shadow.py)
+and can be run after installing the package:
+```bash
+python examples/simple_shadow.py
+```
+
 ### Example 2: Comparing a quantum algorithm against a classical solver
 
 Imagine a scenario in which you want to compare the results of a new quantum
@@ -69,6 +85,31 @@ simulation algorithm against a source of truth like QuTiP.
 
 We first define some constants used in our system:
 ```python
+import numpy as np
+
+from shadowsim.benchmarking import Benchmark
+from shadowsim.core import (
+    Hamiltonian,
+    LocalHamiltonian,
+    LocalOperator,
+    Operator,
+    State,
+)
+from shadowsim.simulators import (
+    QutipSimulator,
+    SplitJMatrixSimulator,
+    cavity_population,
+    population_one,
+)
+from shadowsim.utils import (
+    I,
+    one_state_two_qubits,
+    three_state_two_qubits,
+    tensor,
+    two_state_two_qubits,
+    zero_state_two_qubits,
+)
+
 # Define system parameters
 omega_c = 245000
 omega_e = 245000
@@ -143,7 +184,7 @@ splitjmatrix_simulator = SplitJMatrixSimulator(
     301,
     40,
     measurement_groups=[[1, 2], 3],
-    reducers=[_cavity_population, _population_one],
+    reducers=[cavity_population, population_one],
 )
 ```
 

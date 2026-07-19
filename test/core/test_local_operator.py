@@ -1,8 +1,8 @@
 import numpy as np
 import pytest
 
-from src.core.local_operator import LocalOperator
-from src.core.operator import Operator
+from shadowsim.core import LocalOperator
+from shadowsim.core import Operator
 
 
 def test_local_operator_requires_square_matrix():

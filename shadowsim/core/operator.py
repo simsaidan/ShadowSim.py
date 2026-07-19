@@ -1,10 +1,10 @@
 import numpy as np
 
-from src.utils.hermitian import hermitian
-from src.utils.indefinite import indefinite
-from src.utils.negative_semidefinite import negative_semidefinite
-from src.utils.positive_semidefinite import positive_semidefinite
-from src.utils.unitary import unitary
+from shadowsim.utils.hermitian import hermitian
+from shadowsim.utils.indefinite import indefinite
+from shadowsim.utils.negative_semidefinite import negative_semidefinite
+from shadowsim.utils.positive_semidefinite import positive_semidefinite
+from shadowsim.utils.unitary import unitary
 
 
 class Operator:
@@ -66,13 +66,13 @@ class Operator:
 
     def to_operator_set(self):
         """Returns an OperatorSet containing the operator."""
-        from src.core.operator_set import OperatorSet
+        from shadowsim.core.operator_set import OperatorSet
 
         return OperatorSet([self])
 
     def to_local_operator(self, sites: list[int], local_dim: int = 2):
         """Returns a LocalOperator representing the operator acting on the given sites."""
-        from src.core.local_operator import LocalOperator
+        from shadowsim.core.local_operator import LocalOperator
 
         return LocalOperator(self.matrix, sites, local_dim)
 
