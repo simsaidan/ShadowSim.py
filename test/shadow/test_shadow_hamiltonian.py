@@ -1,9 +1,9 @@
 import numpy as np
 
-from src.core.hamiltonian import Hamiltonian
-from src.core.operator import Operator
-from src.core.operator_set import OperatorSet
-from src.shadow.shadow_hamiltonian import ShadowHamiltonian
+from shadowsim.core import Hamiltonian
+from shadowsim.core import Operator
+from shadowsim.core import OperatorSet
+from shadowsim.shadow import ShadowHamiltonian
 
 
 X = np.array([[0, 1], [1, 0]], dtype=np.complex128)

@@ -1,10 +1,10 @@
-"""Tests for src.core.operator_set."""
+"""Tests for shadowsim.core.operator_set."""
 
 import numpy as np
 import pytest
 
-from src.core.operator import Operator
-from src.core.operator_set import OperatorSet
+from shadowsim.core import Operator
+from shadowsim.core import OperatorSet
 
 
 def test_operator_set_init_and_basic_protocols():

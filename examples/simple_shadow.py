@@ -1,22 +1,10 @@
 from __future__ import annotations
 
-import os
-import sys
-
-ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
-if ROOT not in sys.path:
-    sys.path.insert(0, ROOT)
-
 import numpy as np
 
-from src.core.hamiltonian import Hamiltonian
-from src.core.operator import Operator
-from src.core.operator_set import OperatorSet
-from src.core.pauli_string import PauliString
-from src.simulators.qutip_simulator import QutipSimulator
-from src.core.state import State
-from src.shadow.shadow_hamiltonian import ShadowHamiltonian
-from src.shadow.shadow_state import ShadowState
+from shadowsim.core import Hamiltonian, Operator, OperatorSet, PauliString, State
+from shadowsim.shadow import ShadowHamiltonian, ShadowState
+from shadowsim.simulators import QutipSimulator
 
 
 def pauli_word(label: str):

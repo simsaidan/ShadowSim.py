@@ -1,9 +1,9 @@
-"""Tests for src.core.pauli."""
+"""Tests for shadowsim.core.pauli."""
 
 import numpy as np
 import pytest
 
-from src.core.pauli import Pauli
+from shadowsim.core import Pauli
 
 
 def test_pauli_normalizes_and_exposes_label():

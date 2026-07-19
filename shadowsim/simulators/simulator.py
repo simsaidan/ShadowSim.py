@@ -6,9 +6,9 @@ from pathlib import Path
 import matplotlib.pyplot as plt
 import numpy as np
 
-from src.core.hamiltonian import Hamiltonian
-from src.core.operator import Operator
-from src.core.state import State
+from shadowsim.core.hamiltonian import Hamiltonian
+from shadowsim.core.operator import Operator
+from shadowsim.core.state import State
 
 
 class Simulator:

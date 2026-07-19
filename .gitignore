@@ -11,6 +11,8 @@ site/
 # Python
 __pycache__/
 *.py[cod]
+build/
+*.egg-info/
 .coverage
 coverage.xml
 coverage_html_report/

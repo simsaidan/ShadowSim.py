@@ -3,12 +3,12 @@ from typing import Any, cast
 import numpy as np
 from qutip import Qobj, mesolve
 
-from src.core.combined_hamiltonian_matrix import combined_hamiltonian_matrix
-from src.core.hamiltonian import Hamiltonian
-from src.core.operator import Operator
-from src.core.operator_set import OperatorSet
-from src.core.state import State
-from src.simulators.simulator import Simulator
+from shadowsim.core.combined_hamiltonian_matrix import combined_hamiltonian_matrix
+from shadowsim.core.hamiltonian import Hamiltonian
+from shadowsim.core.operator import Operator
+from shadowsim.core.operator_set import OperatorSet
+from shadowsim.core.state import State
+from shadowsim.simulators.simulator import Simulator
 
 
 class QutipSimulator(Simulator):

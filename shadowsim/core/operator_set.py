@@ -1,4 +1,4 @@
-from src.core.operator import Operator
+from shadowsim.core.operator import Operator
 
 
 class OperatorSet:

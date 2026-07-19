@@ -1,6 +1,6 @@
 import numpy as np
 
-from src.utils.unitary import unitary
+from shadowsim.utils.unitary import unitary
 
 
 _X = np.array([[0.0, 1.0], [1.0, 0.0]], dtype=np.complex128)

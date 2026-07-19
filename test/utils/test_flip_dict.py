@@ -1,7 +1,7 @@
 import numpy as np
 import pytest
 
-from src.utils.flip_dict import flip_dict
+from shadowsim.utils.flip_dict import flip_dict
 
 
 @pytest.mark.parametrize(

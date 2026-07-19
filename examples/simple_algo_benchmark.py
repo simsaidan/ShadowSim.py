@@ -1,35 +1,29 @@
 from __future__ import annotations
 
-import os
-import sys
-
 import numpy as np
 
-ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
-if ROOT not in sys.path:
-    sys.path.insert(0, ROOT)
-
-from src.utils.constants import (
-    zero_state_two_qubits,
-    one_state_two_qubits,
-    two_state_two_qubits,
-    three_state_two_qubits,
-    I,
+from shadowsim.benchmarking import Benchmark
+from shadowsim.core import (
+    Hamiltonian,
+    LocalHamiltonian,
+    LocalOperator,
+    Operator,
+    State,
 )
-from src.utils.tensor import tensor
-
-from src.benchmarking.benchmark import Benchmark
-from src.core.hamiltonian import Hamiltonian
-from src.core.local_hamiltonian import LocalHamiltonian
-from src.simulators.qutip_simulator import QutipSimulator
-from src.simulators.splitjmatrix_simulator import (
+from shadowsim.simulators import (
+    QutipSimulator,
     SplitJMatrixSimulator,
-    _cavity_population,
-    _population_one,
+    cavity_population,
+    population_one,
 )
-from src.core.local_operator import LocalOperator
-from src.core.operator import Operator
-from src.core.state import State
+from shadowsim.utils import (
+    I,
+    one_state_two_qubits,
+    three_state_two_qubits,
+    tensor,
+    two_state_two_qubits,
+    zero_state_two_qubits,
+)
 
 # Define system parameters
 omega_c = 245000
@@ -97,7 +91,7 @@ splitjmatrix_simulator = SplitJMatrixSimulator(
     301,
     40,
     measurement_groups=[[1, 2], 3],
-    reducers=[_cavity_population, _population_one],
+    reducers=[cavity_population, population_one],
 )
 
 # Run benchmark

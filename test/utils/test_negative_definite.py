@@ -1,6 +1,6 @@
 import numpy as np
 
-from src.utils.negative_definite import negative_definite
+from shadowsim.utils.negative_definite import negative_definite
 
 
 def test_negative_definite_true_cases():

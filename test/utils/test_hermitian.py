@@ -1,6 +1,6 @@
 import numpy as np
 
-from src.utils.hermitian import hermitian
+from shadowsim.utils.hermitian import hermitian
 
 
 _X = np.array([[0.0, 1.0], [1.0, 0.0]], dtype=np.complex128)

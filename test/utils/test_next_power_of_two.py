@@ -1,6 +1,6 @@
 import pytest
 
-from src.utils.next_power_of_two import next_power_of_two
+from shadowsim.utils.next_power_of_two import next_power_of_two
 
 
 @pytest.mark.parametrize(

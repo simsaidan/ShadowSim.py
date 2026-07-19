@@ -1,9 +1,10 @@
-"""Tests for src.core.state."""
+"""Tests for shadowsim.core.state."""
 
 import numpy as np
 import pytest
 
-from src.core.state import State, _as_valid_state_vector
+from shadowsim.core import State
+from shadowsim.core.state import _as_valid_state_vector
 
 
 def test_state_init_stores_vector_and_metadata():

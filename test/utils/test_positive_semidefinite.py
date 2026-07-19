@@ -1,6 +1,6 @@
 import numpy as np
 
-from src.utils.positive_semidefinite import positive_semidefinite
+from shadowsim.utils.positive_semidefinite import positive_semidefinite
 
 
 def test_positive_semidefinite_true_cases():

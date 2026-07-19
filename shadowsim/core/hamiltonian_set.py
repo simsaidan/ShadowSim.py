@@ -1,4 +1,4 @@
-from src.core.hamiltonian import Hamiltonian
+from shadowsim.core.hamiltonian import Hamiltonian
 
 
 class HamiltonianSet:

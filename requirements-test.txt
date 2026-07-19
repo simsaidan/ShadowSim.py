@@ -1,10 +1,4 @@
-# Runtime deps (align with README) + test tooling
-numpy
-scipy
-matplotlib
-qutip
-qiskit
-qiskit-aer
+# Test tooling; runtime dependencies are declared in pyproject.toml.
 pytest
 pytest-cov
 coverage
