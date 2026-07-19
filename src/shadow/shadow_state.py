@@ -1,7 +1,7 @@
 import numpy as np
 from src.core.operator_set import OperatorSet
 from src.core.state import State
-from src.core.utils import next_power_of_two
+from src.utils.next_power_of_two import next_power_of_two
 
 
 class ShadowState(State):

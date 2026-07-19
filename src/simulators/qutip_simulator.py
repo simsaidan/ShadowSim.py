@@ -3,8 +3,10 @@ from typing import Any, cast
 import numpy as np
 from qutip import Qobj, mesolve
 
-from src.core.hamiltonian import Hamiltonian, combined_hamiltonian_matrix
-from src.core.operator_set import Operator, OperatorSet
+from src.core.combined_hamiltonian_matrix import combined_hamiltonian_matrix
+from src.core.hamiltonian import Hamiltonian
+from src.core.operator import Operator
+from src.core.operator_set import OperatorSet
 from src.core.state import State
 from src.simulators.simulator import Simulator
 

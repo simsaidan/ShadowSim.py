@@ -9,25 +9,27 @@ ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 if ROOT not in sys.path:
     sys.path.insert(0, ROOT)
 
-from src.core.utils import (
+from src.utils.constants import (
     zero_state_two_qubits,
     one_state_two_qubits,
     two_state_two_qubits,
     three_state_two_qubits,
-    tensor,
     I,
 )
+from src.utils.tensor import tensor
 
 from src.benchmarking.benchmark import Benchmark
-from src.core.hamiltonian import LocalHamiltonian, Hamiltonian
+from src.core.hamiltonian import Hamiltonian
+from src.core.local_hamiltonian import LocalHamiltonian
 from src.simulators.qutip_simulator import QutipSimulator
 from src.simulators.splitjmatrix_simulator import (
     SplitJMatrixSimulator,
     _cavity_population,
     _population_one,
 )
+from src.core.local_operator import LocalOperator
+from src.core.operator import Operator
 from src.core.state import State
-from src.core.operator_set import LocalOperator, Operator
 
 # Define system parameters
 omega_c = 245000

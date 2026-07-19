@@ -7,8 +7,8 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 from src.core.hamiltonian import Hamiltonian
+from src.core.operator import Operator
 from src.core.state import State
-from src.core.operator_set import Operator
 
 
 class Simulator:
