@@ -14,22 +14,15 @@ ShadowSim.py is an open-source Python library with two main purposes:
 
 ### Development installation
 
-Fork and clone the repository, then enter the project directory:
+Install [uv](https://docs.astral.sh/uv/), then fork and clone the repository:
 ```bash
 git clone https://github.com/<your-github-username>/ShadowSim.py.git
 cd ShadowSim.py
 ```
 
-Create and activate a virtual environment:
+Sync the project (creates `.venv` and installs runtime plus test tools from `uv.lock`):
 ```bash
-python3 -m venv .venv
-source .venv/bin/activate
-```
-
-Install ShadowSim and its runtime dependencies in editable mode:
-```bash
-python -m pip install --upgrade pip
-python -m pip install -e .
+uv sync
 ```
 
 ### Install directly from GitHub
@@ -43,8 +36,8 @@ The package can then be imported as `shadowsim`.
 ## Tests and coverage
 
 ```bash
-python -m pip install -e ".[test]"
-python -m pytest --cov=shadowsim --cov-config=.coveragerc --cov-report=term-missing
+uv sync
+uv run pytest --cov=shadowsim --cov-config=.coveragerc --cov-report=term-missing
 ```
 
 Pushes to `main` run the same in GitHub Actions and upload coverage to [Codecov](https://app.codecov.io/gh/simsaidan/ShadowSim.py) (enable the [Codecov GitHub app](https://github.com/apps/codecov) for this repo the first time so uploads succeed).
@@ -73,9 +66,9 @@ The following simulators are supported by the package:
 ### Example 1: Exploring a simple shadow simulation example
 
 The complete example is in [`examples/simple_shadow.py`](examples/simple_shadow.py)
-and can be run after installing the package:
+and can be run after `uv sync`:
 ```bash
-python examples/simple_shadow.py
+uv run python examples/simple_shadow.py
 ```
 
 ### Example 2: Comparing a quantum algorithm against a classical solver
