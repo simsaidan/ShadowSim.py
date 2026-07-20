@@ -28,8 +28,8 @@ hide:
 ## Local preview
 
 ```bash
-pip install -r requirements-docs.txt
-mkdocs serve
+uv sync --group docs
+uv run mkdocs serve
 ```
 
 Open the URL printed in the terminal (usually `http://127.0.0.1:8000`).

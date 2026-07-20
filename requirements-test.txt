@@ -1,4 +1,0 @@
-# Test tooling; runtime dependencies are declared in pyproject.toml.
-pytest
-pytest-cov
-coverage
