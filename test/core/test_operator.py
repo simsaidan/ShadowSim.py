@@ -25,6 +25,20 @@ def test_operator_sign_flags_for_indefinite_matrix():
     assert bool(op.is_indefinite)
 
 
+def test_operator_flags_are_non_callable_attributes():
+    op = Operator(np.eye(2, dtype=np.complex128))
+    flags = (
+        op.is_hermitian,
+        op.is_unitary,
+        op.is_positive_semidefinite,
+        op.is_negative_semidefinite,
+        op.is_indefinite,
+    )
+    for flag in flags:
+        assert isinstance(flag, (bool, np.bool_))
+        assert not callable(flag)
+
+
 def test_operator_equality_and_inequality():
     a = Operator(np.eye(2))
     b = Operator(np.eye(2))
