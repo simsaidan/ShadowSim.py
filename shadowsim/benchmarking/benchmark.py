@@ -1,3 +1,5 @@
+"""Compare results from two simulators."""
+
 from __future__ import annotations
 
 from datetime import datetime
@@ -10,20 +12,26 @@ from shadowsim.simulators.simulator import Simulator
 
 
 class Benchmark:
+    """Compare expectation traces from two simulators on the same time grid."""
+
     def __init__(self, simulator_a: Simulator, simulator_b: Simulator):
+        """Initialize a Benchmark for two simulators on the same time grid."""
         if not np.array_equal(simulator_a.tlist, simulator_b.tlist):
             raise ValueError("simulators must use the same time grid (tlist)")
         self.simulator_a = simulator_a
         self.simulator_b = simulator_b
 
     def get_tlist(self) -> np.ndarray:
+        """Return the shared simulation time grid."""
         return self.simulator_a.tlist
 
     def run(self):
+        """Run both simulators."""
         self.simulator_a.run()
         self.simulator_b.run()
 
     def get_results(self, index: int = None):
+        """Return matching result traces from both simulators."""
         return self.simulator_a.get_results(index), self.simulator_b.get_results(index)
 
     def save_result_plot(
@@ -36,15 +44,10 @@ class Benchmark:
         title_b: str | None = None,
         title: str | None = None,
     ) -> tuple[Path, Path, Path]:
-        pa = self.simulator_a.save_result_plot(
-            indices=indices, dpi=dpi, labels=labels, title=title_a
-        )
-        pb = self.simulator_b.save_result_plot(
-            indices=indices, dpi=dpi, labels=labels, title=title_b
-        )
-        pdiff = self._save_abs_diff_plot(
-            indices=indices, dpi=dpi, title=title, labels=labels
-        )
+        """Save plots for each simulator and their absolute difference."""
+        pa = self.simulator_a.save_result_plot(indices=indices, dpi=dpi, labels=labels, title=title_a)
+        pb = self.simulator_b.save_result_plot(indices=indices, dpi=dpi, labels=labels, title=title_b)
+        pdiff = self._save_abs_diff_plot(indices=indices, dpi=dpi, title=title, labels=labels)
         return pa, pb, pdiff
 
     def _save_abs_diff_plot(
@@ -58,9 +61,7 @@ class Benchmark:
         ra = self.simulator_a.results
         rb = self.simulator_b.results
         if ra is None or rb is None:
-            raise ValueError(
-                "Results are not available. Call run() (or simulate both) before save()."
-            )
+            raise ValueError("Results are not available. Call run() (or simulate both) before save().")
         if len(ra) != len(rb):
             raise ValueError(f"Mismatched observable counts: {len(ra)} vs {len(rb)}")
         if indices is None:
@@ -73,11 +74,7 @@ class Benchmark:
         try:
             t = self.simulator_a.tlist
             for plot_i, index in enumerate(indices):
-                curve_label = (
-                    labels[plot_i]
-                    if labels is not None and plot_i < len(labels)
-                    else str(index)
-                )
+                curve_label = labels[plot_i] if labels is not None and plot_i < len(labels) else str(index)
                 diff = np.abs(np.asarray(ra[index]) - np.asarray(rb[index]))
                 ax.plot(t, diff, label=curve_label)
             ax.set_xlabel("Time")
@@ -91,6 +88,7 @@ class Benchmark:
         return path
 
     def __str__(self):
+        """Return a string representation of the Benchmark."""
         return (
             "Benchmark("
             f"simulator_a={self.simulator_a.__class__.__name__}, "
@@ -99,9 +97,5 @@ class Benchmark:
         )
 
     def __repr__(self):
-        return (
-            "Benchmark("
-            f"simulator_a={self.simulator_a!r}, "
-            f"simulator_b={self.simulator_b!r}"
-            ")"
-        )
+        """Return a string representation of the Benchmark."""
+        return f"Benchmark(simulator_a={self.simulator_a!r}, simulator_b={self.simulator_b!r})"

@@ -1,11 +1,9 @@
 import numpy as np
 import pytest
 
-from shadowsim.core import Operator
-from shadowsim.core import OperatorSet
-from shadowsim.core import State
+from shadowsim.core import Operator, OperatorSet, State
 from shadowsim.shadow import ShadowState
-
+from shadowsim.shadow import shadow_state as module
 
 X = np.array([[0, 1], [1, 0]], dtype=np.complex128)
 Y = np.array([[0, -1j], [1j, 0]], dtype=np.complex128)
@@ -88,8 +86,6 @@ def test_shadow_state_str_and_repr():
 
 def test_shadow_state_skips_normalization_when_a_is_zero(monkeypatch):
     """Cover A==0 branch; parent State rejects unnormalized zeros, so stub it."""
-    from shadowsim.shadow import shadow_state as module
-
     captured = {}
 
     def fake_init(self, state, num_qubits, local_dim=2):

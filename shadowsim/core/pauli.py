@@ -1,7 +1,8 @@
+"""Single-qubit Pauli operators."""
+
 from __future__ import annotations
 
 import numpy as np
-
 
 _I = np.eye(2, dtype=np.complex128)
 _X = np.array([[0, 1], [1, 0]], dtype=np.complex128)
@@ -30,7 +31,7 @@ def _multiply_labels(a: str, b: str) -> tuple[complex, str]:
 
 
 def _single_qubit_anticommutes(a: str, b: str) -> bool:
-    return a != b and a != "I" and b != "I"
+    return a != b and "I" not in (a, b)
 
 
 class Pauli:
@@ -39,43 +40,49 @@ class Pauli:
     __slots__ = ("_label",)
 
     def __init__(self, label: str):
+        """Initialize a Pauli from a label in ``{I, X, Y, Z}``."""
         label = label.upper()
         if label not in _PAULI_MATRICES:
-            raise ValueError(
-                f"invalid Pauli label {label!r}; expected one of I, X, Y, Z"
-            )
+            raise ValueError(f"invalid Pauli label {label!r}; expected one of I, X, Y, Z")
         self._label = label
 
     @property
     def label(self) -> str:
+        """Return the Pauli label in ``{I, X, Y, Z}``."""
         return self._label
 
     def matrix(self) -> np.ndarray:
+        """Return a copy of the Pauli matrix."""
         return _PAULI_MATRICES[self._label].copy()
 
     def __str__(self) -> str:
+        """Return a string representation of the Pauli."""
         return self._label
 
     def __repr__(self) -> str:
+        """Return a string representation of the Pauli."""
         return f"Pauli({self._label!r})"
 
     def __eq__(self, other: object) -> bool:
+        """Return whether this Pauli equals another."""
         if not isinstance(other, Pauli):
             return NotImplemented
         return self._label == other._label
 
+    def __hash__(self) -> int:
+        """Return a hash based on the Pauli label."""
+        return hash(self._label)
+
     def multiply(self, other: Pauli) -> tuple[complex, Pauli]:
-        """
-        Multiply in the Pauli group: ``self * other = phase * result``,
-        with ``phase`` in ``{±1, ±i}``.
+        """Multiply in the Pauli group: ``self * other = phase * result``.
+
+        ``phase`` is in ``{±1, ±i}``.
         """
         phase, label = _multiply_labels(self._label, other._label)
         return phase, Pauli(label)
 
     def commutator(self, other: Pauli) -> tuple[complex | None, Pauli | None]:
-        """
-        Return ``[self, other] = self @ other - other @ self`` as ``phase * P``,
-        or ``(None, None)`` when the commutator is zero.
+        """Return ``[self, other]`` as ``phase * P``, or ``(None, None)`` if zero.
 
         For single-qubit Paulis this is either ``0`` or ``2i`` times the third Pauli.
         """

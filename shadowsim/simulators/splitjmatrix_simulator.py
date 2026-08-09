@@ -1,23 +1,24 @@
-from shadowsim.core.hamiltonian import Hamiltonian
-from shadowsim.core.local_operator import LocalOperator
+"""Split JMatrix quantum-inspired simulator."""
+
+from typing import Callable, List
+
+import numpy as np
+import scipy
+from qiskit import QuantumCircuit, QuantumRegister, transpile
+from qiskit.circuit.library import UnitaryGate
+from qiskit_aer import AerSimulator
+
 from shadowsim.core.local_hamiltonian import LocalHamiltonian
-from shadowsim.core.operator import Operator
+from shadowsim.core.local_operator import LocalOperator
 from shadowsim.core.state import State
 from shadowsim.simulators.simulator import Simulator
 from shadowsim.utils.flip_dict import flip_dict
-from qiskit import QuantumCircuit, transpile, QuantumRegister
-from qiskit.circuit.library import UnitaryGate
-from qiskit_aer import AerSimulator
-import scipy
-import numpy as np
-from typing import Callable, List
 
 
 def _trace_qubits(
     counts: dict[str, int], qubit_indices: int | List[int] | List[int | List[int]]
 ) -> dict[str, int] | list[dict[str, int]]:
-    """
-    Marginalize measurement counts over selected qubits.
+    """Marginalize measurement counts over selected qubits.
 
     Supports:
       - int:          `2`
@@ -50,8 +51,7 @@ def _trace_qubits(
 
 
 def _make_H_gate(H, t, N, tdepth=1):
-    """
-    Creates the unitary gates for Split JMatrix method.
+    """Create the unitary gates for Split JMatrix method.
 
     Parameter argl: the indicator for which gate to make.
     Precondition: argl is either 'j' or 'H'
@@ -72,19 +72,14 @@ def _make_H_gate(H, t, N, tdepth=1):
     Parameter tdepth: the Trotterization depth.
     Precondition: tdepth is a positive int.
     """
-
     return UnitaryGate(scipy.linalg.expm(-1j * H * t / (N * tdepth)))
 
 
 def _make_J_gate(L, t, N):
-    """
-    Creates the J gate for Split JMatrix method.
-    """
+    """Create the J gate for Split JMatrix method."""
     L = np.asarray(L)
     size = L.shape[0]
-    gate = np.block(
-        [[np.zeros((size, size)), L.conjugate().T], [L, np.zeros((size, size))]]
-    )
+    gate = np.block([[np.zeros((size, size)), L.conjugate().T], [L, np.zeros((size, size))]])
     return UnitaryGate(scipy.linalg.expm(-1j * gate * np.sqrt(t / N)))
 
 
@@ -142,8 +137,7 @@ def population_one(counts: dict[str, int]) -> float:
 
 
 def cavity_population(counts: dict[str, int]) -> float:
-    """
-    Cavity population reducer for two-bit cavity readout.
+    """Cavity population reducer for two-bit cavity readout.
 
     Uses notebook convention:
       population = (3*N("11") + 2*N("10") + 1*N("01")) / shots
@@ -151,12 +145,12 @@ def cavity_population(counts: dict[str, int]) -> float:
     total = sum(counts.values())
     if total == 0:
         return 0.0
-    return (
-        3 * counts.get("11", 0) + 2 * counts.get("10", 0) + counts.get("01", 0)
-    ) / total
+    return (3 * counts.get("11", 0) + 2 * counts.get("10", 0) + counts.get("01", 0)) / total
 
 
 class SplitJMatrixSimulator(Simulator):
+    """Simulate open-system dynamics with the Split JMatrix method."""
+
     def __init__(
         self,
         hamiltonians: List[LocalHamiltonian],
@@ -172,6 +166,7 @@ class SplitJMatrixSimulator(Simulator):
         verbose: bool = False,
         shots: int = 10000,
     ):
+        """Initialize a Split JMatrix simulator for the given model."""
         super().__init__(
             hamiltonians,
             lindblads,
@@ -200,12 +195,11 @@ class SplitJMatrixSimulator(Simulator):
         if reducers is None:
             reducers = [population_one for _ in self.measurement_groups]
         if len(reducers) != len(self.measurement_groups):
-            raise ValueError(
-                "reducers and measurement_groups must have the same length"
-            )
+            raise ValueError("reducers and measurement_groups must have the same length")
         self.reducers = reducers
 
     def simulate(self):
+        """Evolve the system with Split JMatrix and store reduced traces."""
         results = [[] for _ in range(len(self.measurement_groups))]
         for t in self.tlist:
             if self.verbose:
@@ -231,6 +225,7 @@ class SplitJMatrixSimulator(Simulator):
         return results
 
     def __str__(self):
+        """Return a string representation of the SplitJMatrixSimulator."""
         return (
             "SplitJMatrixSimulator("
             f"num_qubits={self.num_qubits}, "
@@ -242,6 +237,7 @@ class SplitJMatrixSimulator(Simulator):
         )
 
     def __repr__(self):
+        """Return a string representation of the SplitJMatrixSimulator."""
         return (
             "SplitJMatrixSimulator("
             f"hamiltonians={self.hamiltonians!r}, "

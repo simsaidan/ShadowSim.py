@@ -42,6 +42,18 @@ uv run pytest --cov=shadowsim --cov-config=.coveragerc --cov-report=term-missing
 
 Pushes to `main` run the same in GitHub Actions and upload coverage to [Codecov](https://app.codecov.io/gh/simsaidan/ShadowSim.py) (enable the [Codecov GitHub app](https://github.com/apps/codecov) for this repo the first time so uploads succeed).
 
+## Linting
+
+Install the lint tools, then run [Ruff](https://docs.astral.sh/ruff/) check and format (CI runs the same checks):
+
+```bash
+uv sync --group lint
+uv run --group lint ruff check .
+uv run --group lint ruff format .
+# CI equivalent of the format gate:
+uv run --group lint ruff format --check .
+```
+
 ## Usage
 
 Public objects are imported from their domain subpackages:
@@ -221,7 +233,7 @@ Contributions are welcome and appreciated.
 git checkout -b feature/your-change
 ```
 3. Make your changes and keep commits focused.
-4. Run tests and any relevant checks locally.
+4. Run tests and Ruff locally (`uv run pytest` and the linting commands above).
 5. Open a pull request with a clear description of what changed and why.
 
 For larger changes, please open an issue first to discuss scope and design.

@@ -4,10 +4,8 @@ import numpy as np
 import pytest
 
 from shadowsim.benchmarking import Benchmark
-from shadowsim.core import Hamiltonian
-from shadowsim.core import State
+from shadowsim.core import Hamiltonian, State
 from shadowsim.simulators.simulator import Simulator
-
 
 Z = np.array([[1, 0], [0, -1]], dtype=np.complex128)
 

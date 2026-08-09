@@ -1,9 +1,7 @@
 import numpy as np
 import pytest
 
-from shadowsim.core import LocalOperator
-from shadowsim.core import Operator
-from shadowsim.core import OperatorSet
+from shadowsim.core import LocalOperator, Operator, OperatorSet
 
 
 def test_operator_init_sets_basic_fields_and_flags():

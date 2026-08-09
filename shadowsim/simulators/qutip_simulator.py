@@ -1,6 +1,7 @@
+"""QuTiP-backed quantum simulators."""
+
 from typing import Any, cast
 
-import numpy as np
 from qutip import Qobj, mesolve
 
 from shadowsim.core.combined_hamiltonian_matrix import combined_hamiltonian_matrix
@@ -12,6 +13,8 @@ from shadowsim.simulators.simulator import Simulator
 
 
 class QutipSimulator(Simulator):
+    """Simulate open or closed quantum dynamics with QuTiP."""
+
     def __init__(
         self,
         hamiltonians: list[Hamiltonian],
@@ -22,6 +25,7 @@ class QutipSimulator(Simulator):
         total_time: float,
         time_steps: int,
     ):
+        """Initialize a QuTiP simulator for the given model."""
         super().__init__(
             hamiltonians,
             lindblads,
@@ -34,6 +38,7 @@ class QutipSimulator(Simulator):
         self.observables = observables
 
     def simulate(self):
+        """Evolve the system with QuTiP and store expectation traces."""
         tlist = self.tlist
         H_q = Qobj(combined_hamiltonian_matrix(self.hamiltonians, self.num_qubits))
         psi0 = Qobj(self.initial_state.state)
@@ -56,6 +61,7 @@ class QutipSimulator(Simulator):
         return result
 
     def __str__(self):
+        """Return a string representation of the QutipSimulator."""
         return (
             "QutipSimulator("
             f"num_qubits={self.num_qubits}, "
@@ -65,6 +71,7 @@ class QutipSimulator(Simulator):
         )
 
     def __repr__(self):
+        """Return a string representation of the QutipSimulator."""
         return (
             "QutipSimulator("
             f"hamiltonians={self.hamiltonians!r}, "

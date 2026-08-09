@@ -4,6 +4,7 @@ import numpy as np
 import pytest
 
 from shadowsim.core import Pauli
+from shadowsim.core import pauli as pauli_module
 
 
 def test_pauli_normalizes_and_exposes_label():
@@ -45,8 +46,6 @@ def test_pauli_eq_returns_notimplemented_for_other_types():
 
 
 def test_pauli_multiply_labels_unreachable_raises(monkeypatch):
-    from shadowsim.core import pauli as pauli_module
-
     monkeypatch.setattr(
         pauli_module,
         "_PAULI_MATRICES",
@@ -59,4 +58,3 @@ def test_pauli_multiply_labels_unreachable_raises(monkeypatch):
     )
     with pytest.raises(RuntimeError, match="unreachable"):
         pauli_module._multiply_labels("X", "Y")
-

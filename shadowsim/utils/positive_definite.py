@@ -1,3 +1,5 @@
+"""Positive-definite matrix checks."""
+
 import numpy as np
 
 from shadowsim.utils._real_parts_of_eigenvalues import _real_parts_of_eigenvalues

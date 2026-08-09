@@ -2,9 +2,7 @@ import numpy as np
 import pytest
 
 import shadowsim.simulators.splitjmatrix_simulator as splitjmatrix_module
-from shadowsim.core import LocalHamiltonian
-from shadowsim.core import Operator
-from shadowsim.core import State
+from shadowsim.core import LocalHamiltonian, Operator, State
 from shadowsim.simulators import SplitJMatrixSimulator
 from shadowsim.simulators.splitjmatrix_simulator import (
     _split_jmatrix,
@@ -12,7 +10,6 @@ from shadowsim.simulators.splitjmatrix_simulator import (
     cavity_population,
     population_one,
 )
-
 
 Z = np.array([[1, 0], [0, -1]], dtype=np.complex128)
 
@@ -149,9 +146,7 @@ def test_splitjmatrix_simulator_rejects_non_local_lindblad():
 
 
 def test_splitjmatrix_simulator_rejects_mismatched_reducers():
-    with pytest.raises(
-        ValueError, match="reducers and measurement_groups must have the same length"
-    ):
+    with pytest.raises(ValueError, match="reducers and measurement_groups must have the same length"):
         _simulator(measurement_groups=[0], reducers=[population_one, population_one])
 
 

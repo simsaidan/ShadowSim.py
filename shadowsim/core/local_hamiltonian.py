@@ -1,3 +1,5 @@
+"""Local Hamiltonian terms on contiguous sites."""
+
 import numpy as np
 
 from shadowsim.core.hamiltonian import Hamiltonian
@@ -7,8 +9,7 @@ from shadowsim.utils.tensor import tensor
 
 
 class LocalHamiltonian(LocalOperator, Hamiltonian):
-    """
-    Local Hamiltonian acting non-trivially on the provided sites.
+    """Local Hamiltonian acting non-trivially on the provided sites.
 
     ``sites`` must be distinct consecutive integers; see `LocalOperator`.
     """
@@ -19,27 +20,21 @@ class LocalHamiltonian(LocalOperator, Hamiltonian):
         sites: list[int],
         local_dim: int = 2,
     ):
+        """Initialize a LocalHamiltonian on contiguous sites."""
         assert isinstance(matrix, np.ndarray), "matrix must be a numpy array"
-        assert (
-            matrix.ndim == 2 and matrix.shape[0] == matrix.shape[1]
-        ), "matrix must be a square 2D array"
+        assert matrix.ndim == 2 and matrix.shape[0] == matrix.shape[1], "matrix must be a square 2D array"
         assert hermitian(matrix), "matrix must be Hermitian"
         assert isinstance(sites, list), "sites must be a list"
-        assert all(
-            isinstance(site, int) for site in sites
-        ), "all sites must be integers"
+        assert all(isinstance(site, int) for site in sites), "all sites must be integers"
         assert len(set(sites)) == len(sites), "all sites must be unique"
         assert len(sites) >= 1, "there must be at least one site"
-        assert max(sites) - min(sites) + 1 == len(
-            sites
-        ), "sites must be a contiguous range of integers"
+        assert max(sites) - min(sites) + 1 == len(sites), "sites must be a contiguous range of integers"
         assert isinstance(local_dim, int), "local_dim must be an integer"
         assert local_dim > 0, "local_dim must be a positive integer"
         super().__init__(matrix, sites, local_dim)
 
     def to_full_hamiltonian(self, total_sites: int):
-        """Returns a FullHamiltonian representing the local Hamiltonian acting on
-        the given sites.
+        """Return a FullHamiltonian for this local term on the given sites.
 
         Parameter total_sites: The total number of sites in the full system.
         Precondition: total_sites is a positive integer.
@@ -50,9 +45,7 @@ class LocalHamiltonian(LocalOperator, Hamiltonian):
         lo, hi = min(self.sites), max(self.sites)
         assert lo >= 0, "site indices must be non-negative"
         if hi >= total_sites:
-            raise ValueError(
-                f"total_sites={total_sites} is too small for local sites {self.sites}"
-            )
+            raise ValueError(f"total_sites={total_sites} is too small for local sites {self.sites}")
 
         eye = np.eye(self.local_dim, dtype=self.matrix.dtype)
         left_id = [eye] * lo
@@ -61,33 +54,21 @@ class LocalHamiltonian(LocalOperator, Hamiltonian):
         return Hamiltonian(full_matrix)
 
     def get_sites(self):
-        """Returns the sites on which the local Hamiltonian acts non-trivially."""
+        """Return the sites on which the local Hamiltonian acts non-trivially."""
         return self.sites
 
     def get_local_dim(self):
-        """Returns the local dimension of the local Hamiltonian."""
+        """Return the local dimension of the local Hamiltonian."""
         return self.local_dim
 
     def get_matrix(self):
-        """Returns the matrix representation of the local Hamiltonian."""
+        """Return the matrix representation of the local Hamiltonian."""
         return self.matrix
 
     def __str__(self):
-        """Returns a string representation of the LocalHamiltonian."""
-        return (
-            "LocalHamiltonian("
-            f"sites={self.sites}, "
-            f"local_dim={self.local_dim}, "
-            f"shape={self.matrix.shape}"
-            ")"
-        )
+        """Return a string representation of the LocalHamiltonian."""
+        return f"LocalHamiltonian(sites={self.sites}, local_dim={self.local_dim}, shape={self.matrix.shape})"
 
     def __repr__(self):
-        """Returns a string representation of the LocalHamiltonian."""
-        return (
-            "LocalHamiltonian("
-            f"matrix={self.matrix!r}, "
-            f"sites={self.sites!r}, "
-            f"local_dim={self.local_dim}"
-            ")"
-        )
+        """Return a string representation of the LocalHamiltonian."""
+        return f"LocalHamiltonian(matrix={self.matrix!r}, sites={self.sites!r}, local_dim={self.local_dim})"

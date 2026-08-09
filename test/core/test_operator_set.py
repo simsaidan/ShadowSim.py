@@ -3,8 +3,7 @@
 import numpy as np
 import pytest
 
-from shadowsim.core import Operator
-from shadowsim.core import OperatorSet
+from shadowsim.core import Operator, OperatorSet
 
 
 def test_operator_set_init_and_basic_protocols():

@@ -1,13 +1,9 @@
 import numpy as np
 import pytest
 
-from shadowsim.core import Hamiltonian
-from shadowsim.core import LocalHamiltonian
-from shadowsim.core import Operator
-from shadowsim.core import OperatorSet
-from shadowsim.core import PauliString
+import shadowsim.shadow.shadow_hamiltonian as module
+from shadowsim.core import Hamiltonian, LocalHamiltonian, Operator, OperatorSet, PauliString
 from shadowsim.shadow import ShadowHamiltonian
-
 
 X = np.array([[0, 1], [1, 0]], dtype=np.complex128)
 Z = np.array([[1, 0], [0, -1]], dtype=np.complex128)
@@ -151,8 +147,6 @@ def test_shadow_hamiltonian_rejects_non_power_of_two_when_num_qubits_forced():
 
 
 def test_shadow_hamiltonian_rejects_non_square_combined_matrix(monkeypatch):
-    import shadowsim.shadow.shadow_hamiltonian as module
-
     monkeypatch.setattr(
         module,
         "combined_hamiltonian_matrix",

@@ -11,6 +11,19 @@ permissions:
   id-token: write
 
 jobs:
+  code-style:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      # Pin ruff to the version in pyproject so CI formatting matches local usage.
+      - uses: astral-sh/ruff-action@v3
+        with:
+          version: "0.16.0"
+      # Check only (no --fix / no in-place format): style and format violations must fail CI
+      # rather than being silently auto-fixed in the runner and discarded.
+      - run: ruff check
+      - run: ruff format --check
+
   test:
     strategy:
       fail-fast: false

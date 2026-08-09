@@ -1,3 +1,5 @@
+"""Tensor-product helpers."""
+
 import numpy as np
 
 

@@ -1,12 +1,9 @@
 import numpy as np
 import pytest
 
-from shadowsim.core import Hamiltonian
-from shadowsim.core import Operator
-from shadowsim.core import State
+from shadowsim.core import Hamiltonian, Operator, State
 from shadowsim.simulators import QutipSimulator
 from shadowsim.simulators.simulator import Simulator
-
 
 Z = np.diag([1.0, -1.0]).astype(np.complex128)
 
