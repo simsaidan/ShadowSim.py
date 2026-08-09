@@ -97,7 +97,10 @@ def _split_jmatrix(
     num_steps: int,
     trotter_depth: int = 1,
     verbose: bool = False,
+    shots: int = 10000,
 ):
+    if shots <= 0:
+        raise ValueError("shots must be a positive integer")
     Hgates = [_make_H_gate(H_i.matrix, t, num_steps, trotter_depth) for H_i in H]
     Jgates = [_make_J_gate(L_i.matrix, t, num_steps) for L_i in Lindblads]
     ancilla = QuantumRegister(1)
@@ -125,7 +128,7 @@ def _split_jmatrix(
     circ.measure_all()
     backend = AerSimulator()
     compiled = transpile(circ, backend)
-    job = backend.run(compiled, shots=10000)
+    job = backend.run(compiled, shots=shots)
     result = job.result()
     return result.get_counts()
 
@@ -167,6 +170,7 @@ class SplitJMatrixSimulator(Simulator):
         measurement_groups: list[int | list[int]] | None = None,
         reducers: list[Callable[[dict[str, int]], float]] | None = None,
         verbose: bool = False,
+        shots: int = 10000,
     ):
         super().__init__(
             hamiltonians,
@@ -183,9 +187,12 @@ class SplitJMatrixSimulator(Simulator):
                     "SplitJMatrixSimulator `lindblads` must be LocalOperator (with "
                     f"`sites` on the register); got {type(L).__name__}."
                 )
+        if shots <= 0:
+            raise ValueError("shots must be a positive integer")
         self.num_steps = num_steps
         self.trotter_depth = trotter_depth
         self.verbose = verbose
+        self.shots = shots
         if measurement_groups is None:
             measurement_groups = list(range(self.num_qubits))
         self.measurement_groups = measurement_groups
@@ -212,6 +219,7 @@ class SplitJMatrixSimulator(Simulator):
                 self.num_steps,
                 self.trotter_depth,
                 verbose=self.verbose,
+                shots=self.shots,
             )
             counts = flip_dict(counts)
             traced = _trace_qubits(counts, self.measurement_groups)
@@ -228,7 +236,8 @@ class SplitJMatrixSimulator(Simulator):
             f"num_qubits={self.num_qubits}, "
             f"num_steps={self.num_steps}, "
             f"trotter_depth={self.trotter_depth}, "
-            f"time_steps={self.time_steps}"
+            f"time_steps={self.time_steps}, "
+            f"shots={self.shots}"
             ")"
         )
 
@@ -244,6 +253,7 @@ class SplitJMatrixSimulator(Simulator):
             f"num_steps={self.num_steps}, "
             f"trotter_depth={self.trotter_depth}, "
             f"measurement_groups={self.measurement_groups!r}, "
-            f"verbose={self.verbose!r}"
+            f"verbose={self.verbose!r}, "
+            f"shots={self.shots}"
             ")"
         )

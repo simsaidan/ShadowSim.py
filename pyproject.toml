@@ -50,3 +50,8 @@ include = ["shadowsim*"]
 [build-system]
 requires = ["setuptools>=77.0.3"]
 build-backend = "setuptools.build_meta"
+
+[tool.pytest.ini_options]
+markers = [
+    "slow: integration tests that run real quantum simulators (kept on by default in CI)",
+]
