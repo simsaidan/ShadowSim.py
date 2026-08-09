@@ -47,6 +47,12 @@ def test_operator_equality_and_inequality():
     assert a != c
 
 
+def test_operator_str_and_repr():
+    op = Operator(np.eye(2, dtype=np.complex128))
+    assert "Operator(matrix=" in str(op)
+    assert "Operator(matrix=" in repr(op)
+
+
 def test_operator_set_name_updates_name_field():
     op = Operator(np.eye(2))
     op.set_name("X")

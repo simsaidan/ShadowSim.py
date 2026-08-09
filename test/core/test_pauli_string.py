@@ -53,3 +53,8 @@ def test_pauli_string_rejects_length_mismatch():
         short.multiply(long)
     with pytest.raises(ValueError, match="length mismatch"):
         short.commutator(long)
+
+
+def test_pauli_string_eq_returns_notimplemented_for_other_types():
+    assert PauliString.from_string("X").__eq__("X") is NotImplemented
+
