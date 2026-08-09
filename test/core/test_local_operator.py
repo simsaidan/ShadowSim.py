@@ -50,3 +50,24 @@ def test_local_operator_to_full_operator_validates_total_sites():
         local.to_full_operator(0)
     with pytest.raises(ValueError, match="too small"):
         local.to_full_operator(2)
+
+
+def test_local_operator_accessors_and_conversions():
+    local = LocalOperator(np.eye(2), sites=[0], local_dim=2)
+    assert local.get_sites() == [0]
+    assert local.get_local_dim() == 2
+    assert np.allclose(local.get_matrix(), np.eye(2))
+    as_op = local.to_operator()
+    assert isinstance(as_op, Operator)
+    assert as_op == Operator(np.eye(2))
+
+
+def test_local_operator_str_and_repr():
+    local = LocalOperator(np.eye(2), sites=[0], local_dim=2)
+    text = str(local)
+    rep = repr(local)
+    assert "LocalOperator(" in text
+    assert "sites=[0]" in text
+    assert "LocalOperator(" in rep
+    assert "local_dim=2" in rep
+

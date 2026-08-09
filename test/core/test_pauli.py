@@ -38,3 +38,25 @@ def test_pauli_multiply_and_commutator():
 
 def test_pauli_commutator_returns_none_for_commuting_pair():
     assert Pauli("X").commutator(Pauli("X")) == (None, None)
+
+
+def test_pauli_eq_returns_notimplemented_for_other_types():
+    assert Pauli("X").__eq__("X") is NotImplemented
+
+
+def test_pauli_multiply_labels_unreachable_raises(monkeypatch):
+    from shadowsim.core import pauli as pauli_module
+
+    monkeypatch.setattr(
+        pauli_module,
+        "_PAULI_MATRICES",
+        {
+            "I": np.zeros((2, 2), dtype=np.complex128),
+            "X": np.array([[1, 2], [3, 4]], dtype=np.complex128),
+            "Y": np.array([[5, 6], [7, 8]], dtype=np.complex128),
+            "Z": np.array([[9, 0], [0, 1]], dtype=np.complex128),
+        },
+    )
+    with pytest.raises(RuntimeError, match="unreachable"):
+        pauli_module._multiply_labels("X", "Y")
+

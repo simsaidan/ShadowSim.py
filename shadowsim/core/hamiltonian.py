@@ -48,7 +48,7 @@ class Hamiltonian(Operator):
 
     def to_local_hamiltonian(self, local_dim: int = 2):
         """Returns a LocalHamiltonian representing the Hamiltonian acting on
-        the given sites.
+        a contiguous block of sites starting at 0.
 
         Parameter local_dim: The local dimension of the Hamiltonian.
         Precondition: local_dim is a positive integer.
@@ -58,5 +58,16 @@ class Hamiltonian(Operator):
 
         from shadowsim.core.local_hamiltonian import LocalHamiltonian
 
-        lo = self.to_local_operator(local_dim)
+        dim = int(self.matrix.shape[0])
+        n_sites = 0
+        span = 1
+        while span < dim:
+            span *= local_dim
+            n_sites += 1
+        if span != dim:
+            raise ValueError(
+                f"Hamiltonian dimension {dim} is not a power of local_dim={local_dim}"
+            )
+        sites = list(range(n_sites))
+        lo = self.to_local_operator(sites, local_dim)
         return LocalHamiltonian(lo.matrix, lo.sites, lo.local_dim)
