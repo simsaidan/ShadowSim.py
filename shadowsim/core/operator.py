@@ -28,26 +28,6 @@ class Operator:
         self.is_negative_semidefinite = negative_semidefinite(matrix)
         self.is_indefinite = indefinite(matrix)
 
-    def is_hermitian(self):
-        """Returns whether the operator is Hermitian."""
-        return hermitian(self.matrix)
-
-    def is_unitary(self):
-        """Returns whether the operator is unitary."""
-        return unitary(self.matrix)
-
-    def is_positive_semidefinite(self):
-        """Returns whether the operator is positive semidefinite."""
-        return positive_semidefinite(self.matrix)
-
-    def is_negative_semidefinite(self):
-        """Returns whether the operator is negative semidefinite."""
-        return negative_semidefinite(self.matrix)
-
-    def is_indefinite(self):
-        """Returns whether the operator is indefinite."""
-        return indefinite(self.matrix)
-
     def __str__(self):
         """Returns a string representation of the operator."""
         return f"Operator(matrix={self.matrix})"
