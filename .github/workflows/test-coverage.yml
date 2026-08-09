@@ -12,24 +12,42 @@ permissions:
 
 jobs:
   test:
-    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # Add versions here to expand support matrix
+        python-version: ["3.12", "3.13"]
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    env:
+      PYTHON: ${{ matrix.python-version }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v7
+        with:
+          python-version: ${{ matrix.python-version }}
       - name: Install uv
-        uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
+        uses: astral-sh/setup-uv@v7
         with:
           enable-cache: true
-          version: "0.11.3"
       - name: Install dependencies
         run: uv sync --locked
+      - name: Run tests
+        if: matrix.python-version != '3.12' || matrix.os != 'ubuntu-latest'
+        run: uv run pytest -v
       - name: Run tests with coverage
+        if: matrix.python-version == '3.12' && matrix.os == 'ubuntu-latest'
         run: |
           uv run pytest -v --cov-config=.coveragerc --cov=shadowsim \
             --cov-report=xml --cov-report=term-missing:skip-covered
       - name: Upload coverage to Codecov
-        uses: codecov/codecov-action@v6
+        if: matrix.python-version == '3.12' && matrix.os == 'ubuntu-latest'
+        uses: codecov/codecov-action@v7
         with:
           use_oidc: true
+          # Coverage upload is informational; a transient codecov CLI/CDN or
+          # signature-verification failure should not red an otherwise-green build.
           fail_ci_if_error: false
           files: ./coverage.xml
           verbose: true
