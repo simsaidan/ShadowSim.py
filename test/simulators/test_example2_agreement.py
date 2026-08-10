@@ -1,7 +1,5 @@
 """Integration check: reduced Example 2 setup, QuTiP vs SplitJMatrix agreement."""
 
-from __future__ import annotations
-
 import numpy as np
 import pytest
 

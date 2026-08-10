@@ -1,6 +1,6 @@
 """Single-qubit Pauli operators."""
 
-from __future__ import annotations
+from typing import Self
 
 import numpy as np
 
@@ -73,7 +73,7 @@ class Pauli:
         """Return a hash based on the Pauli label."""
         return hash(self._label)
 
-    def multiply(self, other: Pauli) -> tuple[complex, Pauli]:
+    def multiply(self, other: Self) -> tuple[complex, Self]:
         """Multiply in the Pauli group: ``self * other = phase * result``.
 
         ``phase`` is in ``{±1, ±i}``.
@@ -81,7 +81,7 @@ class Pauli:
         phase, label = _multiply_labels(self._label, other._label)
         return phase, Pauli(label)
 
-    def commutator(self, other: Pauli) -> tuple[complex | None, Pauli | None]:
+    def commutator(self, other: Self) -> tuple[complex | None, Self | None]:
         """Return ``[self, other]`` as ``phase * P``, or ``(None, None)`` if zero.
 
         For single-qubit Paulis this is either ``0`` or ``2i`` times the third Pauli.

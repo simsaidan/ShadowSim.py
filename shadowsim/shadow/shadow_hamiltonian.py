@@ -1,7 +1,5 @@
 """Shadow Hamiltonian construction and closure."""
 
-from __future__ import annotations
-
 from collections import deque
 from collections.abc import Sequence
 from itertools import product
