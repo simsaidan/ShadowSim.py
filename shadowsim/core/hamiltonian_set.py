@@ -1,21 +1,30 @@
 """Collections of Hamiltonian operators."""
 
 from shadowsim.core.hamiltonian import Hamiltonian
+from shadowsim.core.pauli_string import PauliString
+from shadowsim.core.pauli_sum import PauliSum
 
 
 class HamiltonianSet:
     """Represents a set of quantum Hamiltonians."""
 
-    def __init__(self, hamiltonians: list[Hamiltonian]):
+    def __init__(self, hamiltonians: list):
         """Initialize a HamiltonianSet of quantum Hamiltonians.
 
-        Parameter hamiltonians: The list of Hamiltonians to initialize the HamiltonianSet with.
-        Precondition: hamiltonians is a list of Hamiltonian objects.
+        Parameter hamiltonians: Hamiltonians, or values coercible via
+            :class:`Hamiltonian` (Pauli strings / expressions / PauliSum).
         """
         assert isinstance(hamiltonians, list), "hamiltonians must be a list"
-        assert all(isinstance(h, Hamiltonian) for h in hamiltonians), "all hamiltonians must be Hamiltonian objects"
-        self.hamiltonians = hamiltonians
-        self.hamiltonian_count = len(hamiltonians)
+        coerced: list[Hamiltonian] = []
+        for h in hamiltonians:
+            if isinstance(h, Hamiltonian):
+                coerced.append(h)
+            elif isinstance(h, (str, PauliString, PauliSum)):
+                coerced.append(Hamiltonian(h))
+            else:
+                assert False, "all hamiltonians must be Hamiltonian objects"
+        self.hamiltonians = coerced
+        self.hamiltonian_count = len(coerced)
 
     def __str__(self):
         """Return a string representation of the HamiltonianSet."""

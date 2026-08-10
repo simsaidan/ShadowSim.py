@@ -8,4 +8,5 @@ from shadowsim.core.operator import Operator
 from shadowsim.core.operator_set import OperatorSet
 from shadowsim.core.pauli import Pauli
 from shadowsim.core.pauli_string import PauliString
+from shadowsim.core.pauli_sum import PauliSum, parse_pauli_expression
 from shadowsim.core.state import State

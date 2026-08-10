@@ -1,12 +1,8 @@
 import numpy as np
 
-from shadowsim.core import Hamiltonian, Operator, OperatorSet, PauliString, State
+from shadowsim.core import Hamiltonian, Operator, OperatorSet, State
 from shadowsim.shadow import ShadowHamiltonian, ShadowState
 from shadowsim.simulators import QutipSimulator
-
-
-def pauli_word(label: str):
-    return PauliString.from_string(label).matrix()
 
 
 def z_projectors_2q() -> OperatorSet:
@@ -23,17 +19,10 @@ def z_projectors_2q() -> OperatorSet:
 # is not identically zero (XII+IIX drives mixing among single-qubit X,Y,Z on
 # the left with IIX in the same 4D closed span).
 hamiltonians = [
-    Hamiltonian(pauli_word("XII")),
-    Hamiltonian(pauli_word("IIX")),
+    Hamiltonian("XII"),
+    Hamiltonian("IIX"),
 ]
-observables = OperatorSet(
-    [
-        Operator(pauli_word("XII"), name="XII"),
-        Operator(pauli_word("YII"), name="YII"),
-        Operator(pauli_word("ZII"), name="ZII"),
-        Operator(pauli_word("IIX"), name="IIX"),
-    ]
-)
+observables = OperatorSet(["XII", "YII", "ZII", "IIX"])
 
 print("Hamiltonians (A):", ["XII", "IIX"])
 print("Observables (B):", [op.name for op in observables.operators])

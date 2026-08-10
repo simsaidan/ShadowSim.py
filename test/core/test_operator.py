@@ -1,7 +1,8 @@
 import numpy as np
 import pytest
 
-from shadowsim.core import LocalOperator, Operator, OperatorSet
+from shadowsim.core import LocalOperator, Operator, OperatorSet, PauliString, PauliSum
+from shadowsim.core.operator import _coerce_pauli_sum
 
 
 def test_operator_init_sets_basic_fields_and_flags():
@@ -80,3 +81,68 @@ def test_operator_to_local_operator_builds_local_operator():
     assert local.sites == [0, 1]
     assert local.local_dim == 2
     assert local.matrix.shape == (4, 4)
+
+
+def test_operator_from_pauli_label_is_lazy_and_names_itself():
+    op = Operator("XII")
+    assert op.name == "XII"
+    assert op.pauli_sum is not None
+    assert op._matrix_cache is None
+    assert op.dimension == 8
+    assert op.is_hermitian is True
+    assert op._matrix_cache is None  # Hermiticity does not densify
+
+    expected = PauliString.from_string("XII").matrix()
+    assert np.allclose(op.matrix, expected)
+    assert op._matrix_cache is not None
+
+
+def test_operator_from_pauli_sum_expression_and_override_name():
+    op = Operator("XXI + XYZ", name="obs")
+    assert op.name == "obs"
+    hand = PauliString.from_string("XXI").matrix() + PauliString.from_string("XYZ").matrix()
+    assert np.allclose(op.matrix, hand)
+
+
+def test_operator_from_pauli_string():
+    op = Operator(PauliString.from_string("YZ"))
+    assert op.name == "YZ"
+    assert np.allclose(op.matrix, PauliString.from_string("YZ").matrix())
+
+
+def test_operator_from_pauli_sum_object_and_lazy_str_repr():
+    op = Operator(PauliSum.from_string("X"))
+    assert "Operator(pauli_sum=" in str(op)
+    assert "Operator(pauli_sum=" in repr(op)
+    assert op._matrix_cache is None
+    assert op.is_unitary is True  # densifies via non-Hermitian flag path
+    assert op._matrix_cache is not None
+    assert "Operator(matrix=" in str(op)
+
+
+def test_operator_rejects_unsupported_input_types():
+    with pytest.raises(TypeError, match="numpy array, str, PauliString, or PauliSum"):
+        Operator(1.0)  # type: ignore[arg-type]
+    with pytest.raises(TypeError, match="unsupported operator input type"):
+        _coerce_pauli_sum(1.0)  # type: ignore[arg-type]
+
+
+def test_operator_ensure_matrix_and_hermitian_fallbacks():
+    broken = Operator.__new__(Operator)
+    broken._pauli_sum = None
+    broken._matrix_cache = None
+    broken._flags_ready = False
+    with pytest.raises(RuntimeError, match="neither a matrix cache nor a PauliSum"):
+        broken.matrix
+
+    partial = Operator.__new__(Operator)
+    partial._pauli_sum = None
+    partial._matrix_cache = np.eye(2, dtype=np.complex128)
+    partial._flags_ready = False
+    partial._is_hermitian = False
+    partial._is_unitary = False
+    partial._is_positive_semidefinite = False
+    partial._is_negative_semidefinite = False
+    partial._is_indefinite = False
+    assert partial.is_hermitian is True
+    assert partial._flags_ready is True

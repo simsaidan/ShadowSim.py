@@ -1,21 +1,30 @@
 """Collections of quantum operators."""
 
 from shadowsim.core.operator import Operator
+from shadowsim.core.pauli_string import PauliString
+from shadowsim.core.pauli_sum import PauliSum
 
 
 class OperatorSet:
     """Represent a set of quantum operators."""
 
-    def __init__(self, operators: list[Operator]):
+    def __init__(self, operators: list):
         """Initialize an OperatorSet object which represents a set of quantum operators.
 
-        Parameter operators: The list of operators to initialize the operator set with.
-        Precondition: operators is a list of Operator objects.
+        Parameter operators: Operators, or values coercible via :class:`Operator`
+            (Pauli strings / expressions / PauliSum).
         """
         assert isinstance(operators, list), "operators must be a list"
-        assert all(isinstance(op, Operator) for op in operators), "all operators must be Operator objects"
-        self.operators = operators
-        self.operator_count = len(operators)
+        coerced: list[Operator] = []
+        for op in operators:
+            if isinstance(op, Operator):
+                coerced.append(op)
+            elif isinstance(op, (str, PauliString, PauliSum)):
+                coerced.append(Operator(op))
+            else:
+                assert False, "all operators must be Operator objects"
+        self.operators = coerced
+        self.operator_count = len(coerced)
 
     def __iter__(self):
         """Return an iterator over the operators in the operator set."""
