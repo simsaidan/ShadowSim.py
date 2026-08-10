@@ -45,6 +45,11 @@ def test_pauli_eq_returns_notimplemented_for_other_types():
     assert Pauli("X").__eq__("X") is NotImplemented
 
 
+def test_pauli_is_hashable_by_label():
+    assert hash(Pauli("X")) == hash(Pauli("x"))
+    assert {Pauli("X"), Pauli("X"), Pauli("Y")} == {Pauli("X"), Pauli("Y")}
+
+
 def test_pauli_multiply_labels_unreachable_raises(monkeypatch):
     monkeypatch.setattr(
         pauli_module,
