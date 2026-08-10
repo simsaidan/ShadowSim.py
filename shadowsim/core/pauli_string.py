@@ -1,8 +1,7 @@
 """Multi-qubit Pauli strings."""
 
-from __future__ import annotations
-
 from collections.abc import Sequence
+from typing import Self
 
 import numpy as np
 
@@ -26,7 +25,7 @@ class PauliString:
         self._paulis = paulis_tuple
 
     @classmethod
-    def from_string(cls, s: str) -> PauliString:
+    def from_string(cls, s: str) -> Self:
         """Build a PauliString from a label string such as ``XYZ``."""
         s = s.strip().upper().replace(" ", "")
         if not s:
@@ -74,7 +73,7 @@ class PauliString:
         """Return a hash based on the ordered Pauli labels."""
         return hash(self._paulis)
 
-    def multiply(self, other: PauliString) -> tuple[complex, PauliString]:
+    def multiply(self, other: Self) -> tuple[complex, Self]:
         """Multiply Pauli strings: ``self * other = phase * result``.
 
         Multiplication is qubit-by-qubit in matching order (leftmost = qubit 0).
@@ -89,7 +88,7 @@ class PauliString:
             out_labels.append(lab)
         return phase, PauliString([Pauli(ch) for ch in out_labels])
 
-    def commutator(self, other: PauliString) -> tuple[complex | None, PauliString | None]:
+    def commutator(self, other: Self) -> tuple[complex | None, Self | None]:
         """Return ``[self, other]`` as ``coeff * R``, or ``(None, None)`` if zero.
 
         Uses ``P Q - Q P``: for Pauli strings this is either ``0`` or

@@ -1,8 +1,6 @@
 #!/usr/bin/env python3
 """Clear generated simulation result files under results/."""
 
-from __future__ import annotations
-
 import shutil
 from pathlib import Path
 

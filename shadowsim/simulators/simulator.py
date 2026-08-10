@@ -1,7 +1,5 @@
 """Base simulator interface and plotting helpers."""
 
-from __future__ import annotations
-
 from datetime import datetime
 from pathlib import Path
 
