@@ -10,7 +10,7 @@ hide:
 
     ---
 
-    Narrative guides and API reference will land here as the library stabilizes.
+    Start with the [API reference](reference/utils.md) for standalone utilities.
 
 -   :material-github:{ .lg .middle } __Source__
 

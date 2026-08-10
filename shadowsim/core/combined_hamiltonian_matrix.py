@@ -10,18 +10,40 @@ def combined_hamiltonian_matrix(
     hamiltonians: list[Hamiltonian],
     num_qubits: int,
 ) -> np.ndarray:
-    """Sum Hamiltonian terms on the full ``num_qubits``-site tensor space.
+    r"""Sum Hamiltonian terms on the full ``num_qubits``-site tensor space.
 
     ``LocalHamiltonian`` terms are embedded with identities on the remaining
     sites; full-domain ``Hamiltonian`` matrices are added as-is. All terms must
     match a common Hilbert-space dimension (``local_dim ** num_qubits`` for
     locals, or the matrix size of bare terms).
 
-    Parameter hamiltonians: The list of Hamiltonians to sum.
-    Precondition: hamiltonians is a list of Hamiltonian objects.
+    Args:
+        hamiltonians: Non-empty list of ``Hamiltonian`` objects to sum.
+        num_qubits: Positive number of sites in the full system.
 
-    Parameter num_qubits: The number of qubits in the full system.
-    Precondition: num_qubits is a positive integer.
+    Returns:
+        Complex matrix of shape ``(d, d)`` equal to the sum of the (embedded)
+        terms, where ``d`` is the shared Hilbert-space dimension.
+
+    Raises:
+        ValueError: If ``LocalHamiltonian`` terms use mixed ``local_dim`` values,
+            or if term dimensions disagree for the requested ``num_qubits``.
+        AssertionError: If ``hamiltonians`` / ``num_qubits`` fail basic type and
+            positivity checks.
+
+    Examples:
+        Embed a single-site \(Z\) into a three-qubit chain and inspect the shape:
+
+        ```python exec="1" source="above" result="text"
+        import numpy as np
+        from shadowsim.core import LocalHamiltonian
+        from shadowsim.core.combined_hamiltonian_matrix import combined_hamiltonian_matrix
+
+        local = LocalHamiltonian(np.diag([1.0, -1.0]), sites=[1], local_dim=2)
+        out = combined_hamiltonian_matrix([local], num_qubits=3)
+        print(out.shape)
+        ```
+
     """
     assert isinstance(hamiltonians, list), "hamiltonians must be a list"
     assert all(isinstance(h, Hamiltonian) for h in hamiltonians), "all hamiltonians must be Hamiltonian objects"
