@@ -3,9 +3,8 @@
 import numpy as np
 import pytest
 
+from shadowsim.core import Hamiltonian, LocalHamiltonian
 from shadowsim.core.combined_hamiltonian_matrix import combined_hamiltonian_matrix
-from shadowsim.core import Hamiltonian
-from shadowsim.core import LocalHamiltonian
 
 
 def test_combined_hamiltonian_matrix_sums_full_and_local_terms():

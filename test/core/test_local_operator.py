@@ -1,8 +1,7 @@
 import numpy as np
 import pytest
 
-from shadowsim.core import LocalOperator
-from shadowsim.core import Operator
+from shadowsim.core import LocalOperator, Operator
 
 
 def test_local_operator_requires_square_matrix():
@@ -70,4 +69,3 @@ def test_local_operator_str_and_repr():
     assert "sites=[0]" in text
     assert "LocalOperator(" in rep
     assert "local_dim=2" in rep
-

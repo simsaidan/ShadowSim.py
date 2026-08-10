@@ -1,10 +1,15 @@
+"""Shadow states from operator expectation values."""
+
 import numpy as np
+
 from shadowsim.core.operator_set import OperatorSet
 from shadowsim.core.state import State
 from shadowsim.utils.next_power_of_two import next_power_of_two
 
 
 class ShadowState(State):
+    """Represent a shadow state built from operator expectation values."""
+
     def __init__(
         self,
         state: State,
@@ -12,6 +17,7 @@ class ShadowState(State):
         *,
         num_qubits: int | None = None,
     ):
+        """Initialize a ShadowState from a state and operator set."""
         self.A = 0
         exp_vals: list[complex] = []
 
@@ -32,9 +38,7 @@ class ShadowState(State):
                 raise ValueError("num_qubits must be non-negative")
             need = 2**nq
             if n > need:
-                raise ValueError(
-                    f"not enough room in 2**num_qubits={need} for {n} shadow components"
-                )
+                raise ValueError(f"not enough room in 2**num_qubits={need} for {n} shadow components")
             padded_len = need
         else:
             padded_len = next_power_of_two(n)
@@ -47,19 +51,9 @@ class ShadowState(State):
         super().__init__(shadow_state, num_qubits_out, 2)
 
     def __str__(self):
-        return (
-            "ShadowState("
-            f"num_qubits={self.get_num_qubits()}, "
-            f"A={self.A}, "
-            f"shape={self.state.shape}"
-            ")"
-        )
+        """Return a string representation of the ShadowState."""
+        return f"ShadowState(num_qubits={self.get_num_qubits()}, A={self.A}, shape={self.state.shape})"
 
     def __repr__(self):
-        return (
-            "ShadowState("
-            f"state={self.state!r}, "
-            f"A={self.A!r}, "
-            f"num_qubits={self.get_num_qubits()}"
-            ")"
-        )
+        """Return a string representation of the ShadowState."""
+        return f"ShadowState(state={self.state!r}, A={self.A!r}, num_qubits={self.get_num_qubits()})"

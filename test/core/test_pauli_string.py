@@ -1,8 +1,7 @@
 import numpy as np
 import pytest
 
-from shadowsim.core import Pauli
-from shadowsim.core import PauliString
+from shadowsim.core import Pauli, PauliString
 
 
 def test_pauli_string_from_string_and_protocols():
@@ -58,3 +57,12 @@ def test_pauli_string_rejects_length_mismatch():
 def test_pauli_string_eq_returns_notimplemented_for_other_types():
     assert PauliString.from_string("X").__eq__("X") is NotImplemented
 
+
+def test_pauli_string_is_hashable_by_labels():
+    left = PauliString.from_string("XYZ")
+    right = PauliString([Pauli("X"), Pauli("Y"), Pauli("Z")])
+    assert hash(left) == hash(right)
+    assert {left, right, PauliString.from_string("X")} == {
+        left,
+        PauliString.from_string("X"),
+    }

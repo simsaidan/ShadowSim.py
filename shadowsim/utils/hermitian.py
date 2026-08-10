@@ -1,3 +1,5 @@
+"""Hermitian-matrix checks."""
+
 import numpy as np
 
 

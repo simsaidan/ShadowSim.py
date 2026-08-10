@@ -1,6 +1,8 @@
+"""Helpers for reversing dictionary keys (bitstring endianness)."""
+
+
 def flip_dict(d):
-    """
-    Return a new dictionary with each string key reversed.
+    """Return a new dictionary with each string key reversed.
 
     This is used to switch the endianness of measurement results.
     """

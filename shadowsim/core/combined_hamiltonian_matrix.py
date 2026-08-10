@@ -1,3 +1,5 @@
+"""Combine Hamiltonian terms into a single full-system matrix."""
+
 import numpy as np
 
 from shadowsim.core.hamiltonian import Hamiltonian
@@ -8,8 +10,7 @@ def combined_hamiltonian_matrix(
     hamiltonians: list[Hamiltonian],
     num_qubits: int,
 ) -> np.ndarray:
-    """
-    Sum Hamiltonian terms on the full ``num_qubits``-site tensor space.
+    """Sum Hamiltonian terms on the full ``num_qubits``-site tensor space.
 
     ``LocalHamiltonian`` terms are embedded with identities on the remaining
     sites; full-domain ``Hamiltonian`` matrices are added as-is. All terms must
@@ -23,18 +24,14 @@ def combined_hamiltonian_matrix(
     Precondition: num_qubits is a positive integer.
     """
     assert isinstance(hamiltonians, list), "hamiltonians must be a list"
-    assert all(
-        isinstance(h, Hamiltonian) for h in hamiltonians
-    ), "all hamiltonians must be Hamiltonian objects"
+    assert all(isinstance(h, Hamiltonian) for h in hamiltonians), "all hamiltonians must be Hamiltonian objects"
     assert isinstance(num_qubits, int), "num_qubits must be an integer"
     assert num_qubits > 0, "num_qubits must be a positive integer"
     assert len(hamiltonians) > 0, "hamiltonians must be a non-empty list"
 
     local_dims = {h.local_dim for h in hamiltonians if isinstance(h, LocalHamiltonian)}
     if len(local_dims) > 1:
-        raise ValueError(
-            f"mixed local_dim in LocalHamiltonian terms is not supported: {sorted(local_dims)}"
-        )
+        raise ValueError(f"mixed local_dim in LocalHamiltonian terms is not supported: {sorted(local_dims)}")
 
     target_dim: int | None = None
     for h in hamiltonians:
@@ -45,9 +42,7 @@ def combined_hamiltonian_matrix(
         if target_dim is None:
             target_dim = d
         elif d != target_dim:
-            raise ValueError(
-                f"Hamiltonian dimensions disagree: got {d} vs {target_dim}"
-            )
+            raise ValueError(f"Hamiltonian dimensions disagree: got {d} vs {target_dim}")
 
     H_tot = np.zeros((target_dim, target_dim), dtype=np.complex128)
     for h in hamiltonians:

@@ -1,9 +1,7 @@
 import numpy as np
 import pytest
 
-from shadowsim.core import Hamiltonian
-from shadowsim.core import LocalHamiltonian
-
+from shadowsim.core import Hamiltonian, LocalHamiltonian
 
 Z = np.diag([1.0, -1.0]).astype(np.complex128)
 

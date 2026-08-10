@@ -1,3 +1,5 @@
+"""Shadow Hamiltonian construction and closure."""
+
 from __future__ import annotations
 
 from collections import deque
@@ -16,9 +18,9 @@ from shadowsim.utils.unitary import unitary
 
 
 def _infer_num_qubits(terms: list[Hamiltonian]) -> int:
-    """
-    Infer ``num_qubits`` from full-domain terms. All such terms must share the
-    same matrix dimension ``2**n`` (assumed here).
+    """Infer ``num_qubits`` from full-domain terms.
+
+    All such terms must share the same matrix dimension ``2**n`` (assumed here).
     """
     d_ref: int | None = None
     for h in terms:
@@ -26,10 +28,7 @@ def _infer_num_qubits(terms: list[Hamiltonian]) -> int:
             continue
         d = int(np.asarray(h.matrix).shape[0])
         if d <= 0 or (d & (d - 1)) != 0:
-            raise ValueError(
-                "full-domain Hamiltonian matrix dimension must be a power of 2, "
-                f"got {d}"
-            )
+            raise ValueError(f"full-domain Hamiltonian matrix dimension must be a power of 2, got {d}")
         if d_ref is None:
             d_ref = d
         elif d != d_ref:
@@ -46,7 +45,8 @@ def _infer_num_qubits(terms: list[Hamiltonian]) -> int:
 
 
 class ShadowHamiltonian:
-    """
+    """Store the input model ``H`` and the reduced shadow matrix ``H_S``.
+
     There are two matrices:
 
     - ``self.H``: the **input** model on the full qubit space, always ``(2^n, 2^n)``,
@@ -73,7 +73,8 @@ class ShadowHamiltonian:
         tol: float = 1e-10,
         verbose: bool = False,
     ):
-        """
+        """Build a shadow Hamiltonian from an operator set and Hamiltonian terms.
+
         ``H`` may be a single ``Hamiltonian`` or a non-empty sequence of terms;
         terms are summed on the full ``num_qubits``-qubit space (see
         ``combined_hamiltonian_matrix``). ``self.H`` is always that summed
@@ -106,9 +107,7 @@ class ShadowHamiltonian:
         dim = matrix.shape[0]
         num_qubits = int(np.log2(dim))
         if 2**num_qubits != dim:
-            raise ValueError(
-                "H dimension must be a power of 2 to use a Pauli-string basis"
-            )
+            raise ValueError("H dimension must be a power of 2 to use a Pauli-string basis")
         self.num_qubits = num_qubits
 
         # Step 1: convert H into a Pauli-string representation.
@@ -130,9 +129,7 @@ class ShadowHamiltonian:
         for operator in self.operator_set.operators:
             op_matrix = np.asarray(operator.matrix, dtype=np.complex128)
             if op_matrix.shape != matrix.shape:
-                raise ValueError(
-                    "all operators in operator_set must have the same matrix shape as H"
-                )
+                raise ValueError("all operators in operator_set must have the same matrix shape as H")
 
             for label_tuple in product("IXYZ", repeat=num_qubits):
                 label = "".join(label_tuple)
@@ -187,20 +184,23 @@ class ShadowHamiltonian:
         return self.H_S
 
     def get_H_S(self) -> np.ndarray:
-        """
-        Same as :attr:`shadow` — the shadow Hamiltonian in the closed Pauli
-        basis, shape ``(m, m)`` with ``m = len(self.basis)``, independent of
-        ``2^n`` (unless m happens to match by coincidence).
+        """Return the shadow Hamiltonian in the closed Pauli basis.
+
+        Same as :attr:`shadow`. Shape ``(m, m)`` with ``m = len(self.basis)``,
+        independent of ``2^n`` (unless m happens to match by coincidence).
         """
         return self.H_S
 
     def is_unitary(self):
+        """Return whether the shadow Hamiltonian matrix is unitary."""
         return unitary(self.H_S)
 
     def is_hermitian(self):
+        """Return whether the shadow Hamiltonian matrix is Hermitian."""
         return hermitian(self.H_S)
 
     def __str__(self):
+        """Return a string representation of the ShadowHamiltonian."""
         return (
             "ShadowHamiltonian("
             f"full_H.shape={self.H.matrix.shape}, "
@@ -210,6 +210,7 @@ class ShadowHamiltonian:
         )
 
     def __repr__(self):
+        """Return a string representation of the ShadowHamiltonian."""
         return (
             "ShadowHamiltonian("
             f"H.shape={self.H.matrix.shape}, "

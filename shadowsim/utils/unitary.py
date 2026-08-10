@@ -1,3 +1,5 @@
+"""Unitary-matrix checks."""
+
 import numpy as np
 
 

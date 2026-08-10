@@ -2,7 +2,6 @@ import numpy as np
 
 from shadowsim.utils.unitary import unitary
 
-
 _X = np.array([[0.0, 1.0], [1.0, 0.0]], dtype=np.complex128)
 _Y = np.array([[0.0, -1j], [1j, 0.0]], dtype=np.complex128)
 _Z = np.array([[1.0, 0.0], [0.0, -1.0]], dtype=np.complex128)

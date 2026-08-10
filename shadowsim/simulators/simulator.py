@@ -1,3 +1,5 @@
+"""Base simulator interface and plotting helpers."""
+
 from __future__ import annotations
 
 from datetime import datetime
@@ -12,6 +14,8 @@ from shadowsim.core.state import State
 
 
 class Simulator:
+    """Base class for quantum simulation backends."""
+
     def __init__(
         self,
         hamiltonians: list[Hamiltonian],
@@ -22,6 +26,7 @@ class Simulator:
         time_steps: int,
         id: str,
     ):
+        """Initialize the shared simulator fields and time grid."""
         if not hamiltonians:
             raise ValueError("hamiltonians must be a non-empty list")
         self.hamiltonians = list(hamiltonians)
@@ -35,16 +40,17 @@ class Simulator:
         self.tlist = np.linspace(0, self.total_time, self.time_steps)
 
     def run(self):
+        """Run the simulation and return its results."""
         return self.simulate()
 
     def simulate(self):
+        """Run the backend-specific simulation."""
         raise NotImplementedError("Subclasses must implement simulate()")
 
     def get_results(self, index: int = None):
+        """Return simulation results, optionally for one observable index."""
         if self.results is None:
-            raise ValueError(
-                "Results are not available. Please run the simulation first."
-            )
+            raise ValueError("Results are not available. Please run the simulation first.")
         if index is None:
             return self.results
         return self.results[index]
@@ -56,14 +62,11 @@ class Simulator:
         labels: list[str] | None = None,
         title: str | None = None,
     ):
+        """Plot expectation traces vs time in an interactive window."""
         if indices is None:
             indices = list(range(len(self.results)))
         for plot_i, index in enumerate(indices):
-            curve_label = (
-                labels[plot_i]
-                if labels is not None and plot_i < len(labels)
-                else str(index)
-            )
+            curve_label = labels[plot_i] if labels is not None and plot_i < len(labels) else str(index)
             plt.plot(self.tlist, self.get_results(index), label=curve_label)
         if title:
             plt.title(title)
@@ -80,10 +83,10 @@ class Simulator:
         labels: list[str] | None = None,
         title: str | None = None,
     ) -> Path:
-        """
-        Plot expectation traces vs `tlist` and save under ``results/`` as
-        ``{id}_{timestamp}.png`` (``id`` is set per simulator subclass). Does not
-        open an interactive window.
+        """Plot expectation traces vs `tlist` and save under ``results/``.
+
+        Saves as ``{id}_{timestamp}.png`` (``id`` is set per simulator subclass).
+        Does not open an interactive window.
         """
         if indices is None:
             indices = list(range(len(self.results)))
@@ -94,11 +97,7 @@ class Simulator:
         fig, ax = plt.subplots()
         try:
             for plot_i, index in enumerate(indices):
-                curve_label = (
-                    labels[plot_i]
-                    if labels is not None and plot_i < len(labels)
-                    else str(index)
-                )
+                curve_label = labels[plot_i] if labels is not None and plot_i < len(labels) else str(index)
                 ax.plot(
                     self.tlist,
                     self.get_results(index),
@@ -115,15 +114,11 @@ class Simulator:
         return path
 
     def __str__(self):
-        return (
-            f"{self.__class__.__name__}("
-            f"id={self.id}, "
-            f"num_qubits={self.num_qubits}, "
-            f"time_steps={self.time_steps}"
-            ")"
-        )
+        """Return a string representation of the simulator."""
+        return f"{self.__class__.__name__}(id={self.id}, num_qubits={self.num_qubits}, time_steps={self.time_steps})"
 
     def __repr__(self):
+        """Return a string representation of the simulator."""
         return (
             f"{self.__class__.__name__}("
             f"hamiltonians={self.hamiltonians!r}, "

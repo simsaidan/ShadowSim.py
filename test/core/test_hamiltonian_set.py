@@ -1,9 +1,7 @@
 import numpy as np
 import pytest
 
-from shadowsim.core import Hamiltonian
-from shadowsim.core import HamiltonianSet
-
+from shadowsim.core import Hamiltonian, HamiltonianSet
 
 Z = np.diag([1.0, -1.0]).astype(np.complex128)
 X = np.array([[0.0, 1.0], [1.0, 0.0]], dtype=np.complex128)

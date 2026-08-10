@@ -22,8 +22,8 @@ from shadowsim.simulators import (
 from shadowsim.utils import (
     I,
     one_state_two_qubits,
-    three_state_two_qubits,
     tensor,
+    three_state_two_qubits,
     two_state_two_qubits,
     zero_state_two_qubits,
 )
@@ -138,6 +138,4 @@ def test_example2_qutip_splitjmatrix_agreement():
         qutip_curve = np.asarray(qutip_results[index], dtype=float)
         split_curve = np.asarray(split_results[index], dtype=float)
         max_abs = float(np.max(np.abs(qutip_curve - split_curve)))
-        assert max_abs < tol, (
-            f"{label}: max abs error {max_abs:.4f} exceeds tolerance {tol}"
-        )
+        assert max_abs < tol, f"{label}: max abs error {max_abs:.4f} exceeds tolerance {tol}"
