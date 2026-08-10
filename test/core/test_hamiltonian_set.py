@@ -26,4 +26,13 @@ def test_hamiltonian_set_validates_inputs():
     with pytest.raises(AssertionError, match="hamiltonians must be a list"):
         HamiltonianSet(Hamiltonian(Z))  # type: ignore[arg-type]
     with pytest.raises(AssertionError, match="all hamiltonians must be Hamiltonian"):
-        HamiltonianSet([Hamiltonian(Z), "nope"])  # type: ignore[list-item]
+        HamiltonianSet([Hamiltonian(Z), 123])  # type: ignore[list-item]
+    with pytest.raises(ValueError, match="expected Pauli word|invalid Pauli"):
+        HamiltonianSet([Hamiltonian(Z), "nope"])
+
+
+def test_hamiltonian_set_coerces_pauli_labels():
+    h_set = HamiltonianSet(["Z", "XXI + XYZ"])
+    assert len(h_set) == 2
+    assert h_set[0].name == "Z"
+    assert h_set[1].pauli_sum is not None

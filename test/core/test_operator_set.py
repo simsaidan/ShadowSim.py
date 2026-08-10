@@ -29,3 +29,11 @@ def test_operator_set_getitem_validates_index():
         _ = op_set["0"]  # type: ignore[index]
     with pytest.raises(AssertionError, match="within the range"):
         _ = op_set[2]
+
+
+def test_operator_set_coerces_pauli_labels():
+    op_set = OperatorSet(["XII", "YII", "XXI + XYZ"])
+    assert len(op_set) == 3
+    assert op_set[0].name == "XII"
+    assert op_set[2].pauli_sum is not None
+    assert "XYZ" in op_set[2].pauli_sum.terms

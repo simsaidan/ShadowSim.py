@@ -2,15 +2,11 @@ import numpy as np
 import pytest
 
 import shadowsim.shadow.shadow_hamiltonian as module
-from shadowsim.core import Hamiltonian, LocalHamiltonian, Operator, OperatorSet, PauliString
+from shadowsim.core import Hamiltonian, LocalHamiltonian, Operator, OperatorSet
 from shadowsim.shadow import ShadowHamiltonian
 
 X = np.array([[0, 1], [1, 0]], dtype=np.complex128)
 Z = np.array([[1, 0], [0, -1]], dtype=np.complex128)
-
-
-def _pauli_word(label: str) -> np.ndarray:
-    return PauliString.from_string(label).matrix()
 
 
 def test_shadow_hamiltonian_is_quiet_by_default(capsys):
@@ -54,18 +50,8 @@ def test_one_qubit_known_pauli_closure_and_h_s():
 
 def test_three_qubit_already_closed_pauli_set_has_nonzero_h_s():
     """XII+IIX with {XII, YII, ZII, IIX} stays size-4 and has nonzero H_S."""
-    hamiltonians = [
-        Hamiltonian(_pauli_word("XII")),
-        Hamiltonian(_pauli_word("IIX")),
-    ]
-    observables = OperatorSet(
-        [
-            Operator(_pauli_word("XII"), name="XII"),
-            Operator(_pauli_word("YII"), name="YII"),
-            Operator(_pauli_word("ZII"), name="ZII"),
-            Operator(_pauli_word("IIX"), name="IIX"),
-        ]
-    )
+    hamiltonians = [Hamiltonian("XII"), Hamiltonian("IIX")]
+    observables = OperatorSet(["XII", "YII", "ZII", "IIX"])
 
     shadow = ShadowHamiltonian(observables, hamiltonians)
 
