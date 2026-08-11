@@ -195,15 +195,19 @@ splitjmatrix_simulator = SplitJMatrixSimulator(
 
 To easily compare results, we initialize a benchmark with a reference simulator
 and one or more challengers. All simulators must share the same time grid.
-We run the benchmark, which runs the underlying simulations. We can visualize
-the result by calling save_result_plot, which saves a plot per simulator and an
-absolute-difference plot vs the reference for each challenger.
+We run the benchmark, which runs the underlying simulations. Numeric L∞ / L2
+error metrics vs the reference are available via `error_metrics` (and can be
+exported with `save_error_metrics`). We can also visualize the result by calling
+`save_result_plot`, which saves a plot per simulator and an absolute-difference
+plot vs the reference for each challenger.
 
 ```python
 benchmark = Benchmark(qutip_simulator, splitjmatrix_simulator)
 benchmark.run()
+print(benchmark.error_metrics())
+metrics_path = benchmark.save_error_metrics()
 paths = benchmark.save_result_plot(labels=["cavity population", "emitter population"])
-for path in paths:
+for path in [metrics_path, *paths]:
     print(f"Saved: {path}")
 ```
 

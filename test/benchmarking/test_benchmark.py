@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 
 import numpy as np
@@ -190,3 +191,92 @@ def test_benchmark_str_and_repr():
     assert "reference=" in repr(benchmark)
     assert "challengers=" in repr(benchmark)
     assert "StubSimulator(" in repr(benchmark)
+
+
+def test_error_metrics_exact_values():
+    ref = StubSimulator(
+        id="ref",
+        time_steps=3,
+        curves=[np.array([0.0, 1.0, 2.0]), np.array([0.0, 0.0, 0.0])],
+    )
+    challenger = StubSimulator(
+        id="c",
+        time_steps=3,
+        curves=[np.array([0.0, 1.0, 0.0]), np.array([1.0, 1.0, 1.0])],
+    )
+    benchmark = Benchmark(ref, challenger)
+    benchmark.run()
+
+    metrics = benchmark.error_metrics()
+    assert len(metrics) == 1
+    assert metrics[0]["challenger_id"] == "c"
+    obs = metrics[0]["observables"]
+    assert len(obs) == 2
+    assert obs[0] == {"index": 0, "linf": 2.0, "l2": 2.0}
+    assert obs[1]["index"] == 1
+    assert obs[1]["linf"] == 1.0
+    assert obs[1]["l2"] == pytest.approx(np.sqrt(3.0))
+
+
+def test_error_metrics_multi_challenger_and_indices():
+    ref = StubSimulator(id="ref", time_steps=3, curves=[np.zeros(3), np.ones(3)])
+    c1 = StubSimulator(id="c1", time_steps=3, curves=[np.full(3, 0.5), np.full(3, 0.5)])
+    c2 = StubSimulator(id="c2", time_steps=3, curves=[np.full(3, 1.0), np.full(3, 2.0)])
+    benchmark = Benchmark(ref, c1, c2)
+    benchmark.run()
+
+    metrics = benchmark.error_metrics(indices=[1])
+    assert [m["challenger_id"] for m in metrics] == ["c1", "c2"]
+    assert metrics[0]["observables"] == [{"index": 1, "linf": 0.5, "l2": pytest.approx(np.sqrt(0.75))}]
+    assert metrics[1]["observables"] == [{"index": 1, "linf": 1.0, "l2": pytest.approx(np.sqrt(3.0))}]
+
+
+def test_error_metrics_requires_results():
+    a, b = _pair()
+    benchmark = Benchmark(a, b)
+    with pytest.raises(ValueError, match="Results are not available"):
+        benchmark.error_metrics()
+
+
+def test_error_metrics_rejects_mismatched_observable_counts():
+    a = StubSimulator(id="a", curves=[np.zeros(3), np.ones(3)])
+    b = StubSimulator(id="b", curves=[np.zeros(3)])
+    a.results = a._curves
+    b.results = b._curves
+    benchmark = Benchmark(a, b)
+
+    with pytest.raises(ValueError, match="Mismatched observable counts"):
+        benchmark.error_metrics()
+
+
+def test_save_error_metrics_writes_json(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    ref = StubSimulator(
+        id="ref",
+        time_steps=3,
+        curves=[np.array([0.0, 1.0, 2.0])],
+    )
+    challenger = StubSimulator(
+        id="c",
+        time_steps=3,
+        curves=[np.array([0.0, 1.0, 0.0])],
+    )
+    benchmark = Benchmark(ref, challenger)
+    benchmark.run()
+
+    path = benchmark.save_error_metrics()
+    assert path.is_file()
+    assert path.parent == Path("results")
+    assert path.name.startswith("benchmark_error_metrics_")
+
+    payload = json.loads(path.read_text())
+    assert payload == [
+        {
+            "challenger_id": "c",
+            "observables": [{"index": 0, "linf": 2.0, "l2": 2.0}],
+        }
+    ]
+
+    custom = tmp_path / "out" / "metrics.json"
+    assert benchmark.save_error_metrics(path=custom) == custom
+    assert json.loads(custom.read_text()) == payload
