@@ -95,6 +95,12 @@ splitjmatrix_simulator = SplitJMatrixSimulator(
 # Run benchmark (reference first, then any number of challengers)
 benchmark = Benchmark(qutip_simulator, splitjmatrix_simulator)
 benchmark.run()
+for challenger in benchmark.error_metrics():
+    print(f"Error metrics for {challenger['challenger_id']}:")
+    for obs in challenger["observables"]:
+        print(f"  observable {obs['index']}: L∞={obs['linf']:.6g}, L2={obs['l2']:.6g}")
+metrics_path = benchmark.save_error_metrics()
+print(f"Saved: {metrics_path}")
 paths = benchmark.save_result_plot(labels=["cavity population", "emitter population"])
 for path in paths:
     print(f"Saved: {path}")

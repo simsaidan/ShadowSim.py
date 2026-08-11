@@ -122,18 +122,17 @@ def test_example2_qutip_splitjmatrix_agreement():
         shots=SHOTS,
     )
 
-    Benchmark(qutip_simulator, splitjmatrix_simulator).run()
+    benchmark = Benchmark(qutip_simulator, splitjmatrix_simulator)
+    benchmark.run()
 
-    qutip_results = qutip_simulator.get_results()
-    split_results = splitjmatrix_simulator.get_results()
-    assert len(qutip_results) == len(split_results) == 2
+    metrics = benchmark.error_metrics()
+    assert len(metrics) == 1
+    observables = metrics[0]["observables"]
+    assert len(observables) == 2
 
     labels_and_tols = (
         ("cavity population", TOL_CAVITY),
         ("emitter population", TOL_EMITTER),
     )
-    for index, (label, tol) in enumerate(labels_and_tols):
-        qutip_curve = np.asarray(qutip_results[index], dtype=float)
-        split_curve = np.asarray(split_results[index], dtype=float)
-        max_abs = float(np.max(np.abs(qutip_curve - split_curve)))
-        assert max_abs < tol, f"{label}: max abs error {max_abs:.4f} exceeds tolerance {tol}"
+    for obs, (label, tol) in zip(observables, labels_and_tols, strict=True):
+        assert obs["linf"] < tol, f"{label}: max abs error {obs['linf']:.4f} exceeds tolerance {tol}"

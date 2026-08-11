@@ -1,5 +1,6 @@
 """Compare results from a reference simulator against one or more challengers."""
 
+import json
 from datetime import datetime
 from pathlib import Path
 
@@ -40,6 +41,47 @@ class Benchmark:
         """Return matching result traces from the reference and each challenger."""
         return [simulator.get_results(index) for simulator in self.simulators]
 
+    def error_metrics(self, indices: list[int] | None = None) -> list[dict]:
+        """Return L∞ / L2 vs reference for each challenger.
+
+        For each selected observable, with error series ``e = y_ref − y_challenger``:
+
+        - ``linf``: ``max |e|``
+        - ``l2``: Euclidean norm ``||e||_2``
+        """
+        metrics: list[dict] = []
+        for challenger in self.challengers:
+            ra, rb = self._matching_results(challenger)
+            selected = list(range(len(ra))) if indices is None else indices
+            observables = []
+            for index in selected:
+                err = self._diff_series(ra[index], rb[index])
+                observables.append(
+                    {
+                        "index": index,
+                        "linf": float(np.max(np.abs(err))),
+                        "l2": float(np.linalg.norm(err)),
+                    }
+                )
+            metrics.append({"challenger_id": challenger.id, "observables": observables})
+        return metrics
+
+    def save_error_metrics(
+        self,
+        indices: list[int] | None = None,
+        *,
+        path: Path | None = None,
+    ) -> Path:
+        """Write ``error_metrics()`` to JSON under ``results/`` (or ``path``)."""
+        if path is None:
+            stamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+            path = Path("results") / f"benchmark_error_metrics_{stamp}.json"
+        else:
+            path = Path(path)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(self.error_metrics(indices), indent=2) + "\n")
+        return path
+
     def save_result_plot(
         self,
         indices: list[int] | None = None,
@@ -69,6 +111,21 @@ class Benchmark:
             )
         return paths
 
+    def _matching_results(self, challenger: Simulator) -> tuple[list, list]:
+        """Return ``(ref_results, challenger_results)`` or raise if unavailable/mismatched."""
+        ra = self.reference.results
+        rb = challenger.results
+        if ra is None or rb is None:
+            raise ValueError("Results are not available. Call run() (or simulate all) before save().")
+        if len(ra) != len(rb):
+            raise ValueError(f"Mismatched observable counts: {len(ra)} vs {len(rb)}")
+        return ra, rb
+
+    @staticmethod
+    def _diff_series(ref_curve, challenger_curve) -> np.ndarray:
+        """Return ``y_ref − y_challenger`` as a float array."""
+        return np.asarray(ref_curve, dtype=float) - np.asarray(challenger_curve, dtype=float)
+
     def _save_abs_diff_plot(
         self,
         challenger: Simulator,
@@ -78,12 +135,7 @@ class Benchmark:
         title: str | None,
         labels: list[str] | None = None,
     ) -> Path:
-        ra = self.reference.results
-        rb = challenger.results
-        if ra is None or rb is None:
-            raise ValueError("Results are not available. Call run() (or simulate all) before save().")
-        if len(ra) != len(rb):
-            raise ValueError(f"Mismatched observable counts: {len(ra)} vs {len(rb)}")
+        ra, rb = self._matching_results(challenger)
         if indices is None:
             indices = list(range(len(ra)))
         stamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
@@ -96,7 +148,7 @@ class Benchmark:
             t = self.reference.tlist
             for plot_i, index in enumerate(indices):
                 curve_label = labels[plot_i] if labels is not None and plot_i < len(labels) else str(index)
-                diff = np.abs(np.asarray(ra[index]) - np.asarray(rb[index]))
+                diff = np.abs(self._diff_series(ra[index], rb[index]))
                 ax.plot(t, diff, label=curve_label)
             ax.set_xlabel("Time")
             ax.set_ylabel(f"|expectation ref − expectation {challenger_id}|")
