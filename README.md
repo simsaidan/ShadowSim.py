@@ -193,11 +193,11 @@ splitjmatrix_simulator = SplitJMatrixSimulator(
 )
 ```
 
-To easily compare results, we initialize a benchmark with both simulators. The 
-two simulators must have the same time steps to compare apples to apples.
+To easily compare results, we initialize a benchmark with a reference simulator
+and one or more challengers. All simulators must share the same time grid.
 We run the benchmark, which runs the underlying simulations. We can visualize
-the result by calling save_result_plot which saves the two simulation results 
-and an absolute value comparison.
+the result by calling save_result_plot, which saves a plot per simulator and an
+absolute-difference plot vs the reference for each challenger.
 
 ```python
 benchmark = Benchmark(qutip_simulator, splitjmatrix_simulator)

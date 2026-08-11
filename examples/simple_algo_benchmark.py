@@ -92,7 +92,7 @@ splitjmatrix_simulator = SplitJMatrixSimulator(
     reducers=[cavity_population, population_one],
 )
 
-# Run benchmark
+# Run benchmark (reference first, then any number of challengers)
 benchmark = Benchmark(qutip_simulator, splitjmatrix_simulator)
 benchmark.run()
 paths = benchmark.save_result_plot(labels=["cavity population", "emitter population"])
