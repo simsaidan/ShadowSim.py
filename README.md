@@ -95,9 +95,38 @@ Dense matrices and `LocalHamiltonian` terms still work; they take the densifying
 fallback (`used_sparse_pauli_path` is `False`). See also
 [`examples/simple_shadow.py`](examples/simple_shadow.py).
 
-**Scalability:** the sparse path is practical for few-term Pauli models past
-~3–4 qubits (cost tracks Pauli terms × closure size). The dense fallback still
-scans all `4^n` Paulis and materializes `2^n` matrices, so prefer labels whenever
+For practical scale limits (sparse vs dense, closure size, simulators), see
+[Scalability / practical limits](#scalability--practical-limits).
+
+## Scalability / practical limits
+
+### Shadow construction
+
+- Prefer Pauli labels / `PauliSum` so `ShadowHamiltonian` takes the sparse path
+  (`used_sparse_pauli_path`). Cost then tracks Hamiltonian Pauli terms × closure
+  size `m`, not `4^n`.
+- Dense fallback (dense matrices / `LocalHamiltonian`): practical for small `n`
+  (roughly ≤3–4 as historically exercised). Bottleneck is `4^n` Pauli tomography
+  plus dense `2^n` linear algebra.
+- Closure size `m` can grow independently of Hilbert-space dimension; `H_S` is
+  always `m×m` (not `2^n×2^n`).
+- Inspect cost before a long run: `ShadowHamiltonian(..., verbose=True)` prints
+  Hamiltonian Pauli count, operator-set union size, and closure size.
+
+### What works today
+
+| Path | Practical scale today | Bottleneck |
+| --- | --- | --- |
+| `ShadowHamiltonian` (Pauli labels) | few-term models; `n` past ~3–4 when closure stays small | Pauli terms × closure size `m` |
+| `ShadowHamiltonian` (dense / local) | small `n` (~≤3–4) | `4^n` tomography + dense mats |
+| QuTiP simulator | small truncated models | stiff ODEs / Hilbert dim |
+| Split JMatrix + Aer | tiny time grids / shot budgets for smoke | circuit per timestep × shots |
+
+### Not yet / still heavy
+
+GPU-backed shadows, open-system Lindblad shadow extensions, and a reduced smoke
+grid for Example 2 are not provided yet. For shadow construction, use the
+[sparse / Pauli-label path](#sparse--pauli-label-shadow-construction) whenever
 you already have a Pauli decomposition.
 
 ## Examples
@@ -110,8 +139,17 @@ and can be run after `uv sync`:
 uv run python examples/simple_shadow.py
 ```
 That example uses Pauli labels, so it takes the sparse construction path above.
+Pass `verbose=True` to `ShadowHamiltonian` if you want Pauli-set and closure
+sizes printed.
 
 ### Example 2: Comparing a quantum algorithm against a classical solver
+
+This is a paper-scale QuTiP vs Split JMatrix + Aer comparison (`301` time points
+and a non-trivial shot budget)—expect long wall time and nontrivial Aer cost; it
+is not a CI smoke test. The runnable script
+[`examples/simple_algo_benchmark.py`](examples/simple_algo_benchmark.py) uses the
+same scale; there is no reduced smoke grid yet. See
+[Scalability / practical limits](#scalability--practical-limits).
 
 Imagine a scenario in which you want to compare the results of a new quantum
 simulation algorithm against a source of truth like QuTiP. 
