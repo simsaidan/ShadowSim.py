@@ -90,6 +90,8 @@ splitjmatrix_simulator = SplitJMatrixSimulator(
     40,
     measurement_groups=[[1, 2], 3],
     reducers=[cavity_population, population_one],
+    shots=10000,
+    seed=0,
 )
 
 # Run benchmark (reference first, then any number of challengers)
