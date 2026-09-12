@@ -124,7 +124,7 @@ For practical scale limits (sparse vs dense, closure size, simulators), see
 | `ShadowHamiltonian` (Pauli labels) | few-term models; `n` past ~3–4 when closure stays small | Pauli terms × closure size `m` |
 | `ShadowHamiltonian` (dense / local) | small `n` (~≤3–4) | `4^n` tomography + dense mats |
 | QuTiP simulator | small truncated models | stiff ODEs / Hilbert dim |
-| Split JMatrix + Aer | tiny time grids / shot budgets for smoke | circuit per timestep × shots |
+| Split JMatrix + Aer | tiny time grids / shot budgets for smoke; set `seed` for reproducible Aer shots | circuit per timestep × shots |
 
 ### Not yet / still heavy
 
@@ -260,6 +260,7 @@ splitjmatrix_simulator = SplitJMatrixSimulator(
     40,
     measurement_groups=[[1, 2], 3],
     reducers=[cavity_population, population_one],
+    shots=10000,
 )
 ```
 
@@ -270,6 +271,13 @@ MAE / RMSE error metrics vs the reference are available via `error_metrics`
 (and can be exported with `save_error_metrics`). We can also visualize the
 result by calling `save_result_plot`, which saves a plot per simulator and an
 absolute-difference plot vs the reference for each challenger.
+
+QuTiP is deterministic. Split JMatrix estimates populations from a finite
+`shots` budget, so absolute-difference plots move run to run unless you set
+`seed` (wired into Aer’s `seed_simulator`). Residual disagreement also includes
+systematic split-J / Trotter bias that does not vanish with more shots. Use a
+lower `shots` for smoke checks and a higher budget for publication figures; pass
+`verbose=True` or a `progress(step, total)` callback for long-run feedback.
 
 ```python
 benchmark = Benchmark(qutip_simulator, splitjmatrix_simulator)

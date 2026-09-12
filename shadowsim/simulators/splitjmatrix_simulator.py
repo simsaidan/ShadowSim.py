@@ -14,6 +14,8 @@ from shadowsim.core.state import State
 from shadowsim.simulators.simulator import Simulator
 from shadowsim.utils.flip_dict import flip_dict
 
+ProgressCallback = Callable[[int, int], None]
+
 
 def _trace_qubits(
     counts: dict[str, int], qubit_indices: int | List[int] | List[int | List[int]]
@@ -93,9 +95,12 @@ def _split_jmatrix(
     trotter_depth: int = 1,
     verbose: bool = False,
     shots: int = 10000,
+    seed: int | None = None,
 ):
     if shots <= 0:
         raise ValueError("shots must be a positive integer")
+    if seed is not None and not isinstance(seed, int):
+        raise TypeError("seed must be an int or None")
     Hgates = [_make_H_gate(H_i.matrix, t, num_steps, trotter_depth) for H_i in H]
     Jgates = [_make_J_gate(L_i.matrix, t, num_steps) for L_i in Lindblads]
     ancilla = QuantumRegister(1)
@@ -121,7 +126,7 @@ def _split_jmatrix(
     circ.barrier()
 
     circ.measure_all()
-    backend = AerSimulator()
+    backend = AerSimulator(seed_simulator=seed) if seed is not None else AerSimulator()
     compiled = transpile(circ, backend)
     job = backend.run(compiled, shots=shots)
     result = job.result()
@@ -149,7 +154,7 @@ def cavity_population(counts: dict[str, int]) -> float:
 
 
 class SplitJMatrixSimulator(Simulator):
-    """Simulate open-system dynamics with the Split JMatrix method."""
+    """Simulate open-system dynamics with the Split JMatrix method via Aer."""
 
     def __init__(
         self,
@@ -165,6 +170,8 @@ class SplitJMatrixSimulator(Simulator):
         reducers: list[Callable[[dict[str, int]], float]] | None = None,
         verbose: bool = False,
         shots: int = 10000,
+        seed: int | None = None,
+        progress: ProgressCallback | None = None,
     ):
         """Initialize a Split JMatrix simulator for the given model."""
         super().__init__(
@@ -184,10 +191,14 @@ class SplitJMatrixSimulator(Simulator):
                 )
         if shots <= 0:
             raise ValueError("shots must be a positive integer")
+        if seed is not None and not isinstance(seed, int):
+            raise TypeError("seed must be an int or None")
         self.num_steps = num_steps
         self.trotter_depth = trotter_depth
         self.verbose = verbose
         self.shots = shots
+        self.seed = seed
+        self.progress = progress
         if measurement_groups is None:
             measurement_groups = list(range(self.num_qubits))
         self.measurement_groups = measurement_groups
@@ -201,7 +212,10 @@ class SplitJMatrixSimulator(Simulator):
     def simulate(self):
         """Evolve the system with Split JMatrix and store reduced traces."""
         results = [[] for _ in range(len(self.measurement_groups))]
-        for t in self.tlist:
+        total = len(self.tlist)
+        for i, t in enumerate(self.tlist):
+            if self.progress is not None:
+                self.progress(i, total)
             if self.verbose:
                 print(f"Working on time step {round(t, 3)}")
             counts = _split_jmatrix(
@@ -214,6 +228,7 @@ class SplitJMatrixSimulator(Simulator):
                 self.trotter_depth,
                 verbose=self.verbose,
                 shots=self.shots,
+                seed=self.seed,
             )
             counts = flip_dict(counts)
             traced = _trace_qubits(counts, self.measurement_groups)
@@ -232,7 +247,8 @@ class SplitJMatrixSimulator(Simulator):
             f"num_steps={self.num_steps}, "
             f"trotter_depth={self.trotter_depth}, "
             f"time_steps={self.time_steps}, "
-            f"shots={self.shots}"
+            f"shots={self.shots}, "
+            f"seed={self.seed}"
             ")"
         )
 
@@ -250,6 +266,8 @@ class SplitJMatrixSimulator(Simulator):
             f"trotter_depth={self.trotter_depth}, "
             f"measurement_groups={self.measurement_groups!r}, "
             f"verbose={self.verbose!r}, "
-            f"shots={self.shots}"
+            f"shots={self.shots}, "
+            f"seed={self.seed!r}, "
+            f"progress={self.progress!r}"
             ")"
         )
