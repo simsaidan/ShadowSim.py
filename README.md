@@ -73,6 +73,33 @@ The following simulators are supported by the package:
 | Wave matrix Lindbladization (coming soon) | — | — |
 | Pauli propagation (coming soon) | — | — |
 
+### Sparse / Pauli-label shadow construction
+
+Pass Pauli labels (or `PauliSum`s) for both the Hamiltonian and the observables so
+`ShadowHamiltonian` can build `H_S` in label space—no `4^n` tomography and no
+full `2^n × 2^n` matrix multiplies during construction:
+
+```python
+from shadowsim.core import Hamiltonian, OperatorSet
+from shadowsim.shadow import ShadowHamiltonian
+
+shadow = ShadowHamiltonian(
+    OperatorSet(["XII", "YII", "ZII", "IIX"]),
+    [Hamiltonian("XII"), Hamiltonian("IIX")],
+)
+assert shadow.used_sparse_pauli_path
+print(shadow.H_S.shape)  # (|closure|, |closure|)
+```
+
+Dense matrices and `LocalHamiltonian` terms still work; they take the densifying
+fallback (`used_sparse_pauli_path` is `False`). See also
+[`examples/simple_shadow.py`](examples/simple_shadow.py).
+
+**Scalability:** the sparse path is practical for few-term Pauli models past
+~3–4 qubits (cost tracks Pauli terms × closure size). The dense fallback still
+scans all `4^n` Paulis and materializes `2^n` matrices, so prefer labels whenever
+you already have a Pauli decomposition.
+
 ## Examples
 
 ### Example 1: Exploring a simple shadow simulation example
@@ -82,6 +109,7 @@ and can be run after `uv sync`:
 ```bash
 uv run python examples/simple_shadow.py
 ```
+That example uses Pauli labels, so it takes the sparse construction path above.
 
 ### Example 2: Comparing a quantum algorithm against a classical solver
 

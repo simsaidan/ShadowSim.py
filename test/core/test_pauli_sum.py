@@ -104,3 +104,30 @@ def test_parse_coeff_without_star_and_missing_separator():
     assert parse_pauli_expression("2XX").terms == {"XX": 2 + 0j}
     with pytest.raises(ValueError, match=r"expected '\+' or '-'"):
         parse_pauli_expression("XX#YY")
+
+
+def test_pauli_sum_add_merges_terms_and_drops_zeros():
+    left = PauliSum({"XII": 1.0, "ZII": 0.5})
+    right = PauliSum({"IIX": 1.0, "ZII": -0.5})
+    summed = left + right
+    assert summed.terms == {"XII": 1.0 + 0j, "IIX": 1.0 + 0j}
+    assert left.terms == {"XII": 1.0 + 0j, "ZII": 0.5 + 0j}
+
+
+def test_pauli_sum_iadd_and_rejects():
+    acc = PauliSum({"XII": 1.0})
+    acc += PauliSum({"IIX": 2.0})
+    assert acc.terms == {"XII": 1.0 + 0j, "IIX": 2.0 + 0j}
+
+    with pytest.raises(ValueError, match="length mismatch"):
+        _ = PauliSum({"X": 1.0}) + PauliSum({"XX": 1.0})
+    with pytest.raises(ValueError, match="length mismatch"):
+        acc = PauliSum({"X": 1.0})
+        acc += PauliSum({"XX": 1.0})
+    with pytest.raises(ValueError, match="at least one term"):
+        _ = PauliSum({"X": 1.0}) + PauliSum({"X": -1.0})
+    with pytest.raises(ValueError, match="at least one term"):
+        acc = PauliSum({"X": 1.0})
+        acc += PauliSum({"X": -1.0})
+    assert PauliSum({"X": 1.0}).__add__("X") is NotImplemented
+    assert PauliSum({"X": 1.0}).__iadd__("X") is NotImplemented

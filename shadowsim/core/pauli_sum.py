@@ -151,6 +151,32 @@ class PauliSum:
             return False
         return all(np.isclose(self._terms[k], other._terms[k]) for k in self._terms)
 
+    def __add__(self, other: object) -> Self:
+        """Return the term-wise sum of two Pauli sums (zeros dropped)."""
+        if not isinstance(other, PauliSum):
+            return NotImplemented
+        if self.num_qubits != other.num_qubits:
+            raise ValueError(f"PauliSum length mismatch: {self.num_qubits} vs {other.num_qubits}")
+        merged = dict(self._terms)
+        for label, coeff in other._terms.items():
+            merged[label] = merged.get(label, 0 + 0j) + coeff
+        return type(self)(merged)
+
+    def __iadd__(self, other: object) -> Self:
+        """Add ``other`` into this Pauli sum in place (zeros dropped)."""
+        if not isinstance(other, PauliSum):
+            return NotImplemented
+        if self.num_qubits != other.num_qubits:
+            raise ValueError(f"PauliSum length mismatch: {self.num_qubits} vs {other.num_qubits}")
+        merged = dict(self._terms)
+        for label, coeff in other._terms.items():
+            merged[label] = merged.get(label, 0 + 0j) + coeff
+        cleaned = {lab: c for lab, c in merged.items() if c != 0}
+        if not cleaned:
+            raise ValueError("PauliSum must contain at least one term")
+        self._terms = cleaned
+        return self
+
     __hash__ = None
 
 
