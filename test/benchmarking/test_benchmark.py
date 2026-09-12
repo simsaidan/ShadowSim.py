@@ -212,10 +212,16 @@ def test_error_metrics_exact_values():
     assert metrics[0]["challenger_id"] == "c"
     obs = metrics[0]["observables"]
     assert len(obs) == 2
-    assert obs[0] == {"index": 0, "linf": 2.0, "l2": 2.0}
+    assert obs[0]["index"] == 0
+    assert obs[0]["linf"] == 2.0
+    assert obs[0]["l2"] == 2.0
+    assert obs[0]["mae"] == pytest.approx(2.0 / 3.0)
+    assert obs[0]["rmse"] == pytest.approx(np.sqrt(4.0 / 3.0))
     assert obs[1]["index"] == 1
     assert obs[1]["linf"] == 1.0
     assert obs[1]["l2"] == pytest.approx(np.sqrt(3.0))
+    assert obs[1]["mae"] == 1.0
+    assert obs[1]["rmse"] == 1.0
 
 
 def test_error_metrics_multi_challenger_and_indices():
@@ -227,8 +233,24 @@ def test_error_metrics_multi_challenger_and_indices():
 
     metrics = benchmark.error_metrics(indices=[1])
     assert [m["challenger_id"] for m in metrics] == ["c1", "c2"]
-    assert metrics[0]["observables"] == [{"index": 1, "linf": 0.5, "l2": pytest.approx(np.sqrt(0.75))}]
-    assert metrics[1]["observables"] == [{"index": 1, "linf": 1.0, "l2": pytest.approx(np.sqrt(3.0))}]
+    assert metrics[0]["observables"] == [
+        {
+            "index": 1,
+            "linf": 0.5,
+            "l2": pytest.approx(np.sqrt(0.75)),
+            "mae": 0.5,
+            "rmse": 0.5,
+        }
+    ]
+    assert metrics[1]["observables"] == [
+        {
+            "index": 1,
+            "linf": 1.0,
+            "l2": pytest.approx(np.sqrt(3.0)),
+            "mae": 1.0,
+            "rmse": 1.0,
+        }
+    ]
 
 
 def test_error_metrics_requires_results():
@@ -273,7 +295,15 @@ def test_save_error_metrics_writes_json(tmp_path, monkeypatch):
     assert payload == [
         {
             "challenger_id": "c",
-            "observables": [{"index": 0, "linf": 2.0, "l2": 2.0}],
+            "observables": [
+                {
+                    "index": 0,
+                    "linf": 2.0,
+                    "l2": 2.0,
+                    "mae": pytest.approx(2.0 / 3.0),
+                    "rmse": pytest.approx(np.sqrt(4.0 / 3.0)),
+                }
+            ],
         }
     ]
 

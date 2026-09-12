@@ -98,7 +98,9 @@ benchmark.run()
 for challenger in benchmark.error_metrics():
     print(f"Error metrics for {challenger['challenger_id']}:")
     for obs in challenger["observables"]:
-        print(f"  observable {obs['index']}: L∞={obs['linf']:.6g}, L2={obs['l2']:.6g}")
+        print(
+            f"  observable {obs['index']}: L∞={obs['linf']:.6g}, L2={obs['l2']:.6g}, MAE={obs['mae']:.6g}, RMSE={obs['rmse']:.6g}"
+        )
 metrics_path = benchmark.save_error_metrics()
 print(f"Saved: {metrics_path}")
 paths = benchmark.save_result_plot(labels=["cavity population", "emitter population"])
