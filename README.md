@@ -10,6 +10,10 @@ ShadowSim.py is an open-source Python library with two main purposes:
 1. **Shadow Hamiltonian research**: support analysis and further research on shadow Hamiltonian simulation.
 2. **Algorithm comparison**: make it easy to compare quantum simulation algorithms for **open** and **closed** systems.
 
+**Note:** “Shadow” here means *shadow Hamiltonian simulation* ([Somma et al., arXiv:2407.21775](https://arxiv.org/abs/2407.21775)), **not** classical shadow tomography / randomized measurement protocols.
+
+**When to use:** Use ShadowSim to build and inspect shadow Hamiltonians for small qubit systems, and to benchmark open- or closed-system simulation algorithms against a classical reference (e.g. QuTiP).
+
 ## Installation
 
 ### Development installation
@@ -313,6 +317,8 @@ For larger changes, please open an issue first to discuss scope and design.
 This project is licensed under the MIT License. See `LICENSE` for details.
 
 ## Citing
+
+DOI coming soon.
 
 ## References
 
