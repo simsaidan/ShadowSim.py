@@ -156,9 +156,7 @@ class PauliSum:
         if not isinstance(other, PauliSum):
             return NotImplemented
         if self.num_qubits != other.num_qubits:
-            raise ValueError(
-                f"PauliSum length mismatch: {self.num_qubits} vs {other.num_qubits}"
-            )
+            raise ValueError(f"PauliSum length mismatch: {self.num_qubits} vs {other.num_qubits}")
         merged = dict(self._terms)
         for label, coeff in other._terms.items():
             merged[label] = merged.get(label, 0 + 0j) + coeff
@@ -169,9 +167,7 @@ class PauliSum:
         if not isinstance(other, PauliSum):
             return NotImplemented
         if self.num_qubits != other.num_qubits:
-            raise ValueError(
-                f"PauliSum length mismatch: {self.num_qubits} vs {other.num_qubits}"
-            )
+            raise ValueError(f"PauliSum length mismatch: {self.num_qubits} vs {other.num_qubits}")
         merged = dict(self._terms)
         for label, coeff in other._terms.items():
             merged[label] = merged.get(label, 0 + 0j) + coeff

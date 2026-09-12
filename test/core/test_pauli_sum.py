@@ -121,6 +121,9 @@ def test_pauli_sum_iadd_and_rejects():
 
     with pytest.raises(ValueError, match="length mismatch"):
         _ = PauliSum({"X": 1.0}) + PauliSum({"XX": 1.0})
+    with pytest.raises(ValueError, match="length mismatch"):
+        acc = PauliSum({"X": 1.0})
+        acc += PauliSum({"XX": 1.0})
     with pytest.raises(ValueError, match="at least one term"):
         _ = PauliSum({"X": 1.0}) + PauliSum({"X": -1.0})
     with pytest.raises(ValueError, match="at least one term"):

@@ -3,6 +3,7 @@ import pytest
 
 import shadowsim.shadow.shadow_hamiltonian as module
 from shadowsim.core import Hamiltonian, LocalHamiltonian, Operator, OperatorSet
+from shadowsim.core.pauli_sum import PauliSum
 from shadowsim.shadow import ShadowHamiltonian
 
 X = np.array([[0, 1], [1, 0]], dtype=np.complex128)
@@ -167,6 +168,30 @@ def test_shadow_hamiltonian_rejects_operator_shape_mismatch():
             OperatorSet([Operator(np.eye(4, dtype=np.complex128))]),
             Hamiltonian(X),
         )
+
+
+def test_sparse_path_rejects_num_qubits_and_operator_mismatch():
+    with pytest.raises(ValueError, match="does not match Pauli word length"):
+        ShadowHamiltonian(OperatorSet(["Z"]), Hamiltonian("X"), num_qubits=2)
+    with pytest.raises(ValueError, match="same matrix shape as H"):
+        ShadowHamiltonian(OperatorSet(["ZZ"]), Hamiltonian("X"))
+
+
+def test_sparse_helpers_reject_missing_pauli_and_skip_out_of_basis():
+    with pytest.raises(ValueError, match="expected Pauli-backed Hamiltonian"):
+        module._merge_pauli_hamiltonians([Hamiltonian(X)])
+    with pytest.raises(ValueError, match="expected Pauli-backed Hamiltonian"):
+        module._merge_pauli_hamiltonians([Hamiltonian("X"), Hamiltonian(X)])
+    with pytest.raises(ValueError, match="expected Pauli-backed operators"):
+        module._operator_pauli_labels(OperatorSet([Operator(Z)]), tol=1e-10)
+
+    tiny = OperatorSet([Operator(PauliSum({"X": 1e-20, "Z": 1.0}))])
+    assert module._operator_pauli_labels(tiny, tol=1e-10) == {"Z"}
+
+    # [Z, X] = 2i Y is outside basis {X}, so the out-of-basis branch is skipped.
+    h_s = module._assemble_h_s(["X"], {"Z": 1.0})
+    assert h_s.shape == (1, 1)
+    assert h_s[0, 0] == 0.0
 
 
 def test_shadow_hamiltonian_str_and_repr():

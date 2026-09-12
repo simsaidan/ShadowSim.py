@@ -200,9 +200,7 @@ class ShadowHamiltonian:
         if use_sparse:
             merged = _merge_pauli_hamiltonians(terms)
             if merged.num_qubits != nq:
-                raise ValueError(
-                    f"num_qubits={nq} does not match Pauli word length {merged.num_qubits}"
-                )
+                raise ValueError(f"num_qubits={nq} does not match Pauli word length {merged.num_qubits}")
             for operator in self.operator_set.operators:
                 ps = operator.pauli_sum
                 if ps is None or ps.num_qubits != nq:
@@ -233,9 +231,7 @@ class ShadowHamiltonian:
                 op_matrix = np.asarray(operator.matrix, dtype=np.complex128)
                 if op_matrix.shape != matrix.shape:
                     raise ValueError("all operators in operator_set must have the same matrix shape as H")
-                operator_pauli_set.update(
-                    _dense_pauli_decomposition(op_matrix, self.num_qubits, self.tol).keys()
-                )
+                operator_pauli_set.update(_dense_pauli_decomposition(op_matrix, self.num_qubits, self.tol).keys())
             self.operator_pauli_set = operator_pauli_set
 
         if self.verbose:
@@ -279,13 +275,7 @@ class ShadowHamiltonian:
             h_part = f"pauli_terms={len(self.pauli_decomposition)}"
         else:
             h_part = f"full_H.shape={self.H.matrix.shape}"
-        return (
-            "ShadowHamiltonian("
-            f"{h_part}, "
-            f"shadow.shape={self.H_S.shape}, "
-            f"n_qubits={self.num_qubits}"
-            ")"
-        )
+        return f"ShadowHamiltonian({h_part}, shadow.shape={self.H_S.shape}, n_qubits={self.num_qubits})"
 
     def __repr__(self):
         """Return a string representation of the ShadowHamiltonian."""
