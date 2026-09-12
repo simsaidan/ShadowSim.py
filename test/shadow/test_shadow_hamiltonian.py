@@ -56,6 +56,7 @@ def test_three_qubit_already_closed_pauli_set_has_nonzero_h_s():
     shadow = ShadowHamiltonian(observables, hamiltonians)
 
     expected = {"XII", "YII", "ZII", "IIX"}
+    assert shadow.used_sparse_pauli_path is True
     assert shadow.operator_pauli_set == expected
     assert shadow.operator_pauli_closure == expected
     assert shadow.basis == sorted(expected)
@@ -76,11 +77,83 @@ def test_local_hamiltonian_requires_explicit_num_qubits():
         [LocalHamiltonian(X, [0])],
         num_qubits=1,
     )
+    assert shadow.used_sparse_pauli_path is False
     assert shadow.basis == ["Y", "Z"]
     assert np.allclose(
         shadow.H_S,
         np.array([[0, -2j], [2j, 0]], dtype=np.complex128),
     )
+
+
+def test_sparse_and_dense_paths_agree_one_and_three_qubits():
+    dense_1q = ShadowHamiltonian(OperatorSet([Operator(Z)]), Hamiltonian(X))
+    sparse_1q = ShadowHamiltonian(OperatorSet(["Z"]), Hamiltonian("X"))
+    assert dense_1q.used_sparse_pauli_path is False
+    assert sparse_1q.used_sparse_pauli_path is True
+    assert sparse_1q.basis == dense_1q.basis
+    assert np.allclose(sparse_1q.H_S, dense_1q.H_S)
+
+    h_labels = [Hamiltonian("XII"), Hamiltonian("IIX")]
+    op_labels = OperatorSet(["XII", "YII", "ZII", "IIX"])
+    sparse_3q = ShadowHamiltonian(op_labels, h_labels)
+    dense_3q = ShadowHamiltonian(
+        OperatorSet([Operator(op.matrix) for op in op_labels.operators]),
+        [Hamiltonian(h.matrix) for h in h_labels],
+    )
+    assert sparse_3q.used_sparse_pauli_path is True
+    assert dense_3q.used_sparse_pauli_path is False
+    assert sparse_3q.basis == dense_3q.basis
+    assert sparse_3q.operator_pauli_closure == dense_3q.operator_pauli_closure
+    assert np.allclose(sparse_3q.H_S, dense_3q.H_S)
+
+
+def test_sparse_and_dense_paths_agree_two_qubit_nontrivial_closure():
+    """H = XI, observables = {ZI}: closure adds YI."""
+    sparse = ShadowHamiltonian(OperatorSet(["ZI"]), Hamiltonian("XI"))
+    dense = ShadowHamiltonian(
+        OperatorSet([Operator(sparse.operator_set.operators[0].matrix)]),
+        Hamiltonian(sparse.H.matrix),
+    )
+    assert sparse.used_sparse_pauli_path is True
+    assert dense.used_sparse_pauli_path is False
+    assert sparse.operator_pauli_closure == {"YI", "ZI"}
+    assert sparse.basis == dense.basis == ["YI", "ZI"]
+    assert np.allclose(sparse.H_S, dense.H_S)
+    expected = np.array([[0, -2j], [2j, 0]], dtype=np.complex128)
+    assert np.allclose(sparse.H_S, expected)
+
+
+def test_sparse_path_skips_dense_pauli_scan(monkeypatch):
+    def _fail_dense(*_args, **_kwargs):
+        raise AssertionError("dense Pauli tomography should not run on the sparse path")
+
+    monkeypatch.setattr(module, "_dense_pauli_decomposition", _fail_dense)
+    monkeypatch.setattr(
+        module,
+        "combined_hamiltonian_matrix",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            AssertionError("combined_hamiltonian_matrix should not run on the sparse path")
+        ),
+    )
+
+    shadow = ShadowHamiltonian(OperatorSet(["Z"]), Hamiltonian("X"))
+    assert shadow.used_sparse_pauli_path is True
+    assert np.allclose(
+        shadow.H_S,
+        np.array([[0, -2j], [2j, 0]], dtype=np.complex128),
+    )
+
+
+def test_sparse_path_str_repr_do_not_densify():
+    shadow = ShadowHamiltonian(OperatorSet(["Z"]), Hamiltonian("X"))
+    assert shadow.H._matrix_cache is None
+    text = str(shadow)
+    rep = repr(shadow)
+    assert shadow.H._matrix_cache is None
+    assert "pauli_terms=1" in text
+    assert "n_qubits=1" in text
+    assert "sparse=True" in rep
+    assert "basis_size=2" in rep
 
 
 def test_shadow_hamiltonian_rejects_empty_hamiltonian_sequence():
