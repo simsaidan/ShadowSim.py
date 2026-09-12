@@ -42,12 +42,14 @@ class Benchmark:
         return [simulator.get_results(index) for simulator in self.simulators]
 
     def error_metrics(self, indices: list[int] | None = None) -> list[dict]:
-        """Return L∞ / L2 vs reference for each challenger.
+        """Return L∞ / L2 / MAE / RMSE vs reference for each challenger.
 
         For each selected observable, with error series ``e = y_ref − y_challenger``:
 
         - ``linf``: ``max |e|``
         - ``l2``: Euclidean norm ``||e||_2``
+        - ``mae``: ``mean(|e|)``
+        - ``rmse``: ``sqrt(mean(e²))``
         """
         metrics: list[dict] = []
         for challenger in self.challengers:
@@ -61,6 +63,8 @@ class Benchmark:
                         "index": index,
                         "linf": float(np.max(np.abs(err))),
                         "l2": float(np.linalg.norm(err)),
+                        "mae": float(np.mean(np.abs(err))),
+                        "rmse": float(np.sqrt(np.mean(err**2))),
                     }
                 )
             metrics.append({"challenger_id": challenger.id, "observables": observables})
