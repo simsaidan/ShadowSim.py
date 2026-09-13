@@ -3,6 +3,7 @@
 __all__ = [
     "benchmarking",
     "core",
+    "models",
     "shadow",
     "simulators",
     "utils",
