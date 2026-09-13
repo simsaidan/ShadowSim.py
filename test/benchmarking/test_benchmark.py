@@ -271,6 +271,43 @@ def test_error_metrics_rejects_mismatched_observable_counts():
         benchmark.error_metrics()
 
 
+def test_resource_metrics_records_wall_time():
+    a, b = _pair()
+    benchmark = Benchmark(a, b)
+    benchmark.run()
+
+    resources = benchmark.resource_metrics()
+    assert [r["simulator_id"] for r in resources] == ["a", "b"]
+    for entry in resources:
+        assert entry["wall_time_s"] >= 0.0
+        assert entry["shots_per_job"] is None
+        assert entry["num_jobs"] is None
+        assert entry["total_shots"] is None
+
+
+def test_resource_metrics_shot_budget():
+    a = StubSimulator(id="a", time_steps=3)
+    b = StubSimulator(id="b", time_steps=3)
+    b.shots = 10
+    benchmark = Benchmark(a, b)
+    benchmark.run()
+
+    resources = benchmark.resource_metrics()
+    assert resources[0]["shots_per_job"] is None
+    assert resources[0]["num_jobs"] is None
+    assert resources[0]["total_shots"] is None
+    assert resources[1]["shots_per_job"] == 10
+    assert resources[1]["num_jobs"] == 3
+    assert resources[1]["total_shots"] == 30
+
+
+def test_resource_metrics_requires_run():
+    a, b = _pair()
+    benchmark = Benchmark(a, b)
+    with pytest.raises(ValueError, match="Results are not available"):
+        benchmark.resource_metrics()
+
+
 def test_save_error_metrics_writes_json(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     ref = StubSimulator(
@@ -283,6 +320,7 @@ def test_save_error_metrics_writes_json(tmp_path, monkeypatch):
         time_steps=3,
         curves=[np.array([0.0, 1.0, 0.0])],
     )
+    challenger.shots = 10
     benchmark = Benchmark(ref, challenger)
     benchmark.run()
 
@@ -292,7 +330,7 @@ def test_save_error_metrics_writes_json(tmp_path, monkeypatch):
     assert path.name.startswith("benchmark_error_metrics_")
 
     payload = json.loads(path.read_text())
-    assert payload == [
+    assert payload["errors"] == [
         {
             "challenger_id": "c",
             "observables": [
@@ -306,6 +344,15 @@ def test_save_error_metrics_writes_json(tmp_path, monkeypatch):
             ],
         }
     ]
+    assert [r["simulator_id"] for r in payload["resources"]] == ["ref", "c"]
+    assert payload["resources"][0]["shots_per_job"] is None
+    assert payload["resources"][0]["num_jobs"] is None
+    assert payload["resources"][0]["total_shots"] is None
+    assert payload["resources"][1]["shots_per_job"] == 10
+    assert payload["resources"][1]["num_jobs"] == 3
+    assert payload["resources"][1]["total_shots"] == 30
+    assert payload["resources"][0]["wall_time_s"] >= 0.0
+    assert payload["resources"][1]["wall_time_s"] >= 0.0
 
     custom = tmp_path / "out" / "metrics.json"
     assert benchmark.save_error_metrics(path=custom) == custom

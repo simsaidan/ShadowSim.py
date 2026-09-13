@@ -1,6 +1,7 @@
 """Compare results from a reference simulator against one or more challengers."""
 
 import json
+import time
 from datetime import datetime
 from pathlib import Path
 
@@ -22,6 +23,7 @@ class Benchmark:
                 raise ValueError("simulators must use the same time grid (tlist)")
         self.reference = reference
         self.challengers = list(challengers)
+        self._wall_times: dict[str, float] = {}
 
     @property
     def simulators(self) -> list[Simulator]:
@@ -35,7 +37,9 @@ class Benchmark:
     def run(self):
         """Run the reference and all challenger simulators."""
         for simulator in self.simulators:
+            start = time.perf_counter()
             simulator.run()
+            self._wall_times[simulator.id] = time.perf_counter() - start
 
     def get_results(self, index: int = None):
         """Return matching result traces from the reference and each challenger."""
@@ -70,20 +74,56 @@ class Benchmark:
             metrics.append({"challenger_id": challenger.id, "observables": observables})
         return metrics
 
+    def resource_metrics(self) -> list[dict]:
+        """Return wall-clock time and shot budget for each simulator.
+
+        Requires ``run()`` first. Shot fields are ``None`` when a simulator has no
+        ``shots`` attribute (e.g. QuTiP); otherwise ``num_jobs`` is ``len(tlist)``
+        and ``total_shots`` is ``shots_per_job * num_jobs``.
+        """
+        if not self._wall_times:
+            raise ValueError("Results are not available. Call run() (or simulate all) before save().")
+        metrics: list[dict] = []
+        for simulator in self.simulators:
+            shots_per_job = getattr(simulator, "shots", None)
+            if shots_per_job is None:
+                num_jobs = None
+                total_shots = None
+            else:
+                num_jobs = len(simulator.tlist)
+                total_shots = shots_per_job * num_jobs
+            metrics.append(
+                {
+                    "simulator_id": simulator.id,
+                    "wall_time_s": self._wall_times[simulator.id],
+                    "shots_per_job": shots_per_job,
+                    "num_jobs": num_jobs,
+                    "total_shots": total_shots,
+                }
+            )
+        return metrics
+
     def save_error_metrics(
         self,
         indices: list[int] | None = None,
         *,
         path: Path | None = None,
     ) -> Path:
-        """Write ``error_metrics()`` to JSON under ``results/`` (or ``path``)."""
+        """Write error and resource metrics to JSON under ``results/`` (or ``path``).
+
+        Payload shape: ``{"errors": error_metrics(...), "resources": resource_metrics()}``.
+        """
         if path is None:
             stamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
             path = Path("results") / f"benchmark_error_metrics_{stamp}.json"
         else:
             path = Path(path)
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(json.dumps(self.error_metrics(indices), indent=2) + "\n")
+        payload = {
+            "errors": self.error_metrics(indices),
+            "resources": self.resource_metrics(),
+        }
+        path.write_text(json.dumps(payload, indent=2) + "\n")
         return path
 
     def save_result_plot(

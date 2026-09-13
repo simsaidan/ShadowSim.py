@@ -103,6 +103,10 @@ for challenger in benchmark.error_metrics():
         print(
             f"  observable {obs['index']}: L∞={obs['linf']:.6g}, L2={obs['l2']:.6g}, MAE={obs['mae']:.6g}, RMSE={obs['rmse']:.6g}"
         )
+for resource in benchmark.resource_metrics():
+    shots = resource["total_shots"]
+    shots_s = "n/a" if shots is None else str(shots)
+    print(f"Resources for {resource['simulator_id']}: wall_time_s={resource['wall_time_s']:.6g}, total_shots={shots_s}")
 metrics_path = benchmark.save_error_metrics()
 print(f"Saved: {metrics_path}")
 paths = benchmark.save_result_plot(labels=["cavity population", "emitter population"])

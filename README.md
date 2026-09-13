@@ -267,10 +267,12 @@ splitjmatrix_simulator = SplitJMatrixSimulator(
 To easily compare results, we initialize a benchmark with a reference simulator
 and one or more challengers. All simulators must share the same time grid.
 We run the benchmark, which runs the underlying simulations. Numeric L∞ / L2 /
-MAE / RMSE error metrics vs the reference are available via `error_metrics`
-(and can be exported with `save_error_metrics`). We can also visualize the
-result by calling `save_result_plot`, which saves a plot per simulator and an
-absolute-difference plot vs the reference for each challenger.
+MAE / RMSE error metrics vs the reference are available via `error_metrics`.
+Wall-clock time and shot budget (when a simulator exposes `shots`) are available
+via `resource_metrics`. Both are exported together by `save_error_metrics` as
+`{"errors": ..., "resources": ...}`. We can also visualize the result by calling
+`save_result_plot`, which saves a plot per simulator and an absolute-difference
+plot vs the reference for each challenger.
 
 QuTiP is deterministic. Split JMatrix estimates populations from a finite
 `shots` budget, so absolute-difference plots move run to run unless you set
@@ -283,6 +285,7 @@ lower `shots` for smoke checks and a higher budget for publication figures; pass
 benchmark = Benchmark(qutip_simulator, splitjmatrix_simulator)
 benchmark.run()
 print(benchmark.error_metrics())
+print(benchmark.resource_metrics())
 metrics_path = benchmark.save_error_metrics()
 paths = benchmark.save_result_plot(labels=["cavity population", "emitter population"])
 for path in [metrics_path, *paths]:
