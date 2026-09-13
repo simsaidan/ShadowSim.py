@@ -1,19 +1,9 @@
 import numpy as np
+from matplotlib import pyplot as plt
 
-from shadowsim.core import Hamiltonian, Operator, OperatorSet, State
-from shadowsim.shadow import ShadowHamiltonian, ShadowState
+from shadowsim.core import Hamiltonian, OperatorSet, State
+from shadowsim.shadow import run_shadow_simulation
 from shadowsim.simulators import QutipSimulator
-
-
-def z_projectors_2q() -> OperatorSet:
-    labels = ("00", "01", "10", "11")
-    ops: list[Operator] = []
-    for i, lab in enumerate(labels):
-        p = np.zeros((4, 4), dtype=np.complex128)
-        p[i, i] = 1.0
-        ops.append(Operator(p, name=f"P_{lab}"))
-    return OperatorSet(ops)
-
 
 # 3q sim: A, B (8×8).  Pairing chosen so the Pauli closure has |closure|=4 and H_S
 # is not identically zero (XII+IIX drives mixing among single-qubit X,Y,Z on
@@ -51,28 +41,24 @@ qutip_simulator.plot_results(
 for op, trace in zip(observables, qutip_simulator.get_results(), strict=True):
     print(f"{op.name} variation:", float(np.max(trace) - np.min(trace)))
 
-shadow_state = ShadowState(initial_state, observables)
-print(shadow_state.to_numpy())
-shadow_hamiltonian = ShadowHamiltonian(observables, hamiltonians, num_qubits=2)
-print(shadow_hamiltonian.H_S)
-
-shadow_e_ops = z_projectors_2q()
-qutip2 = QutipSimulator(
-    [Hamiltonian(np.asarray(shadow_hamiltonian.H_S, dtype=np.complex128))],
-    [],
-    shadow_state,
-    shadow_e_ops,
-    2,
-    5.0,
-    400,
+shadow = run_shadow_simulation(
+    hamiltonians,
+    observables,
+    initial_state,
+    total_time=5.0,
+    time_steps=400,
 )
+print("shadow state:", shadow.shadow_state.to_numpy())
+print("H_S:", shadow.shadow_hamiltonian.H_S)
+print("shadow_num_qubits:", shadow.shadow_num_qubits)
 
-qutip2.simulate()
+for label, trace in zip(shadow.labels, shadow.expectations, strict=True):
+    print(f"{label} variation:", float(np.max(trace) - np.min(trace)))
 
-for op, trace in zip(shadow_e_ops, qutip2.get_results(), strict=True):
-    print(f"{op.name} variation:", float(np.max(trace) - np.min(trace)))
-
-qutip2.plot_results(
-    labels=[op.name for op in shadow_e_ops],
-    title="2-qubit shadow",
-)
+for label, trace in zip(shadow.labels, shadow.expectations, strict=True):
+    plt.plot(shadow.times, trace, label=label)
+plt.title(f"{shadow.shadow_num_qubits}-qubit shadow")
+plt.xlabel("Time")
+plt.ylabel("Expectation")
+plt.legend()
+plt.show()

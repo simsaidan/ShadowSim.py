@@ -142,9 +142,10 @@ and can be run after `uv sync`:
 ```bash
 uv run python examples/simple_shadow.py
 ```
-That example uses Pauli labels, so it takes the sparse construction path above.
-Pass `verbose=True` to `ShadowHamiltonian` if you want Pauli-set and closure
-sizes printed.
+That example uses Pauli labels (sparse construction path) and
+`run_shadow_simulation` for the reduced shadow dynamics.
+Pass `verbose=True` to `run_shadow_simulation` if you want Pauli-set and
+closure sizes printed.
 
 ### Example 2: Comparing a quantum algorithm against a classical solver
 
