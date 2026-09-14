@@ -77,6 +77,22 @@ The following simulators are supported by the package:
 | Wave matrix Lindbladization (coming soon) | — | — |
 | Pauli propagation (coming soon) | — | — |
 
+### Adding a simulator
+
+From a development install, scaffold a new backend with:
+
+```bash
+uv sync
+uv run new-simulator --name Trotterization
+```
+
+Omit `--name` to be prompted. The name must be **PascalCase** (no spaces). Names that
+already exist are refused. The command writes:
+
+- `shadowsim/simulators/{name}_simulator.py` — stub with `# TODO: implement your simulator here`
+- an export in `shadowsim/simulators/__init__.py`
+- `test/simulators/test_{name}_simulator.py` — minimal tests that pass until you implement `simulate()`
+
 ### Sparse / Pauli-label shadow construction
 
 Pass Pauli labels (or `PauliSum`s) for both the Hamiltonian and the observables so
