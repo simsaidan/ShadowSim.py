@@ -103,7 +103,7 @@ you already have a Pauli decomposition.
 
 ## Examples
 
-Walkthroughs and runnable scripts are in [`examples/`](examples/README.md):
+See [EXAMPLES.md](EXAMPLES.md) for walkthroughs. Runnable scripts:
 
 - [`examples/simple_shadow.py`](examples/simple_shadow.py) — sparse shadow construction and reduced dynamics
 - [`examples/simple_algo_benchmark.py`](examples/simple_algo_benchmark.py) — QuTiP vs Split JMatrix + Aer (paper-scale; long-running)
@@ -111,7 +111,7 @@ Walkthroughs and runnable scripts are in [`examples/`](examples/README.md):
 ## Documentation
 
 - [API / site docs](https://simsaidan.github.io/ShadowSim.py/) (`docs/`; preview with `uv sync --group docs && uv run mkdocs serve`)
-- [Examples](examples/README.md)
+- [Examples](EXAMPLES.md)
 - [Contributing](CONTRIBUTING.md)
 
 ## Contributing
