@@ -7,3 +7,4 @@ from shadowsim.simulators.splitjmatrix_simulator import (
     cavity_population,
     population_one,
 )
+from shadowsim.simulators.trotterization_simulator import TrotterizationSimulator

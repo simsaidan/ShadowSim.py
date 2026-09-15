@@ -331,7 +331,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--name",
-        help="PascalCase simulator name (e.g. Trotterization). Prompted if omitted.",
+        help="PascalCase simulator name (e.g. WaveMatrix). Prompted if omitted.",
     )
     return parser
 
