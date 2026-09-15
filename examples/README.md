@@ -1,6 +1,6 @@
 # Examples
 
-Walkthroughs live in the root [EXAMPLES.md](../EXAMPLES.md).
+Walkthroughs live in the root [README.md](../README.md#examples).
 
 Runnable scripts in this directory (after `uv sync` from the repo root):
 
