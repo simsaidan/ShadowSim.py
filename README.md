@@ -73,7 +73,7 @@ The following simulators are supported by the package:
 | --- | --- | --- |
 | Qutip simulator | classical | true |
 | Split JMatrix | quantum-inspired | true |
-| Trotterization (coming soon) | — | — |
+| Trotterization | quantum-inspired | false |
 | Wave matrix Lindbladization (coming soon) | — | — |
 | Pauli propagation (coming soon) | — | — |
 
@@ -83,7 +83,7 @@ From a development install, scaffold a new backend with:
 
 ```bash
 uv sync
-uv run new-simulator --name Trotterization
+uv run new-simulator --name WaveMatrix
 ```
 
 Omit `--name` to be prompted. The name must be **PascalCase** (no spaces). Names that
@@ -141,6 +141,7 @@ For practical scale limits (sparse vs dense, closure size, simulators), see
 | `ShadowHamiltonian` (dense / local) | small `n` (~≤3–4) | `4^n` tomography + dense mats |
 | QuTiP simulator | small truncated models | stiff ODEs / Hilbert dim |
 | Split JMatrix + Aer | tiny time grids / shot budgets for smoke; set `seed` for reproducible Aer shots | circuit per timestep × shots |
+| Trotterization + Aer | closed systems only; tiny time grids / shot budgets; set `seed` for reproducible Aer shots | circuit per timestep × shots |
 
 ### Not yet / still heavy
 
