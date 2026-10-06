@@ -1,7 +1,5 @@
 """Structured simulation result with metadata and serialize/reload."""
 
-from __future__ import annotations
-
 import json
 from collections.abc import Sequence
 from dataclasses import dataclass, field
@@ -114,7 +112,7 @@ class SimulationResult:
         return out
 
     @classmethod
-    def load(cls, path: str | Path) -> SimulationResult:
+    def load(cls, path: str | Path) -> "SimulationResult":
         """Reload a result previously written by :meth:`save`."""
         root = Path(path)
         if not root.is_dir():
