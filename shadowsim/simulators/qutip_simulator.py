@@ -1,5 +1,6 @@
 """QuTiP-backed quantum simulators."""
 
+from time import perf_counter
 from typing import Any, cast
 
 from qutip import Qobj, mesolve
@@ -9,6 +10,7 @@ from shadowsim.core.hamiltonian import Hamiltonian
 from shadowsim.core.operator import Operator
 from shadowsim.core.operator_set import OperatorSet
 from shadowsim.core.state import State
+from shadowsim.simulators.result import SimulationResult
 from shadowsim.simulators.simulator import Simulator
 
 
@@ -37,13 +39,14 @@ class QutipSimulator(Simulator):
         )
         self.observables = observables
 
-    def simulate(self):
+    def simulate(self) -> SimulationResult:
         """Evolve the system with QuTiP and store expectation traces."""
         tlist = self.tlist
         H_q = Qobj(combined_hamiltonian_matrix(self.hamiltonians, self.num_qubits))
         psi0 = Qobj(self.initial_state.state)
         e_ops = [Qobj(op.matrix) for op in self.observables]
         c_ops = [Qobj(op.matrix) for op in self.lindblads]
+        started = perf_counter()
         # Large energy scales can require more internal integration steps.
         # QuTiP stubs may type ``mesolve`` as ``NoReturn``; avoid marking callers unreachable.
         result = cast(
@@ -57,8 +60,15 @@ class QutipSimulator(Simulator):
                 options={"nsteps": 100000},
             ),
         )
+        runtime = perf_counter() - started
         self.results = list(result.expect)
-        return result
+        return self._make_result(
+            self.results,
+            runtime=runtime,
+            seed=None,
+            observable_count=len(self.observables),
+            lindblad_count=len(self.lindblads),
+        )
 
     def __str__(self):
         """Return a string representation of the QutipSimulator."""

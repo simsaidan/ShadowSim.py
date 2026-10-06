@@ -136,9 +136,12 @@ def render_stub(names: SimulatorNames) -> str:
     """Return the source for a new simulator stub module."""
     return f'''"""{names.base_name} simulator backend stub."""
 
+from time import perf_counter
+
 from shadowsim.core.hamiltonian import Hamiltonian
 from shadowsim.core.operator import Operator
 from shadowsim.core.state import State
+from shadowsim.simulators.result import SimulationResult
 from shadowsim.simulators.simulator import Simulator
 
 
@@ -168,9 +171,17 @@ class {names.class_name}(Simulator):
             "{names.simulator_id}",
         )
 
-    def simulate(self):
-        """Evolve the system and store expectation traces in ``self.results``."""
+    def simulate(self) -> SimulationResult:
+        """Evolve the system, store traces in ``self.results``, return ``SimulationResult``.
+
+        Use ``self._make_result(traces, runtime=..., seed=...)`` after setting
+        ``self.results`` so metadata (version, params, runtime) is retained.
+        """
         # TODO: implement your simulator here
+        # started = perf_counter()
+        # ... compute expectation traces ...
+        # self.results = traces
+        # return self._make_result(traces, runtime=perf_counter() - started)
         raise NotImplementedError("TODO: implement your simulator here")
 
     def __str__(self):
