@@ -145,23 +145,24 @@ def test_trotterization_simulator_grouped_measurement_groups(monkeypatch):
         reducers=[population_one],
     ).simulate()
 
-    assert len(results) == 1
-    assert len(results[0]) == 1
-    assert results[0][0] == pytest.approx(0.3)
+    assert len(results.observables) == 1
+    assert len(results.observables[0]) == 1
+    assert results.observables[0][0] == pytest.approx(0.3)
 
 
 def test_trotterization_simulator_simulate_smoke():
     sim = _tiny()
     results = sim.simulate()
-    assert len(results) == 1
-    assert len(results[0]) == 3
-    assert all(0.0 <= x <= 1.0 for x in results[0])
+    assert len(results.observables) == 1
+    assert len(results.observables[0]) == 3
+    assert all(0.0 <= x <= 1.0 for x in results.observables[0])
 
 
 def test_trotterization_simulator_seed_reproducible():
     a = _tiny(seed=11).simulate()
     b = _tiny(seed=11).simulate()
-    assert a == b
+    assert np.allclose(a.observables, b.observables)
+    assert a.seed == b.seed == 11
 
 
 def test_trotterization_simulator_str_and_repr():

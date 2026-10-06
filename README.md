@@ -31,8 +31,19 @@ Public objects are imported from their domain subpackages:
 ```python
 from shadowsim.core import Hamiltonian, Operator, State
 from shadowsim.shadow import ShadowHamiltonian
-from shadowsim.simulators import QutipSimulator
+from shadowsim.simulators import QutipSimulator, SimulationResult
 ```
+
+### Simulation results
+
+Each backend’s `simulate()` / `run()` returns a `SimulationResult` with:
+
+- `times`, `observables` (expectation traces), optional `states` (usually `None`)
+- `seed`, `algorithm`, `runtime`, and `metadata` (software version, grid params, backend params)
+
+Serialize and reload with `result.save(path)` / `SimulationResult.load(path)` (directory of
+`.npy` arrays plus `meta.json`). Low-level expectation curves remain on `simulator.results`
+for plotting and benchmarking.
 
 The following simulators are supported by the package:
 

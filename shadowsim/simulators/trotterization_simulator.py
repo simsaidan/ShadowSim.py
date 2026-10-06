@@ -1,5 +1,6 @@
 """Closed-system Trotterization simulator via Aer product formulas."""
 
+from time import perf_counter
 from typing import Callable, List
 
 import scipy
@@ -9,6 +10,7 @@ from qiskit_aer import AerSimulator
 
 from shadowsim.core.local_hamiltonian import LocalHamiltonian
 from shadowsim.core.state import State
+from shadowsim.simulators.result import SimulationResult
 from shadowsim.simulators.simulator import Simulator
 from shadowsim.simulators.splitjmatrix_simulator import population_one
 from shadowsim.utils.flip_dict import flip_dict
@@ -163,8 +165,9 @@ class TrotterizationSimulator(Simulator):
             raise ValueError("reducers and measurement_groups must have the same length")
         self.reducers = reducers
 
-    def simulate(self):
+    def simulate(self) -> SimulationResult:
         """Evolve the closed system with Trotterization and store reduced traces."""
+        started = perf_counter()
         results = [[] for _ in range(len(self.measurement_groups))]
         total = len(self.tlist)
         for i, t in enumerate(self.tlist):
@@ -189,8 +192,17 @@ class TrotterizationSimulator(Simulator):
                 traced = [traced]
             for j, reducer in enumerate(self.reducers):
                 results[j].append(float(reducer(traced[j])))
+        runtime = perf_counter() - started
         self.results = results
-        return results
+        return self._make_result(
+            results,
+            runtime=runtime,
+            seed=self.seed,
+            shots=self.shots,
+            num_steps=self.num_steps,
+            trotter_depth=self.trotter_depth,
+            measurement_group_count=len(self.measurement_groups),
+        )
 
     def __str__(self):
         """Return a short string representation of the simulator."""

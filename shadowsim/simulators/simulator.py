@@ -1,7 +1,9 @@
 """Base simulator interface and plotting helpers."""
 
+from collections.abc import Sequence
 from datetime import datetime
 from pathlib import Path
+from typing import Any
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -9,6 +11,7 @@ import numpy as np
 from shadowsim.core.hamiltonian import Hamiltonian
 from shadowsim.core.operator import Operator
 from shadowsim.core.state import State
+from shadowsim.simulators.result import SimulationResult, package_version
 
 
 class Simulator:
@@ -35,6 +38,7 @@ class Simulator:
         self.time_steps = time_steps
         self.id = id
         self.results = None
+        self.last_result: SimulationResult | None = None
         self.tlist = np.linspace(0, self.total_time, self.time_steps)
 
     def run(self):
@@ -44,6 +48,41 @@ class Simulator:
     def simulate(self):
         """Run the backend-specific simulation."""
         raise NotImplementedError("Subclasses must implement simulate()")
+
+    def _make_result(
+        self,
+        observables: Sequence[Sequence[float] | np.ndarray],
+        *,
+        runtime: float | None = None,
+        seed: int | None = None,
+        states: list[np.ndarray] | None = None,
+        **extra_meta: Any,
+    ) -> SimulationResult:
+        """Build a :class:`SimulationResult`, store it on ``self.last_result``, and return it.
+
+        ``self.results`` remains the low-level list of expectation traces; callers that
+        need metadata should use the returned object or ``self.last_result``.
+        """
+        traces = [np.asarray(curve, dtype=np.float64) for curve in observables]
+        metadata: dict[str, Any] = {
+            "software_version": package_version(),
+            "num_qubits": self.num_qubits,
+            "total_time": self.total_time,
+            "time_steps": self.time_steps,
+            "simulator_id": self.id,
+        }
+        metadata.update(extra_meta)
+        result = SimulationResult(
+            times=np.asarray(self.tlist, dtype=np.float64).copy(),
+            observables=traces,
+            states=states,
+            seed=seed,
+            algorithm=self.id,
+            runtime=runtime,
+            metadata=metadata,
+        )
+        self.last_result = result
+        return result
 
     def get_results(self, index: int = None):
         """Return simulation results, optionally for one observable index."""

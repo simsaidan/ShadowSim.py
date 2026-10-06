@@ -1,6 +1,7 @@
 """Quantum simulator implementations."""
 
 from shadowsim.simulators.qutip_simulator import QutipSimulator
+from shadowsim.simulators.result import SimulationResult
 from shadowsim.simulators.simulator import Simulator
 from shadowsim.simulators.splitjmatrix_simulator import (
     SplitJMatrixSimulator,
