@@ -12,18 +12,18 @@ git clone https://github.com/<your-github-username>/ShadowSim.py.git
 cd ShadowSim.py
 ```
 
-Sync the project (creates `.venv` and installs runtime plus test tools from
-`uv.lock`):
+Sync the project (creates `.venv` and installs the core package, optional extras,
+and test tools from `uv.lock`):
 
 ```bash
-uv sync
+uv sync --all-extras
 ```
 
 ## Tests and coverage
 
 ```bash
-uv sync
-uv run pytest --cov=shadowsim --cov-config=.coveragerc --cov-report=term-missing
+uv sync --all-extras
+uv run --all-extras pytest --cov=shadowsim --cov-config=.coveragerc --cov-report=term-missing
 ```
 
 Pushes to `main` run the same in GitHub Actions and upload coverage to
@@ -37,7 +37,7 @@ Install the lint tools, then run [Ruff](https://docs.astral.sh/ruff/) check and
 format (CI runs the same checks):
 
 ```bash
-uv sync --group lint
+uv sync --all-extras --group lint
 uv run --group lint ruff check .
 uv run --group lint ruff format .
 # CI equivalent of the format gate:
@@ -49,8 +49,8 @@ uv run --group lint ruff format --check .
 From a development install, scaffold a new backend with:
 
 ```bash
-uv sync
-uv run new-simulator --name WaveMatrix
+uv sync --all-extras
+uv run --all-extras new-simulator --name WaveMatrix
 ```
 
 Omit `--name` to be prompted. The name must be **PascalCase** (no spaces).

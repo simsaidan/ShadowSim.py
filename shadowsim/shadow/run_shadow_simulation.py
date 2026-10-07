@@ -5,6 +5,7 @@ from dataclasses import dataclass
 
 import numpy as np
 
+from shadowsim._optional import import_optional
 from shadowsim.core.hamiltonian import Hamiltonian
 from shadowsim.core.local_hamiltonian import LocalHamiltonian
 from shadowsim.core.operator import Operator
@@ -12,7 +13,6 @@ from shadowsim.core.operator_set import OperatorSet
 from shadowsim.core.state import State
 from shadowsim.shadow.shadow_hamiltonian import ShadowHamiltonian, _infer_num_qubits
 from shadowsim.shadow.shadow_state import ShadowState
-from shadowsim.simulators.qutip_simulator import QutipSimulator
 from shadowsim.utils.next_power_of_two import next_power_of_two
 
 
@@ -207,7 +207,8 @@ def run_shadow_simulation(
                 f"got dimension {op.dimension}, expected {expected_shadow_dim}"
             )
 
-    simulator = QutipSimulator(
+    qutip_simulator = import_optional("shadowsim.simulators.qutip_simulator", extra="qutip")
+    simulator = qutip_simulator.QutipSimulator(
         [Hamiltonian(H_S_padded)],
         [],
         shadow_state,

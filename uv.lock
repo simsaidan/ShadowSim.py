@@ -1266,12 +1266,27 @@ name = "shadowsim"
 version = "0.1.0"
 source = { editable = "." }
 dependencies = [
-    { name = "matplotlib" },
     { name = "numpy" },
+]
+
+[package.optional-dependencies]
+all = [
+    { name = "matplotlib" },
     { name = "qiskit" },
     { name = "qiskit-aer" },
     { name = "qutip" },
     { name = "scipy" },
+]
+qiskit = [
+    { name = "qiskit" },
+    { name = "qiskit-aer" },
+    { name = "scipy" },
+]
+qutip = [
+    { name = "qutip" },
+]
+viz = [
+    { name = "matplotlib" },
 ]
 
 [package.dev-dependencies]
@@ -1293,13 +1308,17 @@ lint = [
 
 [package.metadata]
 requires-dist = [
-    { name = "matplotlib" },
+    { name = "matplotlib", marker = "extra == 'viz'" },
     { name = "numpy" },
-    { name = "qiskit" },
-    { name = "qiskit-aer" },
-    { name = "qutip" },
-    { name = "scipy" },
+    { name = "qiskit", marker = "extra == 'qiskit'" },
+    { name = "qiskit-aer", marker = "extra == 'qiskit'" },
+    { name = "qutip", marker = "extra == 'qutip'" },
+    { name = "scipy", marker = "extra == 'qiskit'" },
+    { name = "shadowsim", extras = ["qiskit"], marker = "extra == 'all'" },
+    { name = "shadowsim", extras = ["qutip"], marker = "extra == 'all'" },
+    { name = "shadowsim", extras = ["viz"], marker = "extra == 'all'" },
 ]
+provides-extras = ["qutip", "qiskit", "viz", "all"]
 
 [package.metadata.requires-dev]
 dev = [

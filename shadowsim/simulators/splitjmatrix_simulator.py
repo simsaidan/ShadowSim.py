@@ -12,9 +12,16 @@ from qiskit_aer import AerSimulator
 from shadowsim.core.local_hamiltonian import LocalHamiltonian
 from shadowsim.core.local_operator import LocalOperator
 from shadowsim.core.state import State
+from shadowsim.simulators.reducers import cavity_population, population_one
 from shadowsim.simulators.result import SimulationResult
 from shadowsim.simulators.simulator import Simulator
 from shadowsim.utils.flip_dict import flip_dict
+
+__all__ = [
+    "SplitJMatrixSimulator",
+    "cavity_population",
+    "population_one",
+]
 
 ProgressCallback = Callable[[int, int], None]
 
@@ -133,26 +140,6 @@ def _split_jmatrix(
     job = backend.run(compiled, shots=shots)
     result = job.result()
     return result.get_counts()
-
-
-def population_one(counts: dict[str, int]) -> float:
-    """Return the empirical probability of measuring '1'."""
-    total = sum(counts.values())
-    if total == 0:
-        return 0.0
-    return counts.get("1", 0) / total
-
-
-def cavity_population(counts: dict[str, int]) -> float:
-    """Cavity population reducer for two-bit cavity readout.
-
-    Uses notebook convention:
-      population = (3*N("11") + 2*N("10") + 1*N("01")) / shots
-    """
-    total = sum(counts.values())
-    if total == 0:
-        return 0.0
-    return (3 * counts.get("11", 0) + 2 * counts.get("10", 0) + counts.get("01", 0)) / total
 
 
 class SplitJMatrixSimulator(Simulator):

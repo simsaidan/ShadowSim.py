@@ -16,13 +16,26 @@ ShadowSim.py is an open-source Python library with two main purposes:
 
 ## Installation
 
+The core package depends only on NumPy. QuTiP, Qiskit, and Matplotlib are optional extras:
+
 ```bash
 python -m pip install git+https://github.com/simsaidan/ShadowSim.py.git
+python -m pip install "shadowsim[qutip] @ git+https://github.com/simsaidan/ShadowSim.py.git"
+python -m pip install "shadowsim[qiskit] @ git+https://github.com/simsaidan/ShadowSim.py.git"
+python -m pip install "shadowsim[viz] @ git+https://github.com/simsaidan/ShadowSim.py.git"
+python -m pip install "shadowsim[all] @ git+https://github.com/simsaidan/ShadowSim.py.git"
 ```
 
-The package can then be imported as `shadowsim`.
+| Extra | Provides |
+| --- | --- |
+| `qutip` | `QutipSimulator` and `run_shadow_simulation` |
+| `qiskit` | Split JMatrix and Trotterization (`qiskit`, `qiskit-aer`, and `scipy`) |
+| `viz` | Matplotlib plots (`plot_results` and benchmark figures) |
+| `all` | `qutip`, `qiskit`, and `viz` |
 
-For a local development install (`uv sync`, tests, lint, scaffolding a simulator),
+The package can then be imported as `shadowsim`. Importing a backend or plot helper without its extra raises an `ImportError` that names the extra to install.
+
+For a local development install (`uv sync --all-extras`, tests, lint, scaffolding a simulator),
 see [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## Usage
@@ -117,7 +130,7 @@ you already have a Pauli decomposition.
 ### Example 1: Exploring a simple shadow simulation
 
 The complete example is in [`examples/simple_shadow.py`](examples/simple_shadow.py)
-and can be run after `uv sync`:
+and can be run after `uv sync --all-extras`:
 ```bash
 uv run python examples/simple_shadow.py
 ```

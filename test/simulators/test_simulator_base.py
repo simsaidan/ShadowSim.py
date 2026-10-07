@@ -94,7 +94,7 @@ def test_simulator_plot_and_save_result_plot(tmp_path, monkeypatch):
     def fake_show():
         shown["called"] = True
 
-    monkeypatch.setattr("shadowsim.simulators.simulator.plt.show", fake_show)
+    monkeypatch.setattr("matplotlib.pyplot.show", fake_show)
     sim.plot_results(labels=["pop"], title="demo")
     assert shown["called"]
     sim.plot_results(indices=[0])  # explicit indices, no title

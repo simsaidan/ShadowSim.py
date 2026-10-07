@@ -6,6 +6,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 
+import shadowsim.simulators as sims
 from shadowsim.cli import new_simulator as ns
 from shadowsim.cli.new_simulator import (
     ScaffoldError,
@@ -21,18 +22,23 @@ from shadowsim.core import Hamiltonian, State
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
+_FAKE_INIT = """\
+\"\"\"Quantum simulator implementations.\"\"\"
+
+from shadowsim.simulators.simulator import Simulator
+
+_EXPORTS: dict[str, tuple[str, str | None]] = {
+    "QutipSimulator": ("shadowsim.simulators.qutip_simulator", "qutip"),
+    "SplitJMatrixSimulator": ("shadowsim.simulators.splitjmatrix_simulator", "qiskit"),
+}
+"""
+
 
 def _fake_repo(tmp_path: Path) -> Path:
     simulators = tmp_path / "shadowsim" / "simulators"
     simulators.mkdir(parents=True)
     (tmp_path / "test" / "simulators").mkdir(parents=True)
-    (simulators / "__init__.py").write_text(
-        '"""Quantum simulator implementations."""\n\n'
-        "from shadowsim.simulators.qutip_simulator import QutipSimulator\n"
-        "from shadowsim.simulators.simulator import Simulator\n"
-        "from shadowsim.simulators.splitjmatrix_simulator import SplitJMatrixSimulator\n",
-        encoding="utf-8",
-    )
+    (simulators / "__init__.py").write_text(_FAKE_INIT, encoding="utf-8")
     return tmp_path
 
 
@@ -93,14 +99,16 @@ def test_check_collisions_missing_init(tmp_path):
         check_collisions(tmp_path, derive_names("Foo"))
 
 
-def test_check_collisions_module_imported_without_class(tmp_path):
+def test_check_collisions_module_registered_without_class(tmp_path):
     root = _fake_repo(tmp_path)
     init = root / "shadowsim" / "simulators" / "__init__.py"
     init.write_text(
-        "from shadowsim.simulators.foo_simulator import OtherThing\n",
+        "_EXPORTS: dict[str, tuple[str, str | None]] = {\n"
+        '    "OtherThing": ("shadowsim.simulators.foo_simulator", None),\n'
+        "}\n",
         encoding="utf-8",
     )
-    with pytest.raises(ScaffoldError, match="module already imported"):
+    with pytest.raises(ScaffoldError, match="module already registered"):
         check_collisions(root, derive_names("Foo"))
 
 
@@ -114,7 +122,7 @@ def test_create_simulator_writes_stub_init_and_test(tmp_path):
 
     assert stub.is_file()
     assert test.is_file()
-    assert "from shadowsim.simulators.trotterization_simulator import TrotterizationSimulator" in init_text
+    assert '"TrotterizationSimulator": ("shadowsim.simulators.trotterization_simulator", None),' in init_text
     # Alphabetical by module name: after splitjmatrix.
     assert init_text.index("splitjmatrix_simulator") < init_text.index("trotterization_simulator")
     assert names.class_name == "TrotterizationSimulator"
@@ -174,74 +182,100 @@ def test_patch_init_rejects_duplicate_module(tmp_path):
     root = _fake_repo(tmp_path)
     init = root / "shadowsim" / "simulators" / "__init__.py"
     init.write_text(
-        "from shadowsim.simulators.foo_simulator import OtherThing\n",
+        "_EXPORTS: dict[str, tuple[str, str | None]] = {\n"
+        '    "OtherThing": ("shadowsim.simulators.foo_simulator", None),\n'
+        "}\n",
         encoding="utf-8",
     )
-    with pytest.raises(ScaffoldError, match="module already imported"):
+    with pytest.raises(ScaffoldError, match="module already registered"):
         patch_init_file(init, derive_names("Foo"))
 
 
-def test_patch_init_appends_when_no_simulator_imports(tmp_path):
-    root = _fake_repo(tmp_path)
-    init = root / "shadowsim" / "simulators" / "__init__.py"
-    init.write_text('"""Empty package."""', encoding="utf-8")  # no trailing newline
-    patch_init_file(init, derive_names("Alpha"))
-    text = init.read_text(encoding="utf-8")
-    assert text.endswith("from shadowsim.simulators.alpha_simulator import AlphaSimulator\n")
-
-
-def test_patch_init_appends_when_init_already_newline_terminated(tmp_path):
+def test_patch_init_requires_exports_map(tmp_path):
     root = _fake_repo(tmp_path)
     init = root / "shadowsim" / "simulators" / "__init__.py"
     init.write_text('"""Empty package."""\n', encoding="utf-8")
+    with pytest.raises(ScaffoldError, match="no _EXPORTS"):
+        patch_init_file(init, derive_names("Alpha"))
+
+
+def test_patch_init_rejects_unclosed_exports_map(tmp_path):
+    root = _fake_repo(tmp_path)
+    init = root / "shadowsim" / "simulators" / "__init__.py"
+    init.write_text(
+        "_EXPORTS: dict[str, tuple[str, str | None]] = {\n"
+        '    "QutipSimulator": ("shadowsim.simulators.qutip_simulator", "qutip"),\n',
+        encoding="utf-8",
+    )
+    with pytest.raises(ScaffoldError, match="unclosed _EXPORTS"):
+        patch_init_file(init, derive_names("Alpha"))
+
+
+def test_patch_init_inserts_into_empty_exports_map(tmp_path):
+    root = _fake_repo(tmp_path)
+    init = root / "shadowsim" / "simulators" / "__init__.py"
+    init.write_text("_EXPORTS: dict[str, tuple[str, str | None]] = {\n}\n", encoding="utf-8")
     patch_init_file(init, derive_names("Alpha"))
     text = init.read_text(encoding="utf-8")
-    assert text.endswith("from shadowsim.simulators.alpha_simulator import AlphaSimulator\n")
+    assert '"AlphaSimulator": ("shadowsim.simulators.alpha_simulator", None),' in text
 
 
-def test_patch_init_after_multiline_import(tmp_path):
+def test_patch_init_inserts_into_single_line_empty_exports_map(tmp_path):
     root = _fake_repo(tmp_path)
     init = root / "shadowsim" / "simulators" / "__init__.py"
-    # No trailing newline: exercises EOF handling in the multi-line walker.
+    init.write_text("_EXPORTS: dict[str, tuple[str, str | None]] = {}", encoding="utf-8")
+    patch_init_file(init, derive_names("Alpha"))
+    text = init.read_text(encoding="utf-8")
+    entry = '"AlphaSimulator": ("shadowsim.simulators.alpha_simulator", None),'
+    assert text.index("{") < text.index(entry) < text.index("}")
+    compile(text, str(init), "exec")
+
+
+def test_patch_init_inserts_before_later_module(tmp_path):
+    root = _fake_repo(tmp_path)
+    init = root / "shadowsim" / "simulators" / "__init__.py"
+    patch_init_file(init, derive_names("Aer"))
+    text = init.read_text(encoding="utf-8")
+    assert text.index("aer_simulator") < text.index("qutip_simulator")
+
+
+def test_patch_init_inserts_between_modules(tmp_path):
+    root = _fake_repo(tmp_path)
+    init = root / "shadowsim" / "simulators" / "__init__.py"
+    patch_init_file(init, derive_names("Rabi"))
+    text = init.read_text(encoding="utf-8")
+    assert text.index("qutip_simulator") < text.index("rabi_simulator") < text.index("splitjmatrix_simulator")
+
+
+def test_patch_init_scans_nested_braces(tmp_path):
+    root = _fake_repo(tmp_path)
+    init = root / "shadowsim" / "simulators" / "__init__.py"
     init.write_text(
-        "from shadowsim.simulators.splitjmatrix_simulator import (\n"
-        "    SplitJMatrixSimulator,\n"
-        "    cavity_population,\n"
-        ")",
+        "_EXPORTS: dict[str, tuple[str, str | None]] = {\n"
+        "    # {nested}\n"
+        '    "QutipSimulator": ("shadowsim.simulators.qutip_simulator", "qutip"),\n'
+        "}\n",
         encoding="utf-8",
     )
+    patch_init_file(init, derive_names("Alpha"))
+    text = init.read_text(encoding="utf-8")
+    assert text.index("alpha_simulator") < text.index("qutip_simulator")
+
+
+def test_insert_export_line_without_trailing_newline():
+    body = '    "AaaSimulator": ("shadowsim.simulators.aaa_simulator", None),'
+    text = ns._insert_export_line(body, derive_names("Zebra"))
+    assert text.index("aaa_simulator") < text.index("zebra_simulator")
+    assert 'None),    "ZebraSimulator"' in text
+
+
+def test_patch_init_inserts_after_last_module(tmp_path):
+    root = _fake_repo(tmp_path)
+    init = root / "shadowsim" / "simulators" / "__init__.py"
     patch_init_file(init, derive_names("Zebra"))
     text = init.read_text(encoding="utf-8")
-    assert "ZebraSimulator" in text
+    assert '"ZebraSimulator": ("shadowsim.simulators.zebra_simulator", None),' in text
     assert text.index("splitjmatrix_simulator") < text.index("zebra_simulator")
-
-
-def test_patch_init_after_multiline_import_with_trailing_newline(tmp_path):
-    root = _fake_repo(tmp_path)
-    init = root / "shadowsim" / "simulators" / "__init__.py"
-    init.write_text(
-        "from shadowsim.simulators.splitjmatrix_simulator import (\n"
-        "    SplitJMatrixSimulator,\n"
-        "    cavity_population,\n"
-        ")\n",
-        encoding="utf-8",
-    )
-    patch_init_file(init, derive_names("Zebra"))
-    text = init.read_text(encoding="utf-8")
-    assert text.index("splitjmatrix_simulator") < text.index("zebra_simulator")
-
-
-def test_patch_init_appends_after_single_line_import_at_eof(tmp_path):
-    root = _fake_repo(tmp_path)
-    init = root / "shadowsim" / "simulators" / "__init__.py"
-    # Single-line import with no trailing newline: idx lands at EOF in the walker.
-    init.write_text(
-        "from shadowsim.simulators.aaa_simulator import AaaSimulator",
-        encoding="utf-8",
-    )
-    patch_init_file(init, derive_names("Zzz"))
-    text = init.read_text(encoding="utf-8")
-    assert text.index("aaa_simulator") < text.index("zzz_simulator")
 
 
 def test_create_rolls_back_when_patch_fails(tmp_path, monkeypatch):
@@ -351,6 +385,18 @@ def test_main_success_on_fake_repo(tmp_path, monkeypatch, capsys):
     out = capsys.readouterr().out
     assert "Created BazSimulator" in out
     assert (root / "shadowsim" / "simulators" / "baz_simulator.py").is_file()
+
+
+def test_export_without_extra_uses_plain_import(monkeypatch):
+    def _fail(*_args, **_kwargs):
+        raise AssertionError("import_optional should not be used when extra is None")
+
+    monkeypatch.setitem(sims._EXPORTS, "SimulatorNames", ("shadowsim.cli.new_simulator", None))
+    monkeypatch.setattr(sims, "import_optional", _fail)
+    try:
+        assert sims.SimulatorNames is ns.SimulatorNames
+    finally:
+        sims.__dict__.pop("SimulatorNames", None)
 
 
 def test_render_stub_contains_todo():

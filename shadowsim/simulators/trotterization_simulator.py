@@ -10,9 +10,9 @@ from qiskit_aer import AerSimulator
 
 from shadowsim.core.local_hamiltonian import LocalHamiltonian
 from shadowsim.core.state import State
+from shadowsim.simulators.reducers import population_one
 from shadowsim.simulators.result import SimulationResult
 from shadowsim.simulators.simulator import Simulator
-from shadowsim.simulators.splitjmatrix_simulator import population_one
 from shadowsim.utils.flip_dict import flip_dict
 
 ProgressCallback = Callable[[int, int], None]

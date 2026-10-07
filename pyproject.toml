@@ -19,13 +19,14 @@ classifiers = [
     "Topic :: Scientific/Engineering :: Quantum Computing",
 ]
 dependencies = [
-    "matplotlib",
     "numpy",
-    "qiskit",
-    "qiskit-aer",
-    "qutip",
-    "scipy",
 ]
+
+[project.optional-dependencies]
+qutip = ["qutip"]
+qiskit = ["qiskit", "qiskit-aer", "scipy"]
+viz = ["matplotlib"]
+all = ["shadowsim[qutip]", "shadowsim[qiskit]", "shadowsim[viz]"]
 
 [project.urls]
 Repository = "https://github.com/simsaidan/ShadowSim.py"

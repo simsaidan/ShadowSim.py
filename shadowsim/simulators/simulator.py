@@ -5,9 +5,9 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-import matplotlib.pyplot as plt
 import numpy as np
 
+from shadowsim._optional import import_optional
 from shadowsim.core.hamiltonian import Hamiltonian
 from shadowsim.core.operator import Operator
 from shadowsim.core.state import State
@@ -100,6 +100,7 @@ class Simulator:
         title: str | None = None,
     ):
         """Plot expectation traces vs time in an interactive window."""
+        plt = import_optional("matplotlib.pyplot", extra="viz")
         if indices is None:
             indices = list(range(len(self.results)))
         for plot_i, index in enumerate(indices):
@@ -125,6 +126,7 @@ class Simulator:
         Saves as ``{id}_{timestamp}.png`` (``id`` is set per simulator subclass).
         Does not open an interactive window.
         """
+        plt = import_optional("matplotlib.pyplot", extra="viz")
         if indices is None:
             indices = list(range(len(self.results)))
         stamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
