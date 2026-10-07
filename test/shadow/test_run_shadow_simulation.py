@@ -18,7 +18,9 @@ def _zero() -> State:
     return State(np.array([1.0, 0.0], dtype=np.complex128), 1)
 
 
+@pytest.mark.qutip
 def test_run_shadow_simulation_one_qubit_known_h_s():
+    pytest.importorskip("qutip")
     result = run_shadow_simulation(
         Hamiltonian(X),
         OperatorSet([Operator(Z)]),
@@ -39,7 +41,9 @@ def test_run_shadow_simulation_one_qubit_known_h_s():
         assert trace.shape == (11,)
 
 
+@pytest.mark.qutip
 def test_run_shadow_simulation_sparse_labels_path():
+    pytest.importorskip("qutip")
     result = run_shadow_simulation(
         Hamiltonian("X"),
         OperatorSet(["Z"]),
@@ -52,8 +56,10 @@ def test_run_shadow_simulation_sparse_labels_path():
     assert result.shadow_num_qubits == 1
 
 
+@pytest.mark.qutip
 def test_run_shadow_simulation_accepts_observable_sequence():
     """Sequence observables coerce via `_as_operator_set` (not only OperatorSet)."""
+    pytest.importorskip("qutip")
     result = run_shadow_simulation(
         Hamiltonian("X"),
         ["Z"],
@@ -64,8 +70,10 @@ def test_run_shadow_simulation_accepts_observable_sequence():
     assert np.allclose(result.shadow_hamiltonian.H_S, EXPECTED_H_S)
 
 
+@pytest.mark.qutip
 def test_run_shadow_simulation_local_hamiltonian_skips_dim_check():
     """LocalHamiltonian terms are skipped in physical-dimension validation."""
+    pytest.importorskip("qutip")
     result = run_shadow_simulation(
         [LocalHamiltonian(X, [0])],
         OperatorSet([Operator(Z)]),
@@ -78,7 +86,9 @@ def test_run_shadow_simulation_local_hamiltonian_skips_dim_check():
     assert np.allclose(result.shadow_hamiltonian.H_S, EXPECTED_H_S)
 
 
+@pytest.mark.qutip
 def test_run_shadow_simulation_custom_shadow_observables():
+    pytest.importorskip("qutip")
     projectors = computational_basis_projectors(1)
     result = run_shadow_simulation(
         Hamiltonian("X"),

@@ -2,6 +2,12 @@
 
 import pytest
 
+pytestmark = [pytest.mark.cross_extra, pytest.mark.slow]
+
+pytest.importorskip("qutip")
+pytest.importorskip("qiskit")
+pytest.importorskip("qiskit_aer")
+
 from shadowsim.benchmarking import Benchmark
 from shadowsim.models import tavis_cummings
 from shadowsim.simulators import QutipSimulator, SplitJMatrixSimulator
@@ -21,7 +27,6 @@ TOL_CAVITY = 0.15
 TOL_EMITTER = 0.12
 
 
-@pytest.mark.slow
 def test_example2_qutip_splitjmatrix_agreement():
     model = tavis_cummings()
 

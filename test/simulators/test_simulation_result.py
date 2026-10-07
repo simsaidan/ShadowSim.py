@@ -6,7 +6,7 @@ import numpy as np
 import pytest
 
 from shadowsim.core import Hamiltonian, Operator, OperatorSet, State
-from shadowsim.simulators import QutipSimulator, SimulationResult
+from shadowsim.simulators import SimulationResult
 from shadowsim.simulators import result as result_module
 from shadowsim.simulators.result import (
     _observables_from_npy,
@@ -20,6 +20,9 @@ Z = np.diag([1.0, -1.0]).astype(np.complex128)
 
 
 def _qutip_tiny(**kwargs):
+    pytest.importorskip("qutip")
+    from shadowsim.simulators import QutipSimulator
+
     defaults = {
         "hamiltonians": [Hamiltonian(Z)],
         "lindblads": [],
@@ -159,6 +162,7 @@ def test_package_version_unknown_when_missing(monkeypatch):
     assert package_version() == "unknown"
 
 
+@pytest.mark.qutip
 def test_qutip_simulate_returns_simulation_result():
     sim = _qutip_tiny()
     result = sim.simulate()

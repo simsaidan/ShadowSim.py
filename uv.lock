@@ -1309,11 +1309,11 @@ lint = [
 [package.metadata]
 requires-dist = [
     { name = "matplotlib", marker = "extra == 'viz'" },
-    { name = "numpy" },
+    { name = "numpy", specifier = ">=2.0" },
     { name = "qiskit", marker = "extra == 'qiskit'" },
     { name = "qiskit-aer", marker = "extra == 'qiskit'" },
     { name = "qutip", marker = "extra == 'qutip'" },
-    { name = "scipy", marker = "extra == 'qiskit'" },
+    { name = "scipy", marker = "extra == 'qiskit'", specifier = ">=1.14" },
     { name = "shadowsim", extras = ["qiskit"], marker = "extra == 'all'" },
     { name = "shadowsim", extras = ["qutip"], marker = "extra == 'all'" },
     { name = "shadowsim", extras = ["viz"], marker = "extra == 'all'" },

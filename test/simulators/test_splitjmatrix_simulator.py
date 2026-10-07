@@ -1,6 +1,12 @@
 import numpy as np
 import pytest
 
+pytestmark = pytest.mark.qiskit
+
+pytest.importorskip("qiskit")
+pytest.importorskip("qiskit_aer")
+pytest.importorskip("scipy")
+
 import shadowsim.simulators.splitjmatrix_simulator as splitjmatrix_module
 from shadowsim.core import LocalHamiltonian, Operator, State
 from shadowsim.simulators import SplitJMatrixSimulator

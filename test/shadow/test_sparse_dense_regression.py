@@ -364,7 +364,18 @@ def test_sparse_dense_regression_case(case: RegressionCase):
     hamiltonians, operator_set = case.build_sparse()
     assert_core_agreement(hamiltonians, operator_set)
     assert_shadow_agreement(hamiltonians, operator_set)
-    if case.compare_dynamics and shadow_dynamics_applicable(hamiltonians, operator_set, case.n_qubits):
+
+
+@pytest.mark.qutip
+@pytest.mark.parametrize(
+    "case",
+    [c for c in REGRESSION_CASES if c.compare_dynamics],
+    ids=lambda c: c.id,
+)
+def test_sparse_dense_dynamics_case(case: RegressionCase):
+    pytest.importorskip("qutip")
+    hamiltonians, operator_set = case.build_sparse()
+    if shadow_dynamics_applicable(hamiltonians, operator_set, case.n_qubits):
         assert_dynamics_agreement(hamiltonians, operator_set, case.n_qubits)
 
 
@@ -377,7 +388,12 @@ def test_canonical_one_qubit_x_z_seed():
     expected = np.array([[0, -2j], [2j, 0]], dtype=np.complex128)
     assert np.allclose(sparse.H_S, expected, atol=ATOL, rtol=RTOL)
     assert np.allclose(dense.H_S, expected, atol=ATOL, rtol=RTOL)
-    assert_dynamics_agreement(h, ops, 1)
+
+
+@pytest.mark.qutip
+def test_canonical_one_qubit_x_z_seed_dynamics():
+    pytest.importorskip("qutip")
+    assert_dynamics_agreement(Hamiltonian("X"), OperatorSet(["Z"]), 1)
 
 
 def test_identity_hamiltonian_near_zero_h_s():
@@ -416,7 +432,16 @@ def test_partial_canceling_hamiltonian_terms():
     assert set(sparse.pauli_decomposition) == {"Z"}
     assert sparse.pauli_decomposition["Z"] == pytest.approx(0.5)
     assert dense.pauli_decomposition["Z"] == pytest.approx(0.5)
-    assert_dynamics_agreement(terms, ops, 1)
+
+
+@pytest.mark.qutip
+def test_partial_canceling_hamiltonian_terms_dynamics():
+    pytest.importorskip("qutip")
+    terms = [
+        Hamiltonian("X"),
+        Hamiltonian(PauliSum({"X": -1.0, "Z": 0.5})),
+    ]
+    assert_dynamics_agreement(terms, OperatorSet(["X", "Z"]), 1)
 
 
 def test_coefficients_near_shadow_tol():
@@ -446,7 +471,12 @@ def test_identical_support_merge_in_expression():
     sparse, dense = assert_shadow_agreement(h, ops)
     assert sparse.pauli_decomposition["X"] == pytest.approx(3 + 0j)
     assert dense.pauli_decomposition["X"] == pytest.approx(3 + 0j)
-    assert_dynamics_agreement(h, ops, 1)
+
+
+@pytest.mark.qutip
+def test_identical_support_merge_in_expression_dynamics():
+    pytest.importorskip("qutip")
+    assert_dynamics_agreement(Hamiltonian("X + 2*X"), OperatorSet(["Z"]), 1)
 
 
 def test_random_pauli_string_observables_one_to_four_qubits():
