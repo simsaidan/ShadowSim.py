@@ -7,10 +7,11 @@ Convert QuTiP ``Qobj`` values to ShadowSim core types and back::
     H = from_qutip(qutip_H)                 # → Hamiltonian
     ops = [from_qutip(c) for c in c_ops]    # → Operator
     psi = from_qutip(psi0)                  # → State (ket)
+    rho = from_qutip(qutip_rho)             # → DensityOperator
 
-Density matrices have no first-class ShadowSim type; convert them with
-``from_qutip(rho, kind="operator")``. Hermitian observables that should stay
-``Operator`` (not ``Hamiltonian``) use the same override.
+Hermitian PSD unit-trace opers become :class:`~shadowsim.core.density_operator.DensityOperator`.
+Override with ``kind="hamiltonian"`` or ``kind="operator"`` when needed (e.g. a
+projector used as an observable).
 """
 
 from typing import Literal
@@ -18,13 +19,15 @@ from typing import Literal
 import numpy as np
 from qutip import Qobj
 
+from shadowsim.core.density_operator import DensityOperator
 from shadowsim.core.hamiltonian import Hamiltonian
 from shadowsim.core.operator import Operator
 from shadowsim.core.state import State
 from shadowsim.utils.hermitian import hermitian
+from shadowsim.utils.positive_semidefinite import positive_semidefinite
 
-Kind = Literal["state", "hamiltonian", "operator"]
-_VALID_KINDS = frozenset({"state", "hamiltonian", "operator"})
+Kind = Literal["state", "hamiltonian", "operator", "density"]
+_VALID_KINDS = frozenset({"state", "hamiltonian", "operator", "density"})
 
 
 def from_qutip(
@@ -33,19 +36,20 @@ def from_qutip(
     kind: Kind | None = None,
     num_qubits: int | None = None,
     local_dim: int | None = None,
-) -> State | Hamiltonian | Operator:
-    """Convert a QuTiP ``Qobj`` to a ShadowSim ``State``, ``Hamiltonian``, or ``Operator``.
+) -> State | DensityOperator | Hamiltonian | Operator:
+    """Convert a QuTiP ``Qobj`` to a ShadowSim core type.
 
     When ``kind`` is omitted, inference is:
 
     - ket or bra → :class:`~shadowsim.core.state.State`
-    - square Hermitian oper → :class:`~shadowsim.core.hamiltonian.Hamiltonian`
+    - square Hermitian PSD unit-trace oper → :class:`~shadowsim.core.density_operator.DensityOperator`
+    - other square Hermitian oper → :class:`~shadowsim.core.hamiltonian.Hamiltonian`
     - other square oper → :class:`~shadowsim.core.operator.Operator`
 
     Args:
         qobj: QuTiP quantum object to convert.
-        kind: Optional override: ``"state"``, ``"hamiltonian"``, or ``"operator"``.
-            Use ``kind="operator"`` for density matrices (no ``DensityOperator`` type).
+        kind: Optional override: ``"state"``, ``"hamiltonian"``, ``"operator"``,
+            or ``"density"``.
         num_qubits: Override inferred site count when building a ``State``.
         local_dim: Override inferred local dimension when building a ``State``.
 
@@ -68,21 +72,23 @@ def from_qutip(
 
     if resolved == "state":
         return _to_state(qobj, num_qubits=num_qubits, local_dim=local_dim)
+    if resolved == "density":
+        return _to_density_operator(qobj)
     if resolved == "hamiltonian":
         return _to_hamiltonian(qobj)
     return _to_operator(qobj)
 
 
-def to_qutip(obj: State | Operator | Hamiltonian) -> Qobj:
-    """Convert a ShadowSim ``State``, ``Operator``, or ``Hamiltonian`` to a QuTiP ``Qobj``.
+def to_qutip(obj: State | Operator | Hamiltonian | DensityOperator) -> Qobj:
+    """Convert a ShadowSim core type to a QuTiP ``Qobj``.
 
     Args:
         obj: ShadowSim object to convert.
 
     Returns:
         A ket ``Qobj`` for ``State`` (flat dims ``[[dim], [1]]``), or an oper
-        ``Qobj`` for operators. Flat state dims match dense Hamiltonians passed
-        to QuTiP solvers.
+        ``Qobj`` for operators (including ``Hamiltonian`` and ``DensityOperator``).
+        Flat state dims match dense Hamiltonians passed to QuTiP solvers.
 
     Raises:
         TypeError: If ``obj`` is not a supported ShadowSim type.
@@ -96,7 +102,7 @@ def to_qutip(obj: State | Operator | Hamiltonian) -> Qobj:
         matrix = np.asarray(obj.matrix, dtype=np.complex128)
         return Qobj(matrix)
 
-    raise TypeError(f"obj must be a shadowsim State, Operator, or Hamiltonian; got {type(obj)!r}")
+    raise TypeError(f"obj must be a shadowsim State, Operator, Hamiltonian, or DensityOperator; got {type(obj)!r}")
 
 
 def _infer_kind(qobj: Qobj) -> Kind:
@@ -105,6 +111,8 @@ def _infer_kind(qobj: Qobj) -> Kind:
     if qobj.isoper:
         data = np.asarray(qobj.full(), dtype=np.complex128)
         if data.ndim == 2 and data.shape[0] == data.shape[1] and hermitian(data):
+            if positive_semidefinite(data) and np.isclose(np.trace(data), 1.0):
+                return "density"
             return "hamiltonian"
         return "operator"
     raise ValueError(f"unsupported QuTiP Qobj type {qobj.type!r}; expected ket, bra, or oper")
@@ -124,6 +132,15 @@ def _to_state(
     vec = np.asarray(qobj.full(), dtype=np.complex128).reshape(-1)
     n, d = _resolve_state_layout(qobj.dims[0], num_qubits=num_qubits, local_dim=local_dim)
     return State(vec, n, d)
+
+
+def _to_density_operator(qobj: Qobj) -> DensityOperator:
+    if not qobj.isoper:
+        raise ValueError(f"kind='density' requires an oper Qobj; got type {qobj.type!r}")
+    matrix = np.asarray(qobj.full(), dtype=np.complex128)
+    if matrix.ndim != 2 or matrix.shape[0] != matrix.shape[1]:
+        raise ValueError(f"kind='density' requires a square oper; got shape {matrix.shape}")
+    return DensityOperator(matrix)
 
 
 def _to_hamiltonian(qobj: Qobj) -> Hamiltonian:

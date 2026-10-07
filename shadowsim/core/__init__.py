@@ -1,5 +1,6 @@
 """Core quantum objects used throughout ShadowSim."""
 
+from shadowsim.core.density_operator import DensityOperator
 from shadowsim.core.hamiltonian import Hamiltonian
 from shadowsim.core.hamiltonian_set import HamiltonianSet
 from shadowsim.core.local_hamiltonian import LocalHamiltonian
