@@ -1,5 +1,7 @@
 # Agent notes
 
+Never push to `main`, even if you can bypass branch protections. Open a pull request from a branch instead.
+
 Before opening a pull request, always run both **tests and coverage** and **style**
 below and fix any failures.
 
