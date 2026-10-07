@@ -4,7 +4,7 @@ import numpy as np
 import pytest
 from qutip import Qobj, basis, destroy, sigmaz, spre, tensor
 
-from shadowsim.core import Hamiltonian, Operator, State
+from shadowsim.core import DensityOperator, Hamiltonian, Operator, State
 from shadowsim.interop import qutip as qutip_interop
 from shadowsim.interop.qutip import from_qutip, to_qutip
 
@@ -43,13 +43,21 @@ def test_from_qutip_non_hermitian_oper_to_operator():
     assert not isinstance(op, Hamiltonian)
 
 
-def test_from_qutip_kind_operator_for_density_matrix():
-    rho = basis(2, 0) * basis(2, 0).dag()
-    assert isinstance(from_qutip(rho), Hamiltonian)
-    op = from_qutip(rho, kind="operator")
+def test_from_qutip_density_auto_detect():
+    rho_q = basis(2, 0) * basis(2, 0).dag()
+    rho = from_qutip(rho_q)
+    assert isinstance(rho, DensityOperator)
+    assert np.allclose(rho.matrix, [[1.0, 0.0], [0.0, 0.0]])
+
+
+def test_from_qutip_kind_density_and_overrides():
+    rho_q = basis(2, 0) * basis(2, 0).dag()
+    assert isinstance(from_qutip(rho_q, kind="density"), DensityOperator)
+    assert isinstance(from_qutip(rho_q, kind="hamiltonian"), Hamiltonian)
+    op = from_qutip(rho_q, kind="operator")
     assert isinstance(op, Operator)
+    assert not isinstance(op, DensityOperator)
     assert not isinstance(op, Hamiltonian)
-    assert np.allclose(op.matrix, [[1.0, 0.0], [0.0, 0.0]])
 
 
 def test_from_qutip_kind_operator_for_hermitian_observable():
@@ -79,7 +87,7 @@ def test_from_qutip_rejects_non_qobj_and_bad_kind():
     with pytest.raises(TypeError, match="qutip.Qobj"):
         from_qutip(np.eye(2))  # type: ignore[arg-type]
     with pytest.raises(TypeError, match="kind must be one of"):
-        from_qutip(basis(2, 0), kind="density")  # type: ignore[arg-type]
+        from_qutip(basis(2, 0), kind="bogus")  # type: ignore[arg-type]
 
 
 def test_from_qutip_rejects_superoperator():
@@ -94,6 +102,8 @@ def test_from_qutip_kind_mismatch_errors():
         from_qutip(basis(2, 0), kind="hamiltonian")
     with pytest.raises(ValueError, match="kind='operator'"):
         from_qutip(basis(2, 0), kind="operator")
+    with pytest.raises(ValueError, match="kind='density'"):
+        from_qutip(basis(2, 0), kind="density")
 
 
 def test_from_qutip_rejects_non_square_oper():
@@ -102,6 +112,8 @@ def test_from_qutip_rejects_non_square_oper():
         from_qutip(rect, kind="hamiltonian")
     with pytest.raises(ValueError, match="square oper"):
         from_qutip(rect, kind="operator")
+    with pytest.raises(ValueError, match="square oper"):
+        from_qutip(rect, kind="density")
 
 
 def test_infer_kind_rejects_unsupported_qobj_type():
@@ -129,9 +141,12 @@ def test_to_qutip_state_and_operators():
     op = Operator(destroy(2).full())
     assert to_qutip(op).isoper
 
+    rho = DensityOperator(np.array([[1.0, 0.0], [0.0, 0.0]], dtype=np.complex128))
+    assert to_qutip(rho).isoper
+
 
 def test_to_qutip_rejects_unsupported_type():
-    with pytest.raises(TypeError, match="State, Operator, or Hamiltonian"):
+    with pytest.raises(TypeError, match="State, Operator, Hamiltonian, or DensityOperator"):
         to_qutip(np.eye(2))  # type: ignore[arg-type]
 
 
@@ -142,7 +157,7 @@ def test_round_trip_state():
     assert back.dims == original.dims
 
 
-def test_round_trip_hamiltonian_and_operator():
+def test_round_trip_hamiltonian_operator_and_density():
     h = from_qutip(sigmaz())
     assert np.allclose(to_qutip(h).full(), sigmaz().full())
 
@@ -151,3 +166,8 @@ def test_round_trip_hamiltonian_and_operator():
 
     state = State(np.array([0.0, 1.0], dtype=np.complex128), 1)
     assert np.allclose(from_qutip(to_qutip(state)).state, state.state)
+
+    rho_q = basis(2, 0) * basis(2, 0).dag()
+    rho = from_qutip(rho_q)
+    assert isinstance(rho, DensityOperator)
+    assert np.allclose(to_qutip(rho).full(), rho_q.full())

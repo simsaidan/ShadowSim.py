@@ -42,7 +42,7 @@ see [CONTRIBUTING.md](CONTRIBUTING.md).
 
 Public objects are imported from their domain subpackages:
 ```python
-from shadowsim.core import Hamiltonian, Operator, State
+from shadowsim.core import DensityOperator, Hamiltonian, Operator, State
 from shadowsim.shadow import ShadowHamiltonian
 from shadowsim.simulators import QutipSimulator, SimulationResult
 ```
@@ -57,10 +57,11 @@ from shadowsim.interop.qutip import from_qutip, to_qutip
 H = from_qutip(qutip_H)  # → Hamiltonian
 ops = [from_qutip(c) for c in c_ops]  # → Operator
 psi = from_qutip(psi0)  # → State (ket)
+rho = from_qutip(qutip_rho)  # → DensityOperator (Hermitian, PSD, tr≈1)
 qobj = to_qutip(H)
 ```
 
-Density matrices have no first-class ShadowSim type; use `from_qutip(rho, kind="operator")`.
+Override with `kind=` when needed (e.g. `kind="hamiltonian"` for a unit-trace projector).
 
 ### Simulation results
 
