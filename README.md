@@ -28,7 +28,7 @@ python -m pip install "shadowsim[all] @ git+https://github.com/simsaidan/ShadowS
 
 | Extra | Provides |
 | --- | --- |
-| `qutip` | `QutipSimulator` and `run_shadow_simulation` |
+| `qutip` | `QutipSimulator`, `run_shadow_simulation`, and QuTiP interop (`from_qutip` / `to_qutip`) |
 | `qiskit` | Split JMatrix and Trotterization (`qiskit`, `qiskit-aer`, and `scipy`) |
 | `viz` | Matplotlib plots (`plot_results` and benchmark figures) |
 | `all` | `qutip`, `qiskit`, and `viz` |
@@ -46,6 +46,21 @@ from shadowsim.core import Hamiltonian, Operator, State
 from shadowsim.shadow import ShadowHamiltonian
 from shadowsim.simulators import QutipSimulator, SimulationResult
 ```
+
+### QuTiP interop
+
+With the `qutip` extra, convert between QuTiP `Qobj` values and ShadowSim core types:
+
+```python
+from shadowsim.interop.qutip import from_qutip, to_qutip
+
+H = from_qutip(qutip_H)  # → Hamiltonian
+ops = [from_qutip(c) for c in c_ops]  # → Operator
+psi = from_qutip(psi0)  # → State (ket)
+qobj = to_qutip(H)
+```
+
+Density matrices have no first-class ShadowSim type; use `from_qutip(rho, kind="operator")`.
 
 ### Simulation results
 
