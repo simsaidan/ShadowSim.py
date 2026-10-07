@@ -2,7 +2,7 @@
 
 Walkthroughs live in the root [README.md](../README.md#examples).
 
-Runnable scripts in this directory (after `uv sync` from the repo root):
+Runnable scripts in this directory (after `uv sync --all-extras` from the repo root):
 
 ```bash
 uv run python examples/simple_shadow.py

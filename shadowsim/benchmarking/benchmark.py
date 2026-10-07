@@ -5,9 +5,9 @@ import time
 from datetime import datetime
 from pathlib import Path
 
-import matplotlib.pyplot as plt
 import numpy as np
 
+from shadowsim._optional import import_optional
 from shadowsim.simulators.simulator import Simulator
 
 
@@ -180,6 +180,7 @@ class Benchmark:
         labels: list[str] | None = None,
     ) -> Path:
         ra, rb = self._matching_results(challenger)
+        plt = import_optional("matplotlib.pyplot", extra="viz")
         if indices is None:
             indices = list(range(len(ra)))
         stamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")

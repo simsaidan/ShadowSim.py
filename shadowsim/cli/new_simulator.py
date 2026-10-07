@@ -7,8 +7,12 @@ from dataclasses import dataclass
 from pathlib import Path
 
 _PASCAL_RE = re.compile(r"^[A-Z][A-Za-z0-9]*$")
-_SIMULATOR_IMPORT_RE = re.compile(
-    r"^from\s+shadowsim\.simulators\.(\w+)\s+import\b",
+_EXPORTS_START_RE = re.compile(r"^_EXPORTS\b[^\n]*=\s*\{", re.MULTILINE)
+_EXPORT_ENTRY_RE = re.compile(
+    r"^(?P<indent>[ \t]*)"
+    r'"(?P<class_name>[A-Za-z_][A-Za-z0-9_]*)": '
+    r'\("shadowsim\.simulators\.(?P<module>\w+)", '
+    r'(?P<extra>None|"[^"]*")\),$',
     re.MULTILINE,
 )
 
@@ -120,13 +124,9 @@ def check_collisions(repo_root: Path, names: SimulatorNames) -> None:
         problems.append(f"simulators package init is missing: {init}")
     else:
         init_text = init.read_text(encoding="utf-8")
-        if re.search(rf"\b{re.escape(names.class_name)}\b", init_text):
-            problems.append(f"class already exported in {init}: {names.class_name}")
-        elif re.search(
-            rf"shadowsim\.simulators\.{re.escape(names.module_name)}\b",
-            init_text,
-        ):
-            problems.append(f"module already imported in {init}: {names.module_name}")
+        conflict = _registration_conflict(init_text, init, names)
+        if conflict is not None:
+            problems.append(conflict)
 
     if problems:
         raise ScaffoldError("Name already exists:\n- " + "\n- ".join(problems))
@@ -252,50 +252,64 @@ def test_{names.snake_name}_simulator_str_and_repr():
 '''
 
 
+def _registration_conflict(text: str, path: Path, names: SimulatorNames) -> str | None:
+    """Return an error message when ``names`` is already present in ``text``."""
+    if re.search(rf"\b{re.escape(names.class_name)}\b", text):
+        return f"class already exported in {path}: {names.class_name}"
+    if re.search(rf"shadowsim\.simulators\.{re.escape(names.module_name)}\b", text):
+        return f"module already registered in {path}: {names.module_name}"
+    return None
+
+
+def _exports_span(content: str, path: Path) -> tuple[int, int]:
+    """Return the half-open span of the ``_EXPORTS`` dict body."""
+    match = _EXPORTS_START_RE.search(content)
+    if match is None:
+        raise ScaffoldError(f"simulators package init has no _EXPORTS map: {path}")
+    depth = 1
+    for idx in range(match.end(), len(content)):
+        char = content[idx]
+        if char == "{":
+            depth += 1
+        elif char == "}":
+            depth -= 1
+            if depth == 0:
+                return match.end(), idx
+    raise ScaffoldError(f"simulators package init has an unclosed _EXPORTS map: {path}")
+
+
+def _export_line(names: SimulatorNames) -> str:
+    """Return an ``_EXPORTS`` entry for a backend with no optional extra."""
+    return f'    "{names.class_name}": ("shadowsim.simulators.{names.module_name}", None),'
+
+
+def _insert_export_line(body: str, names: SimulatorNames) -> str:
+    """Return ``body`` with an alphabetical ``_EXPORTS`` entry inserted."""
+    new_line = _export_line(names)
+    entries = list(_EXPORT_ENTRY_RE.finditer(body))
+    for entry in entries:
+        if names.module_name < entry.group("module"):
+            insert_at = entry.start()
+            return body[:insert_at] + new_line + "\n" + body[insert_at:]
+    if entries:
+        insert_at = entries[-1].end()
+        if insert_at < len(body) and body[insert_at] == "\n":
+            insert_at += 1
+        return body[:insert_at] + new_line + "\n" + body[insert_at:]
+    if body.endswith("\n"):
+        return body + new_line + "\n"
+    return body + "\n" + new_line + "\n"
+
+
 def patch_init_file(path: Path, names: SimulatorNames) -> None:
-    """Insert an alphabetical import for the new simulator into ``__init__.py``."""
+    """Register the new simulator in ``_EXPORTS`` with no optional extra."""
     content = path.read_text(encoding="utf-8")
-    if re.search(rf"\b{re.escape(names.class_name)}\b", content):
-        raise ScaffoldError(f"class already exported in {path}: {names.class_name}")
-    if re.search(rf"shadowsim\.simulators\.{re.escape(names.module_name)}\b", content):
-        raise ScaffoldError(f"module already imported in {path}: {names.module_name}")
-
-    new_line = f"from shadowsim.simulators.{names.module_name} import {names.class_name}"
-    matches = list(_SIMULATOR_IMPORT_RE.finditer(content))
-    if not matches:
-        if content and not content.endswith("\n"):
-            content += "\n"
-        path.write_text(content + new_line + "\n", encoding="utf-8")
-        return
-
-    insert_at = None
-    for match in matches:
-        module = match.group(1)
-        if names.module_name < module:
-            insert_at = match.start()
-            break
-    if insert_at is None:
-        last = matches[-1]
-        # Advance past a possible multi-line import block.
-        idx = last.end()
-        while idx < len(content) and content[idx] != "\n":
-            idx += 1
-        if idx < len(content) and content[idx] == "\n":
-            idx += 1
-        depth = content[last.start() : idx].count("(") - content[last.start() : idx].count(")")
-        while depth > 0 and idx < len(content):
-            line_end = content.find("\n", idx)
-            if line_end == -1:
-                idx = len(content)
-                break
-            chunk = content[idx : line_end + 1]
-            depth += chunk.count("(") - chunk.count(")")
-            idx = line_end + 1
-        insert_at = idx
-        path.write_text(content[:insert_at] + new_line + "\n" + content[insert_at:], encoding="utf-8")
-        return
-
-    path.write_text(content[:insert_at] + new_line + "\n" + content[insert_at:], encoding="utf-8")
+    conflict = _registration_conflict(content, path, names)
+    if conflict is not None:
+        raise ScaffoldError(conflict)
+    body_start, body_end = _exports_span(content, path)
+    updated = _insert_export_line(content[body_start:body_end], names)
+    path.write_text(content[:body_start] + updated + content[body_end:], encoding="utf-8")
 
 
 def create_simulator(raw_name: str, *, repo_root: Path | None = None) -> SimulatorNames:

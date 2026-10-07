@@ -10,7 +10,7 @@ from shadowsim.core.local_hamiltonian import LocalHamiltonian
 from shadowsim.core.local_operator import LocalOperator
 from shadowsim.core.operator import Operator
 from shadowsim.core.state import State
-from shadowsim.simulators.splitjmatrix_simulator import cavity_population, population_one
+from shadowsim.simulators.reducers import cavity_population, population_one
 from shadowsim.utils.constants import (
     I,
     one_state_two_qubits,
