@@ -251,6 +251,56 @@ for path in [metrics_path, *paths]:
 
 ![Absolute difference between the two simulators](./images/example2_abs_diff.png)
 
+### Example 3: Classical and transverse-field Ising models
+
+[`examples/ising_chain.py`](examples/ising_chain.py) builds Ising Hamiltonians with
+the shared factory and evolves a small open transverse-field chain in QuTiP.
+
+```bash
+uv run python examples/ising_chain.py
+```
+
+```python
+from shadowsim.models import ising
+from shadowsim.simulators import QutipSimulator
+
+# Transverse-field Ising: H = J Σ Z_i Z_j + h Σ X_i
+model = ising(
+    n_qubits=4,
+    J=1.0,
+    h=0.5,
+    field="transverse",  # or "classical" for a Z field
+    topology="chain",
+    boundary="open",  # or "periodic"
+)
+
+# Custom connectivity (overrides chain presets)
+custom = ising(
+    n_qubits=4,
+    J=1.0,
+    h=0.5,
+    field="classical",
+    edges=[(0, 1), (1, 2), (2, 3), (0, 2)],
+)
+
+simulator = QutipSimulator(
+    model.full_hamiltonians,
+    model.c_ops_full,  # empty; closed system
+    model.psi0,
+    model.e_ops,
+    model.num_qubits,
+    2.0,
+    101,
+)
+result = simulator.simulate()
+```
+
+Use `model.hamiltonian` or `model.pauli_sum` when you only need the combined
+Hamiltonian (for example with `run_shadow_simulation`). Contiguous
+nearest-neighbor ZZ terms are also available as `model.local_hamiltonians` for
+Split-J / Trotter; non-contiguous edges (periodic wrap or custom long-range
+couplings) appear only in the full-space operators.
+
 ## Documentation
 
 - [API / site docs](https://simsaidan.github.io/ShadowSim.py/) (`docs/`; preview with `uv sync --group docs && uv run mkdocs serve`)
