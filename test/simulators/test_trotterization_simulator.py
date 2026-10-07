@@ -3,10 +3,16 @@
 import numpy as np
 import pytest
 
+pytestmark = pytest.mark.qiskit
+
+pytest.importorskip("qiskit")
+pytest.importorskip("qiskit_aer")
+pytest.importorskip("scipy")
+
 import shadowsim.simulators.trotterization_simulator as trotter_module
 from shadowsim.benchmarking import Benchmark
 from shadowsim.core import Hamiltonian, LocalHamiltonian, Operator, State
-from shadowsim.simulators import QutipSimulator, TrotterizationSimulator, population_one
+from shadowsim.simulators import TrotterizationSimulator, population_one
 from shadowsim.simulators.simulator import Simulator
 from shadowsim.simulators.trotterization_simulator import _trace_qubits, _trotter_circuit_counts
 
@@ -257,7 +263,11 @@ SHOTS = 2000
 TOL_POP = 0.08
 
 
+@pytest.mark.cross_extra
 def test_trotterization_qutip_closed_agreement():
+    pytest.importorskip("qutip")
+    from shadowsim.simulators import QutipSimulator
+
     psi0 = State(np.array([1.0, 0.0], dtype=np.complex128), 1)
     qutip_simulator = QutipSimulator(
         [Hamiltonian(X)],

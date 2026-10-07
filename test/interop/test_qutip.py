@@ -2,6 +2,10 @@ from types import SimpleNamespace
 
 import numpy as np
 import pytest
+
+pytestmark = pytest.mark.qutip
+
+pytest.importorskip("qutip")
 from qutip import Qobj, basis, destroy, sigmaz, spre, tensor
 
 from shadowsim.core import DensityOperator, Hamiltonian, Operator, State

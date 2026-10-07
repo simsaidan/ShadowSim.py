@@ -2,14 +2,17 @@ import numpy as np
 import pytest
 
 from shadowsim.core import Hamiltonian, Operator, State
-from shadowsim.simulators import QutipSimulator
 from shadowsim.simulators.simulator import Simulator
 
 Z = np.diag([1.0, -1.0]).astype(np.complex128)
 
 
-def _tiny_qutip():
-    return QutipSimulator(
+@pytest.mark.qutip
+def test_qutip_simulator_str_and_repr():
+    pytest.importorskip("qutip")
+    from shadowsim.simulators import QutipSimulator
+
+    sim = QutipSimulator(
         [Hamiltonian(Z)],
         [],
         State(np.array([1.0, 0.0], dtype=np.complex128), 1),
@@ -18,10 +21,6 @@ def _tiny_qutip():
         0.1,
         3,
     )
-
-
-def test_qutip_simulator_str_and_repr():
-    sim = _tiny_qutip()
     text = str(sim)
     rep = repr(sim)
     assert "QutipSimulator(" in text
@@ -72,7 +71,10 @@ def test_simulator_get_results_requires_run():
         sim.get_results()
 
 
+@pytest.mark.viz
 def test_simulator_plot_and_save_result_plot(tmp_path, monkeypatch):
+    pytest.importorskip("matplotlib")
+
     class Tiny(Simulator):
         def simulate(self):
             self.results = [np.linspace(0.0, 1.0, self.time_steps)]

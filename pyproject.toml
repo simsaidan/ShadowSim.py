@@ -19,12 +19,14 @@ classifiers = [
     "Topic :: Scientific/Engineering :: Quantum Computing",
 ]
 dependencies = [
-    "numpy",
+    # Floor matches Qiskit 2.x (numpy>=2.0); QuTiP 5.3 allows older but we test from 2.0.
+    "numpy>=2.0",
 ]
 
 [project.optional-dependencies]
 qutip = ["qutip"]
-qiskit = ["qiskit", "qiskit-aer", "scipy"]
+# SciPy floor matches Qiskit 2.x (scipy>=1.14). QuTiP excludes 1.16.0/1.17.0 on its own.
+qiskit = ["qiskit", "qiskit-aer", "scipy>=1.14"]
 viz = ["matplotlib"]
 all = ["shadowsim[qutip]", "shadowsim[qiskit]", "shadowsim[viz]"]
 
@@ -66,6 +68,10 @@ build-backend = "setuptools.build_meta"
 [tool.pytest.ini_options]
 markers = [
     "slow: integration tests that run real quantum simulators (kept on by default in CI)",
+    "qutip: tests that require the qutip extra",
+    "qiskit: tests that require the qiskit extra",
+    "viz: tests that require the viz extra",
+    "cross_extra: tests that require more than one optional extra",
 ]
 
 [tool.ruff]
@@ -123,5 +129,6 @@ max-positional-args = 15
 # skip checking demo scripts and research scratch
 "examples/*" = ["I", "E", "W", "D", "PL", "F"]
 "povm_vs_projective/*" = ["I", "E", "W", "D", "PL", "F"]
-# Enforce pydocstyle on library code only; tests have little docstring coverage today
-"test/*" = ["D"]
+# Enforce pydocstyle on library code only; tests have little docstring coverage today.
+# E402/PLC0415: optional-extra tests import after pytest.importorskip or inside marked tests.
+"test/*" = ["D", "E402", "PLC0415"]

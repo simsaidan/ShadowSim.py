@@ -105,7 +105,9 @@ def test_benchmark_run_and_get_results_three_simulators():
     assert np.allclose(first_results[2], c2.get_results(0))
 
 
+@pytest.mark.viz
 def test_benchmark_save_result_plot_writes_three_files(tmp_path, monkeypatch):
+    pytest.importorskip("matplotlib")
     monkeypatch.chdir(tmp_path)
     a, b = _pair()
     # Distinct curves so the abs-diff plot is nontrivial.
@@ -129,7 +131,9 @@ def test_benchmark_save_result_plot_writes_three_files(tmp_path, monkeypatch):
     assert pdiff.name.startswith("benchmark_abs_diff_b_")
 
 
+@pytest.mark.viz
 def test_benchmark_save_result_plot_writes_five_files_for_three_sims(tmp_path, monkeypatch):
+    pytest.importorskip("matplotlib")
     monkeypatch.chdir(tmp_path)
     ref = StubSimulator(id="ref")
     c1 = StubSimulator(id="c1")
@@ -160,7 +164,9 @@ def test_benchmark_abs_diff_requires_results():
         benchmark._save_abs_diff_plot(b, indices=None, dpi=80, title=None)
 
 
+@pytest.mark.viz
 def test_benchmark_abs_diff_with_explicit_indices_and_no_title(tmp_path, monkeypatch):
+    pytest.importorskip("matplotlib")
     monkeypatch.chdir(tmp_path)
     a, b = _pair()
     a.results = a._curves

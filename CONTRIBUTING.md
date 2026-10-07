@@ -26,7 +26,21 @@ uv sync --all-extras
 uv run --all-extras pytest --cov=shadowsim --cov-config=.coveragerc --cov-report=term-missing
 ```
 
-Pushes to `main` run the same in GitHub Actions and upload coverage to
+Optional extras are selected with pytest markers (`qutip`, `qiskit`, `viz`,
+`cross_extra`). Tests that need more than one extra use `cross_extra` and run
+only in the full all-extras jobs.
+
+Pushes and pull requests run [`.github/workflows/test-coverage.yml`](.github/workflows/test-coverage.yml):
+
+- Locked `--all-extras` suite on Ubuntu, macOS, and Windows for Python 3.12 and 3.13
+  (coverage upload from Ubuntu 3.12 only)
+- Core-only install on Ubuntu for 3.12 and 3.13 (`check_core_install.py` plus
+  tests without optional-extra markers)
+- One-extra jobs on Ubuntu 3.12 for `qutip`, `qiskit`, and `viz`
+- NumPy/SciPy floor (`numpy==2.0.0`, `scipy==1.14.0`) and newest compatible
+  releases on Ubuntu 3.12 with all extras
+
+Coverage uploads to
 [Codecov](https://app.codecov.io/gh/simsaidan/ShadowSim.py) (enable the
 [Codecov GitHub app](https://github.com/apps/codecov) for this repo the first
 time so uploads succeed).
