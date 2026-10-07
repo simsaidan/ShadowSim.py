@@ -4,7 +4,7 @@ import sys
 
 import numpy as np
 
-from shadowsim import simulators
+from shadowsim import interop, simulators
 from shadowsim.core import Hamiltonian, State
 from shadowsim.models import tavis_cummings
 from shadowsim.shadow import ShadowHamiltonian
@@ -38,7 +38,7 @@ def _plot() -> None:
 
 def main() -> None:
     """Import the core API, then require hints for missing extras."""
-    for obj in (Hamiltonian, ShadowHamiltonian, tavis_cummings, simulators.Simulator):
+    for obj in (Hamiltonian, ShadowHamiltonian, tavis_cummings, interop, simulators.Simulator):
         if obj is None:
             raise SystemExit("core import returned None")
 
@@ -47,6 +47,7 @@ def main() -> None:
         raise SystemExit(f"core import loaded optional libraries: {loaded}")
 
     _expect_extra(lambda: simulators.QutipSimulator, "qutip")
+    _expect_extra(lambda: interop.from_qutip, "qutip")
     _expect_extra(lambda: simulators.SplitJMatrixSimulator, "qiskit")
     _expect_extra(_plot, "viz")
 
