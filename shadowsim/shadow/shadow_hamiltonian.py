@@ -2,6 +2,7 @@
 
 from collections import deque
 from collections.abc import Sequence
+from dataclasses import dataclass
 from itertools import product
 
 import numpy as np
@@ -143,6 +144,98 @@ def _close_operator_paulis(operator_pauli_set: set[str], pauli_set: set[str]) ->
     return closure
 
 
+@dataclass(frozen=True)
+class _PauliModel:
+    """Sparse or dense Pauli presentation of ``H`` and an operator set.
+
+    Shared by ``ShadowHamiltonian`` construction and invariance analysis so both
+    paths use the same label sets and coefficients.
+    """
+
+    H: Hamiltonian
+    num_qubits: int
+    used_sparse_pauli_path: bool
+    pauli_decomposition: dict[str, complex]
+    pauli_set: frozenset[str]
+    operator_pauli_set: frozenset[str]
+
+
+def _normalize_hamiltonian_terms(H: Hamiltonian | Sequence[Hamiltonian]) -> list[Hamiltonian]:
+    """Return a non-empty list of Hamiltonian terms from ``H``."""
+    if isinstance(H, Hamiltonian):
+        return [H]
+    terms = list(H)
+    if not terms:
+        raise ValueError("hamiltonians must be a non-empty sequence")
+    return terms
+
+
+def _pauli_model_from_inputs(
+    operator_set: OperatorSet,
+    H: Hamiltonian | Sequence[Hamiltonian],
+    *,
+    num_qubits: int | None = None,
+    tol: float = 1e-10,
+) -> _PauliModel:
+    """Build the shared sparse/dense Pauli model for ``H`` and ``operator_set``.
+
+    Same input conventions as ``ShadowHamiltonian``: ``H`` may be a single
+    ``Hamiltonian`` or a non-empty sequence; ``num_qubits`` is inferred when
+    possible (required if every term is a ``LocalHamiltonian``).
+    """
+    terms = _normalize_hamiltonian_terms(H)
+    nq = num_qubits if num_qubits is not None else _infer_num_qubits(terms)
+    use_sparse = _can_use_sparse_pauli_path(terms, operator_set)
+    tol = float(tol)
+
+    if use_sparse:
+        merged = _merge_pauli_hamiltonians(terms)
+        if merged.num_qubits != nq:
+            raise ValueError(f"num_qubits={nq} does not match Pauli word length {merged.num_qubits}")
+        for operator in operator_set.operators:
+            ps = operator.pauli_sum
+            if ps is None or ps.num_qubits != nq:
+                raise ValueError("all operators in operator_set must have the same matrix shape as H")
+        pauli_decomposition = _pauli_terms_above_tol(merged, tol)
+        return _PauliModel(
+            H=Hamiltonian(merged),
+            num_qubits=nq,
+            used_sparse_pauli_path=True,
+            pauli_decomposition=pauli_decomposition,
+            pauli_set=frozenset(pauli_decomposition.keys()),
+            operator_pauli_set=frozenset(_operator_pauli_labels(operator_set, tol)),
+        )
+
+    matrix_total = combined_hamiltonian_matrix(terms, nq)
+    if matrix_total.ndim != 2 or matrix_total.shape[0] != matrix_total.shape[1]:
+        raise ValueError("H.matrix must be a square matrix")
+
+    dim = matrix_total.shape[0]
+    inferred_nq = int(np.log2(dim)) if dim > 0 else -1
+    if inferred_nq < 0 or 2**inferred_nq != dim:
+        raise ValueError("H dimension must be a power of 2 to use a Pauli-string basis")
+
+    model_H = Hamiltonian(matrix_total)
+    matrix = np.asarray(model_H.matrix, dtype=np.complex128)
+    pauli_decomposition = _dense_pauli_decomposition(matrix, inferred_nq, tol)
+
+    operator_pauli_set: set[str] = set()
+    for operator in operator_set.operators:
+        op_matrix = np.asarray(operator.matrix, dtype=np.complex128)
+        if op_matrix.shape != matrix.shape:
+            raise ValueError("all operators in operator_set must have the same matrix shape as H")
+        operator_pauli_set.update(_dense_pauli_decomposition(op_matrix, inferred_nq, tol).keys())
+
+    return _PauliModel(
+        H=model_H,
+        num_qubits=inferred_nq,
+        used_sparse_pauli_path=False,
+        pauli_decomposition=pauli_decomposition,
+        pauli_set=frozenset(pauli_decomposition.keys()),
+        operator_pauli_set=frozenset(operator_pauli_set),
+    )
+
+
 class ShadowHamiltonian:
     """Store the input model ``H`` and the reduced shadow matrix ``H_S``.
 
@@ -186,53 +279,18 @@ class ShadowHamiltonian:
         self.tol = float(tol)
         self.verbose = verbose
 
-        if isinstance(H, Hamiltonian):
-            terms: list[Hamiltonian] = [H]
-        else:
-            terms = list(H)
-            if not terms:
-                raise ValueError("hamiltonians must be a non-empty sequence")
-
-        nq = num_qubits if num_qubits is not None else _infer_num_qubits(terms)
-        use_sparse = _can_use_sparse_pauli_path(terms, operator_set)
-        self.used_sparse_pauli_path = use_sparse
-
-        if use_sparse:
-            merged = _merge_pauli_hamiltonians(terms)
-            if merged.num_qubits != nq:
-                raise ValueError(f"num_qubits={nq} does not match Pauli word length {merged.num_qubits}")
-            for operator in self.operator_set.operators:
-                ps = operator.pauli_sum
-                if ps is None or ps.num_qubits != nq:
-                    raise ValueError("all operators in operator_set must have the same matrix shape as H")
-            self.H = Hamiltonian(merged)
-            self.num_qubits = nq
-            self.pauli_decomposition = _pauli_terms_above_tol(merged, self.tol)
-            self.pauli_set = set(self.pauli_decomposition.keys())
-            self.operator_pauli_set = _operator_pauli_labels(self.operator_set, self.tol)
-        else:
-            matrix_total = combined_hamiltonian_matrix(terms, nq)
-            if matrix_total.ndim != 2 or matrix_total.shape[0] != matrix_total.shape[1]:
-                raise ValueError("H.matrix must be a square matrix")
-
-            dim = matrix_total.shape[0]
-            inferred_nq = int(np.log2(dim)) if dim > 0 else -1
-            if inferred_nq < 0 or 2**inferred_nq != dim:
-                raise ValueError("H dimension must be a power of 2 to use a Pauli-string basis")
-            self.num_qubits = inferred_nq
-            self.H = Hamiltonian(matrix_total)
-
-            matrix = np.asarray(self.H.matrix, dtype=np.complex128)
-            self.pauli_decomposition = _dense_pauli_decomposition(matrix, self.num_qubits, self.tol)
-            self.pauli_set = set(self.pauli_decomposition.keys())
-
-            operator_pauli_set: set[str] = set()
-            for operator in self.operator_set.operators:
-                op_matrix = np.asarray(operator.matrix, dtype=np.complex128)
-                if op_matrix.shape != matrix.shape:
-                    raise ValueError("all operators in operator_set must have the same matrix shape as H")
-                operator_pauli_set.update(_dense_pauli_decomposition(op_matrix, self.num_qubits, self.tol).keys())
-            self.operator_pauli_set = operator_pauli_set
+        model = _pauli_model_from_inputs(
+            operator_set,
+            H,
+            num_qubits=num_qubits,
+            tol=self.tol,
+        )
+        self.H = model.H
+        self.num_qubits = model.num_qubits
+        self.used_sparse_pauli_path = model.used_sparse_pauli_path
+        self.pauli_decomposition = model.pauli_decomposition
+        self.pauli_set = set(model.pauli_set)
+        self.operator_pauli_set = set(model.operator_pauli_set)
 
         if self.verbose:
             print(
