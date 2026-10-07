@@ -102,9 +102,7 @@ def to_qutip(obj: State | Operator | Hamiltonian | DensityOperator) -> Qobj:
         matrix = np.asarray(obj.matrix, dtype=np.complex128)
         return Qobj(matrix)
 
-    raise TypeError(
-        f"obj must be a shadowsim State, Operator, Hamiltonian, or DensityOperator; got {type(obj)!r}"
-    )
+    raise TypeError(f"obj must be a shadowsim State, Operator, Hamiltonian, or DensityOperator; got {type(obj)!r}")
 
 
 def _infer_kind(qobj: Qobj) -> Kind:
