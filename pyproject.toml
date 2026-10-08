@@ -48,10 +48,10 @@ docs = [
     "mkdocstrings[python]>=0.24",
     "markdown-exec[ansi]>=1.7",
     # Needed so mkdocstrings can format signatures during the docs build.
-    "ruff==0.16.0",
+    "ruff==0.16.10",
 ]
 lint = [
-    "ruff==0.16.0",
+    "ruff==0.16.10",
 ]
 
 [tool.uv]
