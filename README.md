@@ -43,7 +43,7 @@ see [CONTRIBUTING.md](CONTRIBUTING.md).
 Public objects are imported from their domain subpackages:
 ```python
 from shadowsim.core import DensityOperator, Hamiltonian, Operator, State
-from shadowsim.shadow import ShadowHamiltonian
+from shadowsim.shadow import ShadowHamiltonian, check_invariance
 from shadowsim.simulators import QutipSimulator, SimulationResult
 ```
 
@@ -105,6 +105,24 @@ print(shadow.H_S.shape)  # (|closure|, |closure|)
 Dense matrices and `LocalHamiltonian` terms still work; they take the densifying
 fallback (`used_sparse_pauli_path` is `False`). See also
 [`examples/simple_shadow.py`](examples/simple_shadow.py).
+
+To check whether a given operator set already satisfies the invariance property
+(closed under `[H, ·]`) without building a full shadow simulation, use
+`check_invariance`. It reports whether the set is closed, how many Pauli labels
+must be added to close it, and whether the closed-basis `H_S` is Hermitian:
+
+```python
+from shadowsim.core import Hamiltonian, OperatorSet
+from shadowsim.shadow import check_invariance
+
+report = check_invariance(
+    OperatorSet(["Z"]),
+    Hamiltonian("X"),
+)
+assert not report.is_closed
+assert report.growth == 1
+assert report.added_paulis == frozenset({"Y"})
+```
 
 For practical scale limits (sparse vs dense, closure size, simulators), see
 [Scalability / practical limits](#scalability--practical-limits).
