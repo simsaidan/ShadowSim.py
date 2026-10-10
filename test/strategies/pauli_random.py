@@ -3,12 +3,56 @@
 from __future__ import annotations
 
 import numpy as np
+from hypothesis import strategies as st
 
-from shadowsim.core import PauliString, PauliSum
+from shadowsim.core import Pauli, PauliString, PauliSum
 
 ATOL = 1e-8
 RTOL = 1e-7
 _LETTERS = ("I", "X", "Y", "Z")
+MAX_PROPERTY_QUBITS = 4
+
+
+@st.composite
+def pauli_labels(draw: st.DrawFn) -> str:
+    """Draw a single-qubit Pauli label in ``{I,X,Y,Z}``."""
+    return draw(st.sampled_from(_LETTERS))
+
+
+@st.composite
+def pauli_words(draw: st.DrawFn, *, min_n: int = 1, max_n: int = MAX_PROPERTY_QUBITS) -> str:
+    """Draw a length-``n`` Pauli word with ``n`` in ``[min_n, max_n]``."""
+    n = draw(st.integers(min_value=min_n, max_value=max_n))
+    return "".join(draw(st.sampled_from(_LETTERS)) for _ in range(n))
+
+
+@st.composite
+def paulis(draw: st.DrawFn) -> Pauli:
+    """Draw a :class:`~shadowsim.core.Pauli`."""
+    return Pauli(draw(pauli_labels()))
+
+
+@st.composite
+def pauli_strings(draw: st.DrawFn, *, min_n: int = 1, max_n: int = MAX_PROPERTY_QUBITS) -> PauliString:
+    """Draw a :class:`~shadowsim.core.PauliString`."""
+    return PauliString.from_string(draw(pauli_words(min_n=min_n, max_n=max_n)))
+
+
+@st.composite
+def real_pauli_sums(
+    draw: st.DrawFn,
+    *,
+    min_n: int = 1,
+    max_n: int = MAX_PROPERTY_QUBITS,
+    min_terms: int = 1,
+    max_terms: int = 4,
+) -> PauliSum:
+    """Draw a real-coefficient :class:`~shadowsim.core.PauliSum` (nonzero)."""
+    n = draw(st.integers(min_value=min_n, max_value=max_n))
+    n_terms = draw(st.integers(min_value=min_terms, max_value=min(max_terms, max(1, 4**n - 1))))
+    seed = draw(st.integers(min_value=0, max_value=2**31 - 1))
+    scale = draw(st.floats(min_value=1e-3, max_value=1e3, allow_nan=False, allow_infinity=False))
+    return random_pauli_sum(np.random.default_rng(seed), n, n_terms, scale)
 
 
 def _identity_label(n: int) -> str:
