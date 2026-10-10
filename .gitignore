@@ -21,6 +21,9 @@ coverage.xml
 coverage_html_report/
 htmlcov/
 
+# Hypothesis example database (local failure replay)
+.hypothesis/
+
 
 /results/**
 !/results/.gitkeep
