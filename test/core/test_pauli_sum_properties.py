@@ -7,8 +7,6 @@ Invariants exercised by Hypothesis tests in this module:
 * Parse / construct round-trips preserve merged terms for generated expressions.
 """
 
-from __future__ import annotations
-
 import numpy as np
 from hypothesis import given
 from hypothesis import strategies as st

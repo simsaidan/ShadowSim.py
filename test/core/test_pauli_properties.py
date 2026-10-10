@@ -8,8 +8,6 @@ Invariants exercised by Hypothesis tests in this module:
 * Every Pauli matrix is Hermitian.
 """
 
-from __future__ import annotations
-
 import numpy as np
 from hypothesis import given
 from strategies.pauli_random import ATOL, RTOL, paulis

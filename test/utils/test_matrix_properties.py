@@ -7,8 +7,6 @@ Invariants exercised by Hypothesis tests in this module:
 * ``tensor(factors)`` equals a chained ``np.kron`` of the same factors.
 """
 
-from __future__ import annotations
-
 import numpy as np
 from hypothesis import given
 from hypothesis import strategies as st

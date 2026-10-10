@@ -1,7 +1,5 @@
 """Seeded Pauli-model generators shared by regression and property tests."""
 
-from __future__ import annotations
-
 import numpy as np
 from hypothesis import strategies as st
 
@@ -148,3 +146,44 @@ def observable_labels(rng: np.random.Generator, n: int, k: int) -> list[str]:
             seen.add(lab)
             out.append(lab)
     return out
+
+
+def normalize_state_vector(vec: np.ndarray) -> np.ndarray:
+    """Return ``vec / ||vec||`` as complex128 (raises if near-zero)."""
+    arr = np.asarray(vec, dtype=np.complex128).reshape(-1)
+    norm = np.linalg.norm(arr)
+    if norm <= 1e-15:
+        raise ValueError("cannot normalize a near-zero vector")
+    return arr / norm
+
+
+@st.composite
+def normalized_states(
+    draw: st.DrawFn,
+    *,
+    min_n: int = 1,
+    max_n: int = MAX_PROPERTY_QUBITS,
+    local_dim: int = 2,
+) -> tuple[np.ndarray, int, int]:
+    """Draw ``(normalized_vector, num_qubits, local_dim)``."""
+    n = draw(st.integers(min_value=min_n, max_value=max_n))
+    dim = local_dim**n
+    seed = draw(st.integers(min_value=0, max_value=2**31 - 1))
+    rng = np.random.default_rng(seed)
+    raw = rng.standard_normal(dim) + 1j * rng.standard_normal(dim)
+    return normalize_state_vector(raw), n, local_dim
+
+
+@st.composite
+def hermitian_matrices(
+    draw: st.DrawFn,
+    *,
+    min_dim: int = 1,
+    max_dim: int = 8,
+) -> np.ndarray:
+    """Draw a small random Hermitian matrix."""
+    dim = draw(st.integers(min_value=min_dim, max_value=max_dim))
+    seed = draw(st.integers(min_value=0, max_value=2**31 - 1))
+    rng = np.random.default_rng(seed)
+    a = rng.standard_normal((dim, dim)) + 1j * rng.standard_normal((dim, dim))
+    return a + a.conjugate().T
