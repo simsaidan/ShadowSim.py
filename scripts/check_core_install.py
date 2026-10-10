@@ -33,6 +33,9 @@ def _plot() -> None:
         2,
         "core-check",
     )
+    # A result has to exist first; otherwise the missing-run check fires
+    # before the matplotlib import this script is here to require.
+    simulator.results = [[0.0, 1.0]]
     simulator.plot_results()
 
 
