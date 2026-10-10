@@ -3,12 +3,13 @@
 import numpy as np
 from hypothesis import strategies as st
 
-from shadowsim.core import Pauli, PauliString, PauliSum
+from shadowsim.core import Hamiltonian, OperatorSet, Pauli, PauliString, PauliSum
 
 ATOL = 1e-8
 RTOL = 1e-7
 _LETTERS = ("I", "X", "Y", "Z")
 MAX_PROPERTY_QUBITS = 4
+MAX_SHADOW_PROPERTY_QUBITS = 3
 
 
 @st.composite
@@ -187,3 +188,25 @@ def hermitian_matrices(
     rng = np.random.default_rng(seed)
     a = rng.standard_normal((dim, dim)) + 1j * rng.standard_normal((dim, dim))
     return a + a.conjugate().T
+
+
+@st.composite
+def sparse_pauli_models(
+    draw: st.DrawFn,
+    *,
+    min_n: int = 1,
+    max_n: int = MAX_SHADOW_PROPERTY_QUBITS,
+    max_terms: int = 3,
+    max_obs: int = 2,
+) -> tuple[Hamiltonian, OperatorSet, int]:
+    """Draw a sparse Pauli ``(Hamiltonian, OperatorSet, n_qubits)`` model."""
+    n = draw(st.integers(min_value=min_n, max_value=max_n))
+    n_terms = draw(st.integers(min_value=1, max_value=min(max_terms, max(1, 4**n - 1))))
+    n_obs = draw(st.integers(min_value=1, max_value=min(max_obs, max(1, 4**n - 1))))
+    seed = draw(st.integers(min_value=0, max_value=2**31 - 1))
+    scale = draw(st.floats(min_value=1e-3, max_value=1e3, allow_nan=False, allow_infinity=False))
+    commuting = draw(st.sampled_from([True, False, None]))
+    rng = np.random.default_rng(seed)
+    ps = random_pauli_sum(rng, n, n_terms, scale, commuting=commuting)
+    obs = observable_labels(rng, n, n_obs)
+    return Hamiltonian(ps), OperatorSet(obs), n
