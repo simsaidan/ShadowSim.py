@@ -4,12 +4,15 @@ import numpy as np
 
 from shadowsim.utils._real_parts_of_eigenvalues import _real_parts_of_eigenvalues
 
+# Allow tiny negative eigenvalues from floating-point projector construction.
+_EIG_ATOL = 1e-10
+
 
 def positive_semidefinite(matrix: np.ndarray) -> bool:
     r"""Return whether a matrix is positive semidefinite.
 
     A matrix is positive semidefinite when every eigenvalue has non-negative real
-    part.
+    part (up to a small numerical tolerance).
 
     Args:
         matrix: Square matrix to check.
@@ -29,4 +32,4 @@ def positive_semidefinite(matrix: np.ndarray) -> bool:
         ```
 
     """
-    return np.all(_real_parts_of_eigenvalues(matrix) >= 0)
+    return np.all(_real_parts_of_eigenvalues(matrix) >= -_EIG_ATOL)
