@@ -6,8 +6,6 @@ Invariants exercised by Hypothesis tests in this module:
 * Incorrect length or non-unit norm is rejected.
 """
 
-from __future__ import annotations
-
 import numpy as np
 import pytest
 from hypothesis import assume, given

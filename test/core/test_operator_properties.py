@@ -7,8 +7,6 @@ Invariants exercised by Hypothesis tests in this module:
 * Equality is consistent with numerical matrix agreement.
 """
 
-from __future__ import annotations
-
 import numpy as np
 from hypothesis import given
 from strategies.pauli_random import ATOL, RTOL, real_pauli_sums

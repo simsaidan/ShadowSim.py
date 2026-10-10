@@ -13,8 +13,6 @@ Select a profile with ``HYPOTHESIS_PROFILE``, ``pytest --hypothesis-profile``,
 or automatically via the ``CI`` environment variable (set by GitHub Actions).
 """
 
-from __future__ import annotations
-
 import os
 
 from hypothesis import settings

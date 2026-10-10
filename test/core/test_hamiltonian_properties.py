@@ -7,8 +7,6 @@ Invariants exercised by Hypothesis tests in this module:
 * Local embedding equals identity-padded tensor product and preserves Hermiticity.
 """
 
-from __future__ import annotations
-
 import numpy as np
 import pytest
 from hypothesis import given

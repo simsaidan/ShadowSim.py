@@ -1,7 +1,5 @@
 """Seeded Pauli-model generators shared by regression and property tests."""
 
-from __future__ import annotations
-
 import numpy as np
 from hypothesis import strategies as st
 

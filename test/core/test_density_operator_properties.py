@@ -6,8 +6,6 @@ Invariants exercised by Hypothesis tests in this module:
 * Convex combinations of pure states form valid density operators (small dim).
 """
 
-from __future__ import annotations
-
 import numpy as np
 from hypothesis import given
 from hypothesis import strategies as st

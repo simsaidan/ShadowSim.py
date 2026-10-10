@@ -7,8 +7,6 @@ Invariants exercised by Hypothesis tests in this module:
 * Commutator vanishes iff an even number of qubit positions anticommute.
 """
 
-from __future__ import annotations
-
 import numpy as np
 from hypothesis import given
 from hypothesis import strategies as st
