@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any
 
 import numpy as np
+import numpy.typing as npt
 
 
 def package_version() -> str:
@@ -18,7 +19,7 @@ def package_version() -> str:
         return "unknown"
 
 
-def _as_float_array(values: Sequence[float] | np.ndarray) -> np.ndarray:
+def _as_float_array(values: Sequence[float] | np.ndarray) -> npt.NDArray[np.float64]:
     return np.asarray(values, dtype=np.float64)
 
 
@@ -39,7 +40,7 @@ def _observables_to_npy(observables: Sequence[np.ndarray]) -> np.ndarray:
     return packed
 
 
-def _observables_from_npy(raw: np.ndarray) -> list[np.ndarray]:
+def _observables_from_npy(raw: np.ndarray) -> list[npt.NDArray[np.float64]]:
     if raw.dtype == object:
         return [_as_float_array(item) for item in raw.tolist()]
     if raw.ndim == 0:
@@ -76,8 +77,8 @@ class SimulationResult:
         metadata: Reproducibility and parameter metadata (version, params, …).
     """
 
-    times: np.ndarray
-    observables: list[np.ndarray]
+    times: npt.NDArray[np.float64]
+    observables: list[npt.NDArray[np.float64]]
     states: list[np.ndarray] | None = None
     seed: int | None = None
     algorithm: str = ""

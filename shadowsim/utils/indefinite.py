@@ -31,4 +31,4 @@ def indefinite(matrix: np.ndarray) -> bool:
 
     """
     eigvals = _real_parts_of_eigenvalues(matrix)
-    return np.any(eigvals > 0) and np.any(eigvals < 0)
+    return bool(np.any(eigvals > 0) and np.any(eigvals < 0))

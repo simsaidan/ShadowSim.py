@@ -16,7 +16,7 @@ class ShadowState(State):
         operator_set: OperatorSet,
         *,
         num_qubits: int | None = None,
-    ):
+    ) -> None:
         """Initialize a ShadowState from a state and operator set."""
         self.A = 0
         exp_vals: list[complex] = []
@@ -50,10 +50,10 @@ class ShadowState(State):
 
         super().__init__(shadow_state, num_qubits_out, 2)
 
-    def __str__(self):
+    def __str__(self) -> str:
         """Return a string representation of the ShadowState."""
         return f"ShadowState(num_qubits={self.get_num_qubits()}, A={self.A}, shape={self.state.shape})"
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         """Return a string representation of the ShadowState."""
         return f"ShadowState(state={self.state!r}, A={self.A!r}, num_qubits={self.get_num_qubits()})"

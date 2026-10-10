@@ -1,8 +1,10 @@
 """QuTiP-backed quantum simulators."""
 
+from collections.abc import Sequence
 from time import perf_counter
 from typing import Any, cast
 
+import numpy as np
 from qutip import Qobj, mesolve
 
 from shadowsim.core.combined_hamiltonian_matrix import combined_hamiltonian_matrix
@@ -20,14 +22,14 @@ class QutipSimulator(Simulator):
 
     def __init__(
         self,
-        hamiltonians: list[Hamiltonian],
-        lindblads: list[Operator],
+        hamiltonians: Sequence[Hamiltonian],
+        lindblads: Sequence[Operator],
         initial_state: State,
-        observables: OperatorSet | list[Operator],
+        observables: OperatorSet | Sequence[Operator],
         num_qubits: int,
         total_time: float,
         time_steps: int,
-    ):
+    ) -> None:
         """Initialize a QuTiP simulator for the given model."""
         super().__init__(
             hamiltonians,
@@ -62,16 +64,17 @@ class QutipSimulator(Simulator):
             ),
         )
         runtime = perf_counter() - started
-        self.results = list(result.expect)
+        traces = cast(list[np.ndarray], list(result.expect))
+        self.results = traces
         return self._make_result(
-            self.results,
+            traces,
             runtime=runtime,
             seed=None,
             observable_count=len(self.observables),
             lindblad_count=len(self.lindblads),
         )
 
-    def __str__(self):
+    def __str__(self) -> str:
         """Return a string representation of the QutipSimulator."""
         return (
             "QutipSimulator("
@@ -81,7 +84,7 @@ class QutipSimulator(Simulator):
             ")"
         )
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         """Return a string representation of the QutipSimulator."""
         return (
             "QutipSimulator("

@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from itertools import product
 
 import numpy as np
+import numpy.typing as npt
 
 from shadowsim.core.combined_hamiltonian_matrix import combined_hamiltonian_matrix
 from shadowsim.core.hamiltonian import Hamiltonian
@@ -102,7 +103,7 @@ def _dense_pauli_decomposition(matrix: np.ndarray, num_qubits: int, tol: float) 
     return pauli_terms
 
 
-def _assemble_h_s(basis: list[str], pauli_decomposition: dict[str, complex]) -> np.ndarray:
+def _assemble_h_s(basis: list[str], pauli_decomposition: dict[str, complex]) -> npt.NDArray[np.complexfloating]:
     """Build ``H_S`` from commutator structure constants in the closed Pauli basis.
 
     For ``H = Σ_h c_h h`` and basis element ``O_m``, if ``[h, O_m] = α R`` then
@@ -116,7 +117,7 @@ def _assemble_h_s(basis: list[str], pauli_decomposition: dict[str, complex]) -> 
         O_m = PauliString.from_string(lab_m)
         for c_h, h_ps in h_terms:
             alpha, com = h_ps.commutator(O_m)
-            if com is None:
+            if alpha is None or com is None:
                 continue
             mp = index.get(str(com))
             if mp is not None:
@@ -264,7 +265,7 @@ class ShadowHamiltonian:
         num_qubits: int | None = None,
         tol: float = 1e-10,
         verbose: bool = False,
-    ):
+    ) -> None:
         """Build a shadow Hamiltonian from an operator set and Hamiltonian terms.
 
         ``H`` may be a single ``Hamiltonian`` or a non-empty sequence of terms.
@@ -307,11 +308,11 @@ class ShadowHamiltonian:
         self.H_S = _assemble_h_s(self.basis, self.pauli_decomposition)
 
     @property
-    def shadow(self) -> np.ndarray:
+    def shadow(self) -> npt.NDArray[np.complexfloating]:
         """The shadow Hamiltonian: ``(m, m)`` with ``m = |closure|``; not ``(2^n, 2^n)`` in general."""
         return self.H_S
 
-    def get_H_S(self) -> np.ndarray:
+    def get_H_S(self) -> npt.NDArray[np.complexfloating]:
         """Return the shadow Hamiltonian in the closed Pauli basis.
 
         Same as :attr:`shadow`. Shape ``(m, m)`` with ``m = len(self.basis)``,
@@ -319,15 +320,15 @@ class ShadowHamiltonian:
         """
         return self.H_S
 
-    def is_unitary(self):
+    def is_unitary(self) -> bool:
         """Return whether the shadow Hamiltonian matrix is unitary."""
         return unitary(self.H_S)
 
-    def is_hermitian(self):
+    def is_hermitian(self) -> bool:
         """Return whether the shadow Hamiltonian matrix is Hermitian."""
         return hermitian(self.H_S)
 
-    def __str__(self):
+    def __str__(self) -> str:
         """Return a string representation of the ShadowHamiltonian."""
         if self.used_sparse_pauli_path:
             h_part = f"pauli_terms={len(self.pauli_decomposition)}"
@@ -335,7 +336,7 @@ class ShadowHamiltonian:
             h_part = f"full_H.shape={self.H.matrix.shape}"
         return f"ShadowHamiltonian({h_part}, shadow.shape={self.H_S.shape}, n_qubits={self.num_qubits})"
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         """Return a string representation of the ShadowHamiltonian."""
         if self.used_sparse_pauli_path:
             h_part = f"pauli_terms={len(self.pauli_decomposition)}"

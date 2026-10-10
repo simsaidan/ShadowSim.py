@@ -28,4 +28,4 @@ def negative_definite(matrix: np.ndarray) -> bool:
         ```
 
     """
-    return np.all(_real_parts_of_eigenvalues(matrix) < 0)
+    return bool(np.all(_real_parts_of_eigenvalues(matrix) < 0))

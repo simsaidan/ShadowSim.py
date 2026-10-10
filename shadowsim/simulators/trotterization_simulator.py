@@ -1,7 +1,8 @@
 """Closed-system Trotterization simulator via Aer product formulas."""
 
+from collections.abc import Sequence
 from time import perf_counter
-from typing import Callable, List
+from typing import Any, Callable, List, cast
 
 import scipy
 from qiskit import QuantumCircuit, QuantumRegister, transpile
@@ -9,6 +10,7 @@ from qiskit.circuit.library import UnitaryGate
 from qiskit_aer import AerSimulator
 
 from shadowsim.core.local_hamiltonian import LocalHamiltonian
+from shadowsim.core.operator import Operator, _Matrix
 from shadowsim.core.state import State
 from shadowsim.simulators.reducers import population_one
 from shadowsim.simulators.result import SimulationResult
@@ -42,7 +44,7 @@ def _trace_qubits(
     items = list(qubit_indices)
     is_grouped = any(isinstance(item, list) for item in items)
     if not is_grouped:
-        return _single_group([int(i) for i in items])
+        return _single_group([i for i in items if isinstance(i, int)])
 
     groups: list[dict[str, int]] = []
     for item in items:
@@ -53,7 +55,7 @@ def _trace_qubits(
     return groups
 
 
-def _make_h_gate(h_matrix, t: float, num_steps: int, trotter_depth: int = 1):
+def _make_h_gate(h_matrix: _Matrix, t: float, num_steps: int, trotter_depth: int = 1) -> UnitaryGate:
     """Build a local product-formula unitary for one Hamiltonian term."""
     return UnitaryGate(scipy.linalg.expm(-1j * h_matrix * t / (num_steps * trotter_depth)))
 
@@ -68,7 +70,7 @@ def _trotter_circuit_counts(
     verbose: bool = False,
     shots: int = 10000,
     seed: int | None = None,
-):
+) -> dict[str, Any]:
     """Run a closed-system first-order product formula on Aer and return counts."""
     if shots <= 0:
         raise ValueError("shots must be a positive integer")
@@ -108,7 +110,7 @@ class TrotterizationSimulator(Simulator):
     def __init__(
         self,
         hamiltonians: list[LocalHamiltonian],
-        lindblads: list,
+        lindblads: Sequence[Operator],
         initial_state: State,
         num_qubits: int,
         total_time: float,
@@ -121,7 +123,7 @@ class TrotterizationSimulator(Simulator):
         shots: int = 10000,
         seed: int | None = None,
         progress: ProgressCallback | None = None,
-    ):
+    ) -> None:
         """Initialize a closed-system Trotterization simulator for the given model."""
         super().__init__(
             hamiltonians,
@@ -168,7 +170,7 @@ class TrotterizationSimulator(Simulator):
     def simulate(self) -> SimulationResult:
         """Evolve the closed system with Trotterization and store reduced traces."""
         started = perf_counter()
-        results = [[] for _ in range(len(self.measurement_groups))]
+        results: list[list[float]] = [[] for _ in range(len(self.measurement_groups))]
         total = len(self.tlist)
         for i, t in enumerate(self.tlist):
             if self.progress is not None:
@@ -176,7 +178,7 @@ class TrotterizationSimulator(Simulator):
             if self.verbose:
                 print(f"Working on time step {round(t, 3)}")
             counts = _trotter_circuit_counts(
-                self.hamiltonians,
+                cast(list[LocalHamiltonian], self.hamiltonians),
                 self.initial_state,
                 self.num_qubits,
                 t,
@@ -204,7 +206,7 @@ class TrotterizationSimulator(Simulator):
             measurement_group_count=len(self.measurement_groups),
         )
 
-    def __str__(self):
+    def __str__(self) -> str:
         """Return a short string representation of the simulator."""
         return (
             "TrotterizationSimulator("
@@ -217,7 +219,7 @@ class TrotterizationSimulator(Simulator):
             ")"
         )
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         """Return a detailed string representation of the simulator."""
         return (
             "TrotterizationSimulator("

@@ -3,7 +3,7 @@
 from collections.abc import Sequence
 from datetime import datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, overload
 
 import numpy as np
 
@@ -13,20 +13,24 @@ from shadowsim.core.operator import Operator
 from shadowsim.core.state import State
 from shadowsim.simulators.result import SimulationResult, package_version
 
+# QuTiP stores ndarray traces; shot-based backends store lists of floats.
+_Traces = list[np.ndarray] | list[list[float]]
+_Trace = np.ndarray | list[float]
+
 
 class Simulator:
     """Base class for quantum simulation backends."""
 
     def __init__(
         self,
-        hamiltonians: list[Hamiltonian],
-        lindblads: list[Operator],
+        hamiltonians: Sequence[Hamiltonian],
+        lindblads: Sequence[Operator],
         initial_state: State,
         num_qubits: int,
         total_time: float,
         time_steps: int,
         id: str,
-    ):
+    ) -> None:
         """Initialize the shared simulator fields and time grid."""
         if not hamiltonians:
             raise ValueError("hamiltonians must be a non-empty list")
@@ -37,15 +41,15 @@ class Simulator:
         self.total_time = total_time
         self.time_steps = time_steps
         self.id = id
-        self.results = None
+        self.results: _Traces | None = None
         self.last_result: SimulationResult | None = None
         self.tlist = np.linspace(0, self.total_time, self.time_steps)
 
-    def run(self):
+    def run(self) -> SimulationResult:
         """Run the simulation and return its results."""
         return self.simulate()
 
-    def simulate(self):
+    def simulate(self) -> SimulationResult:
         """Run the backend-specific simulation."""
         raise NotImplementedError("Subclasses must implement simulate()")
 
@@ -84,7 +88,13 @@ class Simulator:
         self.last_result = result
         return result
 
-    def get_results(self, index: int = None):
+    @overload
+    def get_results(self, index: None = None) -> _Traces: ...
+
+    @overload
+    def get_results(self, index: int) -> _Trace: ...
+
+    def get_results(self, index: int | None = None) -> _Traces | _Trace:
         """Return simulation results, optionally for one observable index."""
         if self.results is None:
             raise ValueError("Results are not available. Please run the simulation first.")
@@ -98,11 +108,14 @@ class Simulator:
         *,
         labels: list[str] | None = None,
         title: str | None = None,
-    ):
+    ) -> None:
         """Plot expectation traces vs time in an interactive window."""
         plt = import_optional("matplotlib.pyplot", extra="viz")
+        results = self.results
+        if results is None:
+            raise ValueError("Results are not available. Please run the simulation first.")
         if indices is None:
-            indices = list(range(len(self.results)))
+            indices = list(range(len(results)))
         for plot_i, index in enumerate(indices):
             curve_label = labels[plot_i] if labels is not None and plot_i < len(labels) else str(index)
             plt.plot(self.tlist, self.get_results(index), label=curve_label)
@@ -127,8 +140,11 @@ class Simulator:
         Does not open an interactive window.
         """
         plt = import_optional("matplotlib.pyplot", extra="viz")
+        results = self.results
+        if results is None:
+            raise ValueError("Results are not available. Please run the simulation first.")
         if indices is None:
-            indices = list(range(len(self.results)))
+            indices = list(range(len(results)))
         stamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
         path = Path("results") / f"{self.id}_{stamp}.png"
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -152,11 +168,11 @@ class Simulator:
             plt.close(fig)
         return path
 
-    def __str__(self):
+    def __str__(self) -> str:
         """Return a string representation of the simulator."""
         return f"{self.__class__.__name__}(id={self.id}, num_qubits={self.num_qubits}, time_steps={self.time_steps})"
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         """Return a string representation of the simulator."""
         return (
             f"{self.__class__.__name__}("

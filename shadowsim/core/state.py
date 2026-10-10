@@ -1,9 +1,14 @@
 """Quantum state vectors."""
 
 import numpy as np
+import numpy.typing as npt
 
 
-def _as_valid_state_vector(state: np.ndarray, num_qubits: int, local_dim: int) -> np.ndarray:
+def _as_valid_state_vector(
+    state: npt.NDArray[np.complexfloating],
+    num_qubits: int,
+    local_dim: int,
+) -> npt.NDArray[np.complexfloating]:
     """Validate a state vector and return it, or raise ValueError.
 
     A state vector is valid if it is a 1D numpy array, has the correct length,
@@ -42,7 +47,7 @@ def _as_valid_state_vector(state: np.ndarray, num_qubits: int, local_dim: int) -
 class State:
     """Represent a quantum state vector."""
 
-    def __init__(self, state: np.ndarray, num_qubits: int, local_dim: int = 2):
+    def __init__(self, state: npt.NDArray[np.complexfloating], num_qubits: int, local_dim: int = 2) -> None:
         """Initialize a State object which represents a quantum state.
 
         Parameter state: The state vector to initialize the state with.
@@ -62,30 +67,30 @@ class State:
         self._local_dim = local_dim
         self.state = _as_valid_state_vector(state, self._num_qubits, self._local_dim)
 
-    def get_state(self):
+    def get_state(self) -> npt.NDArray[np.complexfloating]:
         """Return the state vector as a numpy array."""
         return self.state
 
-    def set_state(self, state: np.ndarray):
+    def set_state(self, state: npt.NDArray[np.complexfloating]) -> None:
         """Set the state vector to a new numpy array."""
         self.state = _as_valid_state_vector(state, self._num_qubits, self._local_dim)
 
-    def get_num_qubits(self):
+    def get_num_qubits(self) -> int:
         """Return the number of qubits the state is defined on."""
         return self._num_qubits
 
-    def get_local_dim(self):
+    def get_local_dim(self) -> int:
         """Return the local dimension of the state."""
         return self._local_dim
 
-    def to_numpy(self):
+    def to_numpy(self) -> npt.NDArray[np.complexfloating]:
         """Return the state vector as a numpy array."""
         return self.state
 
-    def __str__(self):
+    def __str__(self) -> str:
         """Return a string representation of the state."""
         return f"State(num_qubits={self._num_qubits}, local_dim={self._local_dim}, shape={self.state.shape})"
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         """Return a string representation of the state."""
         return f"State(state={self.state!r}, num_qubits={self._num_qubits}, local_dim={self._local_dim})"

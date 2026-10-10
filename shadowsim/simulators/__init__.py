@@ -1,11 +1,17 @@
 """Quantum simulator implementations."""
 
 import importlib
+from typing import TYPE_CHECKING, Any
 
 from shadowsim._optional import import_optional
 from shadowsim.simulators.reducers import cavity_population, population_one
 from shadowsim.simulators.result import SimulationResult
 from shadowsim.simulators.simulator import Simulator
+
+if TYPE_CHECKING:
+    from shadowsim.simulators.qutip_simulator import QutipSimulator as QutipSimulator
+    from shadowsim.simulators.splitjmatrix_simulator import SplitJMatrixSimulator as SplitJMatrixSimulator
+    from shadowsim.simulators.trotterization_simulator import TrotterizationSimulator as TrotterizationSimulator
 
 # Backends loaded on first access: name -> (module, extra).
 # extra is None when the backend has no optional dependency.
@@ -26,7 +32,7 @@ __all__ = [
 ]
 
 
-def __getattr__(name: str):
+def __getattr__(name: str) -> Any:
     """Import an optional simulator backend the first time it is accessed."""
     try:
         module_name, extra = _EXPORTS[name]

@@ -3,6 +3,7 @@
 from typing import Self
 
 import numpy as np
+import numpy.typing as npt
 
 _I = np.eye(2, dtype=np.complex128)
 _X = np.array([[0, 1], [1, 0]], dtype=np.complex128)
@@ -39,7 +40,7 @@ class Pauli:
 
     __slots__ = ("_label",)
 
-    def __init__(self, label: str):
+    def __init__(self, label: str) -> None:
         """Initialize a Pauli from a label in ``{I, X, Y, Z}``."""
         label = label.upper()
         if label not in _PAULI_MATRICES:
@@ -51,7 +52,7 @@ class Pauli:
         """Return the Pauli label in ``{I, X, Y, Z}``."""
         return self._label
 
-    def matrix(self) -> np.ndarray:
+    def matrix(self) -> npt.NDArray[np.complexfloating]:
         """Return a copy of the Pauli matrix."""
         return _PAULI_MATRICES[self._label].copy()
 
@@ -79,7 +80,7 @@ class Pauli:
         ``phase`` is in ``{±1, ±i}``.
         """
         phase, label = _multiply_labels(self._label, other._label)
-        return phase, Pauli(label)
+        return phase, type(self)(label)
 
     def commutator(self, other: Self) -> tuple[complex | None, Self | None]:
         """Return ``[self, other]`` as ``phase * P``, or ``(None, None)`` if zero.

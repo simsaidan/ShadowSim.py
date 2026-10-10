@@ -1,6 +1,7 @@
 """Combine Hamiltonian terms into a single full-system matrix."""
 
 import numpy as np
+import numpy.typing as npt
 
 from shadowsim.core.hamiltonian import Hamiltonian
 from shadowsim.core.local_hamiltonian import LocalHamiltonian
@@ -9,7 +10,7 @@ from shadowsim.core.local_hamiltonian import LocalHamiltonian
 def combined_hamiltonian_matrix(
     hamiltonians: list[Hamiltonian],
     num_qubits: int,
-) -> np.ndarray:
+) -> npt.NDArray[np.complexfloating]:
     r"""Sum Hamiltonian terms on the full ``num_qubits``-site tensor space.
 
     ``LocalHamiltonian`` terms are embedded with identities on the remaining
@@ -65,6 +66,9 @@ def combined_hamiltonian_matrix(
             target_dim = d
         elif d != target_dim:
             raise ValueError(f"Hamiltonian dimensions disagree: got {d} vs {target_dim}")
+
+    if target_dim is None:
+        raise ValueError("hamiltonians must be a non-empty list")
 
     H_tot = np.zeros((target_dim, target_dim), dtype=np.complex128)
     for h in hamiltonians:
