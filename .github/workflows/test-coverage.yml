@@ -24,6 +24,23 @@ jobs:
       - run: ruff check
       - run: ruff format --check
 
+  typecheck:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+      - name: Install uv
+        uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+      - name: Install package, extras, and mypy
+        run: uv sync --locked --all-extras --group types
+      - name: Run mypy
+        run: uv run --no-sync --group types mypy
+
   test:
     strategy:
       fail-fast: false

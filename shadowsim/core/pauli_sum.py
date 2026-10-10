@@ -5,6 +5,7 @@ from collections.abc import Iterable, Mapping
 from typing import Self
 
 import numpy as np
+import numpy.typing as npt
 
 from shadowsim.core.pauli_string import PauliString
 
@@ -65,7 +66,7 @@ class PauliSum:
 
     __slots__ = ("_terms",)
 
-    def __init__(self, terms: Mapping[str, complex] | Iterable[tuple[str, complex]]):
+    def __init__(self, terms: Mapping[str, complex] | Iterable[tuple[str, complex]]) -> None:
         """Initialize from a label→coeff mapping or an iterable of pairs."""
         if isinstance(terms, Mapping):
             items = list(terms.items())
@@ -99,7 +100,7 @@ class PauliSum:
     @classmethod
     def from_string(cls, expr: str) -> Self:
         """Build a PauliSum from an expression such as ``XXI + XYZ``."""
-        return parse_pauli_expression(expr)
+        return cls(parse_pauli_expression(expr).terms)
 
     @classmethod
     def from_pauli_string(cls, pauli_string: PauliString, coeff: complex = 1 + 0j) -> Self:
@@ -120,7 +121,7 @@ class PauliSum:
         """Return whether all coefficients are real (within ``tol``)."""
         return all(abs(c.imag) <= tol for c in self._terms.values())
 
-    def to_matrix(self) -> np.ndarray:
+    def to_matrix(self) -> npt.NDArray[np.complexfloating]:
         """Return the dense matrix for this Pauli sum."""
         dim = 2**self.num_qubits
         out = np.zeros((dim, dim), dtype=np.complex128)
@@ -177,7 +178,7 @@ class PauliSum:
         self._terms = cleaned
         return self
 
-    __hash__ = None
+    __hash__ = None  # type: ignore[assignment]
 
 
 def parse_pauli_expression(expr: str) -> PauliSum:

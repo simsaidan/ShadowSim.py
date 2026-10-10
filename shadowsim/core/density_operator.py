@@ -1,6 +1,9 @@
 """Density operators (mixed quantum states)."""
 
+from typing import Self
+
 import numpy as np
+import numpy.typing as npt
 
 from shadowsim.core.operator import Operator
 from shadowsim.core.state import State
@@ -8,7 +11,7 @@ from shadowsim.utils.hermitian import hermitian
 from shadowsim.utils.positive_semidefinite import positive_semidefinite
 
 
-def _as_valid_density_matrix(matrix: np.ndarray) -> np.ndarray:
+def _as_valid_density_matrix(matrix: npt.NDArray[np.complexfloating]) -> npt.NDArray[np.complexfloating]:
     """Validate a density matrix and return it as a complex ndarray."""
     arr = np.asarray(matrix, dtype=np.complex128)
     if arr.ndim != 2 or arr.shape[0] != arr.shape[1]:
@@ -29,7 +32,7 @@ class DensityOperator(Operator):
     The matrix must be square, Hermitian, positive semidefinite, and unit-trace.
     """
 
-    def __init__(self, matrix: np.ndarray):
+    def __init__(self, matrix: npt.NDArray[np.complexfloating]) -> None:
         """Initialize a DensityOperator.
 
         Parameter matrix: Dense density matrix.
@@ -39,7 +42,7 @@ class DensityOperator(Operator):
         super().__init__(_as_valid_density_matrix(matrix))
 
     @classmethod
-    def from_state(cls, state: State) -> "DensityOperator":
+    def from_state(cls, state: State) -> Self:
         """Build the pure-state projector ``|ψ⟩⟨ψ|`` from a :class:`State`."""
         if not isinstance(state, State):
             raise TypeError(f"state must be a State; got {type(state)!r}")
@@ -50,20 +53,24 @@ class DensityOperator(Operator):
         """Return the trace of the density matrix."""
         return complex(np.trace(self.matrix))
 
-    def __str__(self):
+    def __str__(self) -> str:
         """Return a string representation of the density operator."""
         return f"DensityOperator(matrix={self.matrix})"
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         """Return a string representation of the density operator."""
         return f"DensityOperator(matrix={self.matrix!r})"
 
-    def __eq__(self, other):
+    def __eq__(self, other: object) -> bool:
         """Return whether the density operator equals another."""
-        return np.allclose(self.matrix, other.matrix)
+        if not isinstance(other, DensityOperator):
+            return NotImplemented
+        return bool(np.allclose(self.matrix, other.matrix))
 
     __hash__ = None  # matrix equality uses allclose; instances are not hashable
 
-    def __ne__(self, other):
+    def __ne__(self, other: object) -> bool:
         """Return whether the density operator differs from another."""
-        return not np.allclose(self.matrix, other.matrix)
+        if not isinstance(other, DensityOperator):
+            return NotImplemented
+        return not bool(np.allclose(self.matrix, other.matrix))

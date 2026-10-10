@@ -1,7 +1,7 @@
 """Split JMatrix quantum-inspired simulator."""
 
 from time import perf_counter
-from typing import Callable, List
+from typing import Any, Callable, List, cast
 
 import numpy as np
 import scipy
@@ -11,6 +11,7 @@ from qiskit_aer import AerSimulator
 
 from shadowsim.core.local_hamiltonian import LocalHamiltonian
 from shadowsim.core.local_operator import LocalOperator
+from shadowsim.core.operator import _Matrix
 from shadowsim.core.state import State
 from shadowsim.simulators.reducers import cavity_population, population_one
 from shadowsim.simulators.result import SimulationResult
@@ -50,7 +51,7 @@ def _trace_qubits(
     items = list(qubit_indices)
     is_grouped = any(isinstance(item, list) for item in items)
     if not is_grouped:
-        return _single_group([int(i) for i in items])
+        return _single_group([i for i in items if isinstance(i, int)])
 
     groups: list[dict[str, int]] = []
     for item in items:
@@ -61,7 +62,7 @@ def _trace_qubits(
     return groups
 
 
-def _make_H_gate(H, t, N, tdepth=1):
+def _make_H_gate(H: _Matrix, t: float, N: int, tdepth: int = 1) -> UnitaryGate:
     """Create the unitary gates for Split JMatrix method.
 
     Parameter argl: the indicator for which gate to make.
@@ -86,11 +87,11 @@ def _make_H_gate(H, t, N, tdepth=1):
     return UnitaryGate(scipy.linalg.expm(-1j * H * t / (N * tdepth)))
 
 
-def _make_J_gate(L, t, N):
+def _make_J_gate(L: _Matrix, t: float, N: int) -> UnitaryGate:
     """Create the J gate for Split JMatrix method."""
-    L = np.asarray(L)
-    size = L.shape[0]
-    gate = np.block([[np.zeros((size, size)), L.conjugate().T], [L, np.zeros((size, size))]])
+    matrix = np.asarray(L)
+    size = matrix.shape[0]
+    gate = np.block([[np.zeros((size, size)), matrix.conjugate().T], [matrix, np.zeros((size, size))]])
     return UnitaryGate(scipy.linalg.expm(-1j * gate * np.sqrt(t / N)))
 
 
@@ -105,7 +106,7 @@ def _split_jmatrix(
     verbose: bool = False,
     shots: int = 10000,
     seed: int | None = None,
-):
+) -> dict[str, Any]:
     if shots <= 0:
         raise ValueError("shots must be a positive integer")
     if seed is not None and not isinstance(seed, int):
@@ -161,7 +162,7 @@ class SplitJMatrixSimulator(Simulator):
         shots: int = 10000,
         seed: int | None = None,
         progress: ProgressCallback | None = None,
-    ):
+    ) -> None:
         """Initialize a Split JMatrix simulator for the given model."""
         super().__init__(
             hamiltonians,
@@ -201,7 +202,7 @@ class SplitJMatrixSimulator(Simulator):
     def simulate(self) -> SimulationResult:
         """Evolve the system with Split JMatrix and store reduced traces."""
         started = perf_counter()
-        results = [[] for _ in range(len(self.measurement_groups))]
+        results: list[list[float]] = [[] for _ in range(len(self.measurement_groups))]
         total = len(self.tlist)
         for i, t in enumerate(self.tlist):
             if self.progress is not None:
@@ -209,8 +210,8 @@ class SplitJMatrixSimulator(Simulator):
             if self.verbose:
                 print(f"Working on time step {round(t, 3)}")
             counts = _split_jmatrix(
-                self.hamiltonians,
-                self.lindblads,
+                cast(list[LocalHamiltonian], self.hamiltonians),
+                cast(list[LocalOperator], self.lindblads),
                 self.initial_state,
                 self.num_qubits,
                 t,
@@ -239,7 +240,7 @@ class SplitJMatrixSimulator(Simulator):
             lindblad_count=len(self.lindblads),
         )
 
-    def __str__(self):
+    def __str__(self) -> str:
         """Return a string representation of the SplitJMatrixSimulator."""
         return (
             "SplitJMatrixSimulator("
@@ -252,7 +253,7 @@ class SplitJMatrixSimulator(Simulator):
             ")"
         )
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         """Return a string representation of the SplitJMatrixSimulator."""
         return (
             "SplitJMatrixSimulator("

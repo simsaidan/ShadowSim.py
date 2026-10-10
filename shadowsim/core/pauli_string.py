@@ -4,6 +4,7 @@ from collections.abc import Sequence
 from typing import Self
 
 import numpy as np
+import numpy.typing as npt
 
 from shadowsim.core.pauli import Pauli, _multiply_labels, _single_qubit_anticommutes
 
@@ -17,7 +18,7 @@ class PauliString:
 
     __slots__ = ("_paulis",)
 
-    def __init__(self, paulis: Sequence[Pauli]):
+    def __init__(self, paulis: Sequence[Pauli]) -> None:
         """Initialize a PauliString from an ordered sequence of Paulis."""
         paulis_tuple = tuple(paulis)
         if not paulis_tuple:
@@ -42,7 +43,7 @@ class PauliString:
         """Return the number of qubits in the string."""
         return len(self._paulis)
 
-    def matrix(self) -> np.ndarray:
+    def matrix(self) -> npt.NDArray[np.complexfloating]:
         """Return the tensor-product matrix of this Pauli string."""
         mats = [p.matrix() for p in self._paulis]
         out = mats[0]
@@ -86,7 +87,7 @@ class PauliString:
             p, lab = _multiply_labels(pa.label, pb.label)
             phase *= p
             out_labels.append(lab)
-        return phase, PauliString([Pauli(ch) for ch in out_labels])
+        return phase, type(self)([Pauli(ch) for ch in out_labels])
 
     def commutator(self, other: Self) -> tuple[complex | None, Self | None]:
         """Return ``[self, other]`` as ``coeff * R``, or ``(None, None)`` if zero.

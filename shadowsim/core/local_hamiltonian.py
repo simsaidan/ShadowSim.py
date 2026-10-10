@@ -4,6 +4,7 @@ import numpy as np
 
 from shadowsim.core.hamiltonian import Hamiltonian
 from shadowsim.core.local_operator import LocalOperator
+from shadowsim.core.operator import _Matrix
 from shadowsim.utils.hermitian import hermitian
 from shadowsim.utils.tensor import tensor
 
@@ -16,10 +17,10 @@ class LocalHamiltonian(LocalOperator, Hamiltonian):
 
     def __init__(
         self,
-        matrix: np.ndarray,
+        matrix: _Matrix,
         sites: list[int],
         local_dim: int = 2,
-    ):
+    ) -> None:
         """Initialize a LocalHamiltonian on contiguous sites."""
         assert isinstance(matrix, np.ndarray), "matrix must be a numpy array"
         assert matrix.ndim == 2 and matrix.shape[0] == matrix.shape[1], "matrix must be a square 2D array"
@@ -33,7 +34,7 @@ class LocalHamiltonian(LocalOperator, Hamiltonian):
         assert local_dim > 0, "local_dim must be a positive integer"
         super().__init__(matrix, sites, local_dim)
 
-    def to_full_hamiltonian(self, total_sites: int):
+    def to_full_hamiltonian(self, total_sites: int) -> Hamiltonian:
         """Return a FullHamiltonian for this local term on the given sites.
 
         Parameter total_sites: The total number of sites in the full system.
@@ -53,22 +54,22 @@ class LocalHamiltonian(LocalOperator, Hamiltonian):
         full_matrix = tensor(left_id + [self.matrix] + right_id)
         return Hamiltonian(full_matrix)
 
-    def get_sites(self):
+    def get_sites(self) -> list[int]:
         """Return the sites on which the local Hamiltonian acts non-trivially."""
         return self.sites
 
-    def get_local_dim(self):
+    def get_local_dim(self) -> int:
         """Return the local dimension of the local Hamiltonian."""
         return self.local_dim
 
-    def get_matrix(self):
+    def get_matrix(self) -> _Matrix:
         """Return the matrix representation of the local Hamiltonian."""
         return self.matrix
 
-    def __str__(self):
+    def __str__(self) -> str:
         """Return a string representation of the LocalHamiltonian."""
         return f"LocalHamiltonian(sites={self.sites}, local_dim={self.local_dim}, shape={self.matrix.shape})"
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         """Return a string representation of the LocalHamiltonian."""
         return f"LocalHamiltonian(matrix={self.matrix!r}, sites={self.sites!r}, local_dim={self.local_dim})"

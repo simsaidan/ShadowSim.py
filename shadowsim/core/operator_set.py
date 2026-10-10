@@ -1,5 +1,7 @@
 """Collections of quantum operators."""
 
+from collections.abc import Iterator, Sequence
+
 from shadowsim.core.operator import Operator
 from shadowsim.core.pauli_string import PauliString
 from shadowsim.core.pauli_sum import PauliSum
@@ -8,7 +10,7 @@ from shadowsim.core.pauli_sum import PauliSum
 class OperatorSet:
     """Represent a set of quantum operators."""
 
-    def __init__(self, operators: list):
+    def __init__(self, operators: Sequence[Operator | str | PauliString | PauliSum]) -> None:
         """Initialize an OperatorSet object which represents a set of quantum operators.
 
         Parameter operators: Operators, or values coercible via :class:`Operator`
@@ -26,24 +28,24 @@ class OperatorSet:
         self.operators = coerced
         self.operator_count = len(coerced)
 
-    def __iter__(self):
+    def __iter__(self) -> Iterator[Operator]:
         """Return an iterator over the operators in the operator set."""
         return iter(self.operators)
 
-    def __len__(self):
+    def __len__(self) -> int:
         """Return the number of operators in the operator set."""
         return len(self.operators)
 
-    def __getitem__(self, index: int):
+    def __getitem__(self, index: int) -> Operator:
         """Return the operator at the given index."""
         assert isinstance(index, int), "index must be an integer"
         assert index >= 0 and index < self.operator_count, "index must be within the range of the operator set"
         return self.operators[index]
 
-    def __str__(self):
+    def __str__(self) -> str:
         """Return a string representation of the operator set."""
         return f"OperatorSet(operator_count={self.operator_count})"
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         """Return a string representation of the operator set."""
         return f"OperatorSet(operators={self.operators!r})"

@@ -1,6 +1,12 @@
 """Interop helpers for optional external libraries."""
 
+from typing import TYPE_CHECKING, Any
+
 from shadowsim._optional import import_optional
+
+if TYPE_CHECKING:
+    from shadowsim.interop.qutip import from_qutip as from_qutip
+    from shadowsim.interop.qutip import to_qutip as to_qutip
 
 _EXPORTS: dict[str, tuple[str, str]] = {
     "from_qutip": ("shadowsim.interop.qutip", "qutip"),
@@ -13,7 +19,7 @@ __all__ = [
 ]
 
 
-def __getattr__(name: str):
+def __getattr__(name: str) -> Any:
     """Import a QuTiP interop helper the first time it is accessed."""
     try:
         module_name, extra = _EXPORTS[name]

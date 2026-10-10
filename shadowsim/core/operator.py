@@ -1,6 +1,11 @@
 """General quantum operators."""
 
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
+
 import numpy as np
+import numpy.typing as npt
 
 from shadowsim.core.pauli_string import PauliString
 from shadowsim.core.pauli_sum import PauliSum, parse_pauli_expression
@@ -10,7 +15,13 @@ from shadowsim.utils.negative_semidefinite import negative_semidefinite
 from shadowsim.utils.positive_semidefinite import positive_semidefinite
 from shadowsim.utils.unitary import unitary
 
-_OperatorInput = np.ndarray | str | PauliString | PauliSum
+if TYPE_CHECKING:
+    from shadowsim.core.local_operator import LocalOperator
+    from shadowsim.core.operator_set import OperatorSet
+
+# Real symmetric matrices and complex matrices are both valid operators.
+_Matrix = npt.NDArray[np.complexfloating] | npt.NDArray[np.floating]
+_OperatorInput = _Matrix | str | PauliString | PauliSum
 
 
 def _coerce_pauli_sum(value: str | PauliString | PauliSum) -> PauliSum:
@@ -33,7 +44,7 @@ class Operator:
     on first access.
     """
 
-    def __init__(self, matrix: _OperatorInput, name: str | None = None):
+    def __init__(self, matrix: _OperatorInput, name: str | None = None) -> None:
         """Initialize an Operator object which represents a quantum operator.
 
         Parameter matrix: Dense matrix, Pauli expression string, PauliString, or PauliSum.
@@ -41,7 +52,7 @@ class Operator:
         """
         assert isinstance(name, str) or name is None, "name must be a string or None"
         self._pauli_sum: PauliSum | None = None
-        self._matrix_cache: np.ndarray | None = None
+        self._matrix_cache: _Matrix | None = None
         self._flags_ready = False
         self._is_hermitian = False
         self._is_unitary = False
@@ -62,7 +73,7 @@ class Operator:
         else:
             raise TypeError(f"matrix must be a numpy array, str, PauliString, or PauliSum; got {type(matrix)!r}")
 
-    def _set_flags_from_matrix(self, matrix: np.ndarray) -> None:
+    def _set_flags_from_matrix(self, matrix: _Matrix) -> None:
         self._is_hermitian = bool(hermitian(matrix))
         self._is_unitary = bool(unitary(matrix))
         self._is_positive_semidefinite = bool(positive_semidefinite(matrix))
@@ -70,7 +81,7 @@ class Operator:
         self._is_indefinite = bool(indefinite(matrix))
         self._flags_ready = True
 
-    def _ensure_matrix(self) -> np.ndarray:
+    def _ensure_matrix(self) -> _Matrix:
         if self._matrix_cache is None:
             if self._pauli_sum is None:
                 raise RuntimeError("Operator has neither a matrix cache nor a PauliSum")
@@ -86,7 +97,7 @@ class Operator:
             self._set_flags_from_matrix(matrix)
 
     @property
-    def matrix(self) -> np.ndarray:
+    def matrix(self) -> _Matrix:
         """Return the dense matrix, materializing from a PauliSum if needed."""
         return self._ensure_matrix()
 
@@ -96,7 +107,7 @@ class Operator:
         return self._pauli_sum
 
     @property
-    def is_hermitian(self):
+    def is_hermitian(self) -> bool:
         """Return whether the operator is Hermitian."""
         if self._flags_ready:
             return self._is_hermitian
@@ -106,64 +117,68 @@ class Operator:
         return self._is_hermitian
 
     @property
-    def is_unitary(self):
+    def is_unitary(self) -> bool:
         """Return whether the operator is unitary."""
         self._ensure_flags()
         return self._is_unitary
 
     @property
-    def is_positive_semidefinite(self):
+    def is_positive_semidefinite(self) -> bool:
         """Return whether the operator is positive semidefinite."""
         self._ensure_flags()
         return self._is_positive_semidefinite
 
     @property
-    def is_negative_semidefinite(self):
+    def is_negative_semidefinite(self) -> bool:
         """Return whether the operator is negative semidefinite."""
         self._ensure_flags()
         return self._is_negative_semidefinite
 
     @property
-    def is_indefinite(self):
+    def is_indefinite(self) -> bool:
         """Return whether the operator is indefinite."""
         self._ensure_flags()
         return self._is_indefinite
 
-    def __str__(self):
+    def __str__(self) -> str:
         """Return a string representation of the operator."""
         if self._pauli_sum is not None and self._matrix_cache is None:
             return f"Operator(pauli_sum={self._pauli_sum})"
         return f"Operator(matrix={self.matrix})"
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         """Return a string representation of the operator."""
         if self._pauli_sum is not None and self._matrix_cache is None:
             return f"Operator(pauli_sum={self._pauli_sum!r})"
         return f"Operator(matrix={self.matrix})"
 
-    def __eq__(self, other):
+    def __eq__(self, other: object) -> bool:
         """Return whether the operator is equal to another operator."""
-        return np.allclose(self.matrix, other.matrix)
+        if not isinstance(other, Operator):
+            return NotImplemented
+        return bool(np.allclose(self.matrix, other.matrix))
 
-    __hash__ = None  # matrix equality uses allclose; instances are not hashable
+    __hash__ = None  # type: ignore[assignment]  # matrix equality uses allclose; instances are not hashable
 
-    def __ne__(self, other):
+    def __ne__(self, other: object) -> bool:
         """Return whether the operator is not equal to another operator."""
-        return not np.allclose(self.matrix, other.matrix)
+        if not isinstance(other, Operator):
+            return NotImplemented
+        return not bool(np.allclose(self.matrix, other.matrix))
 
-    def to_operator_set(self):
+    def to_operator_set(self) -> OperatorSet:
         """Return an OperatorSet containing the operator."""
         from shadowsim.core.operator_set import OperatorSet  # noqa: PLC0415
 
         return OperatorSet([self])
 
-    def to_local_operator(self, sites: list[int], local_dim: int = 2):
+    def to_local_operator(self, sites: list[int], local_dim: int = 2) -> LocalOperator:
         """Return a LocalOperator representing the operator acting on the given sites."""
         from shadowsim.core.local_operator import LocalOperator  # noqa: PLC0415
 
         return LocalOperator(self.matrix, sites, local_dim)
 
-    def set_name(self, name: str | None):
+    def set_name(self, name: str | None) -> None:
         """Set the operator name."""
         assert isinstance(name, str) or name is None, "name must be a string or None"
         self.name = name

@@ -1,11 +1,19 @@
 """Hamiltonian operators."""
 
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
+
 import numpy as np
 
 from shadowsim.core.operator import Operator, _coerce_pauli_sum, _OperatorInput
 from shadowsim.core.pauli_string import PauliString
 from shadowsim.core.pauli_sum import PauliSum
 from shadowsim.utils.hermitian import hermitian
+
+if TYPE_CHECKING:
+    from shadowsim.core.hamiltonian_set import HamiltonianSet
+    from shadowsim.core.local_hamiltonian import LocalHamiltonian
 
 
 class Hamiltonian(Operator):
@@ -16,7 +24,7 @@ class Hamiltonian(Operator):
     to validate Hermiticity).
     """
 
-    def __init__(self, matrix: _OperatorInput):
+    def __init__(self, matrix: _OperatorInput) -> None:
         """Initialize a Hamiltonian object.
 
         Parameter matrix: Dense Hermitian matrix, Pauli expression string,
@@ -37,35 +45,39 @@ class Hamiltonian(Operator):
 
         raise TypeError(f"matrix must be a numpy array, str, PauliString, or PauliSum; got {type(matrix)!r}")
 
-    def __str__(self):
+    def __str__(self) -> str:
         """Return a string representation of the Hamiltonian."""
         if self.pauli_sum is not None and self._matrix_cache is None:
             return f"Hamiltonian(pauli_sum={self.pauli_sum})"
         return f"Hamiltonian(matrix={self.matrix})"
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         """Return a string representation of the Hamiltonian."""
         if self.pauli_sum is not None and self._matrix_cache is None:
             return f"Hamiltonian(pauli_sum={self.pauli_sum!r})"
         return f"Hamiltonian(matrix={self.matrix})"
 
-    def __eq__(self, other):
+    def __eq__(self, other: object) -> bool:
         """Return whether the Hamiltonian is equal to another Hamiltonian."""
-        return np.allclose(self.matrix, other.matrix)
+        if not isinstance(other, Hamiltonian):
+            return NotImplemented
+        return bool(np.allclose(self.matrix, other.matrix))
 
     __hash__ = None  # matrix equality uses allclose; instances are not hashable
 
-    def __ne__(self, other):
+    def __ne__(self, other: object) -> bool:
         """Return whether the Hamiltonian is not equal to another Hamiltonian."""
-        return not np.allclose(self.matrix, other.matrix)
+        if not isinstance(other, Hamiltonian):
+            return NotImplemented
+        return not bool(np.allclose(self.matrix, other.matrix))
 
-    def to_hamiltonian_set(self):
+    def to_hamiltonian_set(self) -> HamiltonianSet:
         """Return a HamiltonianSet containing the Hamiltonian."""
         from shadowsim.core.hamiltonian_set import HamiltonianSet  # noqa: PLC0415
 
         return HamiltonianSet([self])
 
-    def to_local_hamiltonian(self, local_dim: int = 2):
+    def to_local_hamiltonian(self, local_dim: int = 2) -> LocalHamiltonian:
         """Return a LocalHamiltonian on a contiguous block of sites starting at 0.
 
         Parameter local_dim: The local dimension of the Hamiltonian.

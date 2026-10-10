@@ -4,6 +4,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 
 import numpy as np
+import numpy.typing as npt
 
 from shadowsim._optional import import_optional
 from shadowsim.core.hamiltonian import Hamiltonian
@@ -30,12 +31,12 @@ class ShadowSimulationResult:
         shadow_num_qubits: Qubit count of the padded shadow Hilbert space.
     """
 
-    times: np.ndarray
-    expectations: list[np.ndarray]
+    times: npt.NDArray[np.float64]
+    expectations: list[npt.NDArray[np.float64]]
     labels: list[str]
     shadow_hamiltonian: ShadowHamiltonian
     shadow_state: ShadowState
-    H_S_padded: np.ndarray
+    H_S_padded: npt.NDArray[np.complexfloating]
     shadow_num_qubits: int
 
 
@@ -57,7 +58,7 @@ def computational_basis_projectors(num_qubits: int) -> OperatorSet:
     return OperatorSet(ops)
 
 
-def pad_h_s(H_S: np.ndarray) -> tuple[np.ndarray, int]:
+def pad_h_s(H_S: npt.NDArray[np.complexfloating]) -> tuple[npt.NDArray[np.complexfloating], int]:
     """Embed ``H_S`` in the top-left of the next power-of-two square matrix.
 
     Returns:
@@ -218,11 +219,11 @@ def run_shadow_simulation(
         time_steps,
     )
     simulator.simulate()
-    expectations = list(simulator.get_results())
+    expectations = [np.asarray(curve, dtype=np.float64) for curve in simulator.get_results()]
     labels = [op.name if op.name is not None else str(i) for i, op in enumerate(e_ops)]
 
     return ShadowSimulationResult(
-        times=np.asarray(simulator.tlist),
+        times=np.asarray(simulator.tlist, dtype=np.float64),
         expectations=expectations,
         labels=labels,
         shadow_hamiltonian=shadow_h,

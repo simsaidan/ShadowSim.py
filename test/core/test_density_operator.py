@@ -21,6 +21,8 @@ def test_density_operator_equality():
     c = DensityOperator(MIXED)
     assert a == b
     assert a != c
+    assert a != "not a density operator"
+    assert not (a == "not a density operator")
 
 
 def test_density_operator_from_state():

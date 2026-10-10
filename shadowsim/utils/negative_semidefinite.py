@@ -32,4 +32,4 @@ def negative_semidefinite(matrix: np.ndarray) -> bool:
         ```
 
     """
-    return np.all(_real_parts_of_eigenvalues(matrix) <= _EIG_ATOL)
+    return bool(np.all(_real_parts_of_eigenvalues(matrix) <= _EIG_ATOL))

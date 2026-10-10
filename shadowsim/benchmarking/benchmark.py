@@ -4,17 +4,19 @@ import json
 import time
 from datetime import datetime
 from pathlib import Path
+from typing import Any
 
 import numpy as np
+import numpy.typing as npt
 
 from shadowsim._optional import import_optional
-from shadowsim.simulators.simulator import Simulator
+from shadowsim.simulators.simulator import Simulator, _Trace, _Traces
 
 
 class Benchmark:
     """Compare expectation traces from a reference and challenger simulators."""
 
-    def __init__(self, reference: Simulator, *challengers: Simulator):
+    def __init__(self, reference: Simulator, *challengers: Simulator) -> None:
         """Initialize a Benchmark for simulators on the same time grid."""
         if not challengers:
             raise ValueError("at least one challenger is required")
@@ -30,22 +32,22 @@ class Benchmark:
         """Return the reference followed by all challengers."""
         return [self.reference, *self.challengers]
 
-    def get_tlist(self) -> np.ndarray:
+    def get_tlist(self) -> npt.NDArray[np.float64]:
         """Return the shared simulation time grid."""
         return self.reference.tlist
 
-    def run(self):
+    def run(self) -> None:
         """Run the reference and all challenger simulators."""
         for simulator in self.simulators:
             start = time.perf_counter()
             simulator.run()
             self._wall_times[simulator.id] = time.perf_counter() - start
 
-    def get_results(self, index: int = None):
+    def get_results(self, index: int | None = None) -> list[_Traces | _Trace]:
         """Return matching result traces from the reference and each challenger."""
         return [simulator.get_results(index) for simulator in self.simulators]
 
-    def error_metrics(self, indices: list[int] | None = None) -> list[dict]:
+    def error_metrics(self, indices: list[int] | None = None) -> list[dict[str, Any]]:
         """Return L∞ / L2 / MAE / RMSE vs reference for each challenger.
 
         For each selected observable, with error series ``e = y_ref − y_challenger``:
@@ -55,7 +57,7 @@ class Benchmark:
         - ``mae``: ``mean(|e|)``
         - ``rmse``: ``sqrt(mean(e²))``
         """
-        metrics: list[dict] = []
+        metrics: list[dict[str, Any]] = []
         for challenger in self.challengers:
             ra, rb = self._matching_results(challenger)
             selected = list(range(len(ra))) if indices is None else indices
@@ -74,7 +76,7 @@ class Benchmark:
             metrics.append({"challenger_id": challenger.id, "observables": observables})
         return metrics
 
-    def resource_metrics(self) -> list[dict]:
+    def resource_metrics(self) -> list[dict[str, Any]]:
         """Return wall-clock time and shot budget for each simulator.
 
         Requires ``run()`` first. Shot fields are ``None`` when a simulator has no
@@ -83,7 +85,7 @@ class Benchmark:
         """
         if not self._wall_times:
             raise ValueError("Results are not available. Call run() (or simulate all) before save().")
-        metrics: list[dict] = []
+        metrics: list[dict[str, Any]] = []
         for simulator in self.simulators:
             shots_per_job = getattr(simulator, "shots", None)
             if shots_per_job is None:
@@ -155,7 +157,7 @@ class Benchmark:
             )
         return paths
 
-    def _matching_results(self, challenger: Simulator) -> tuple[list, list]:
+    def _matching_results(self, challenger: Simulator) -> tuple[_Traces, _Traces]:
         """Return ``(ref_results, challenger_results)`` or raise if unavailable/mismatched."""
         ra = self.reference.results
         rb = challenger.results
@@ -166,7 +168,7 @@ class Benchmark:
         return ra, rb
 
     @staticmethod
-    def _diff_series(ref_curve, challenger_curve) -> np.ndarray:
+    def _diff_series(ref_curve: _Trace, challenger_curve: _Trace) -> npt.NDArray[np.float64]:
         """Return ``y_ref − y_challenger`` as a float array."""
         return np.asarray(ref_curve, dtype=float) - np.asarray(challenger_curve, dtype=float)
 
@@ -205,11 +207,11 @@ class Benchmark:
             plt.close(fig)
         return path
 
-    def __str__(self):
+    def __str__(self) -> str:
         """Return a string representation of the Benchmark."""
         challenger_names = ", ".join(c.__class__.__name__ for c in self.challengers)
         return f"Benchmark(reference={self.reference.__class__.__name__}, challengers=[{challenger_names}])"
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         """Return a string representation of the Benchmark."""
         return f"Benchmark(reference={self.reference!r}, challengers={self.challengers!r})"

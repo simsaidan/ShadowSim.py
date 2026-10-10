@@ -39,6 +39,7 @@ Pushes and pull requests run [`.github/workflows/test-coverage.yml`](.github/wor
 - One-extra jobs on Ubuntu 3.12 for `qutip`, `qiskit`, and `viz`
 - NumPy/SciPy floor (`numpy==2.0.0`, `scipy==1.14.0`) and newest compatible
   releases on Ubuntu 3.12 with all extras
+- mypy on Ubuntu for Python 3.12 (`uv sync --locked --all-extras --group types`)
 
 Coverage uploads to
 [Codecov](https://app.codecov.io/gh/simsaidan/ShadowSim.py) (enable the
@@ -56,6 +57,18 @@ uv run --group lint ruff check .
 uv run --group lint ruff format .
 # CI equivalent of the format gate:
 uv run --group lint ruff format --check .
+```
+
+## Type checking
+
+Install [mypy](https://mypy.readthedocs.io/) with the optional extras so QuTiP and
+Qiskit imports resolve, then run it. CI runs the same check on Python 3.12.
+Public modules must be annotated. The CLI, tests, and examples are not part of
+that check yet.
+
+```bash
+uv sync --all-extras --group types
+uv run --group types mypy
 ```
 
 ## Adding a simulator
@@ -84,5 +97,6 @@ Names that already exist are refused. The command writes:
 git checkout -b feature/your-change
 ```
 3. Make your changes and keep commits focused.
-4. Run tests and Ruff locally (`uv run pytest` and the [linting](#linting) commands above).
+4. Run tests, Ruff, and mypy locally (`uv run pytest`, the [linting](#linting)
+   commands, and the [type checking](#type-checking) commands above).
 5. Open a pull request with a clear description of what changed and why.

@@ -44,6 +44,8 @@ def test_operator_equality_and_inequality():
     c = Operator(np.array([[0.0, 1.0], [1.0, 0.0]]))
     assert a == b
     assert a != c
+    assert a != "not an operator"
+    assert not (a == "not an operator")
 
 
 def test_operator_str_and_repr():

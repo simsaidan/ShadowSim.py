@@ -54,6 +54,9 @@ docs = [
 lint = [
     "ruff==0.16.10",
 ]
+types = [
+    "mypy>=1.15",
+]
 
 [tool.uv]
 required-version = ">=0.6.0"
@@ -62,9 +65,70 @@ required-version = ">=0.6.0"
 where = ["."]
 include = ["shadowsim*"]
 
+[tool.setuptools.package-data]
+shadowsim = ["py.typed"]
+
 [build-system]
 requires = ["setuptools>=77.0.3"]
 build-backend = "setuptools.build_meta"
+
+[tool.mypy]
+python_version = "3.12"
+files = ["shadowsim"]
+warn_unused_ignores = true
+warn_redundant_casts = true
+
+[[tool.mypy.overrides]]
+module = [
+    "qutip",
+    "qutip.*",
+    "qiskit",
+    "qiskit.*",
+    "qiskit_aer",
+    "qiskit_aer.*",
+    "matplotlib",
+    "matplotlib.*",
+    "scipy",
+    "scipy.*",
+]
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = [
+    "shadowsim.core",
+    "shadowsim.core.combined_hamiltonian_matrix",
+    "shadowsim.core.density_operator",
+    "shadowsim.core.hamiltonian",
+    "shadowsim.core.hamiltonian_set",
+    "shadowsim.core.local_hamiltonian",
+    "shadowsim.core.local_operator",
+    "shadowsim.core.operator",
+    "shadowsim.core.operator_set",
+    "shadowsim.core.pauli",
+    "shadowsim.core.pauli_string",
+    "shadowsim.core.pauli_sum",
+    "shadowsim.core.state",
+    "shadowsim.simulators",
+    "shadowsim.simulators.qutip_simulator",
+    "shadowsim.simulators.reducers",
+    "shadowsim.simulators.result",
+    "shadowsim.simulators.simulator",
+    "shadowsim.simulators.splitjmatrix_simulator",
+    "shadowsim.simulators.trotterization_simulator",
+    "shadowsim.shadow",
+    "shadowsim.shadow.invariance",
+    "shadowsim.shadow.run_shadow_simulation",
+    "shadowsim.shadow.shadow_hamiltonian",
+    "shadowsim.shadow.shadow_state",
+    "shadowsim.interop",
+    "shadowsim.interop.qutip",
+    "shadowsim.models",
+    "shadowsim.models.ising",
+    "shadowsim.models.tavis_cummings",
+    "shadowsim.benchmarking",
+    "shadowsim.benchmarking.benchmark",
+]
+disallow_untyped_defs = true
 
 [tool.pytest.ini_options]
 # Allow ``from strategies...`` imports without colliding with the stdlib ``test`` package.
