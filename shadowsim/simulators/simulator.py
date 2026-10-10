@@ -110,10 +110,10 @@ class Simulator:
         title: str | None = None,
     ) -> None:
         """Plot expectation traces vs time in an interactive window."""
-        plt = import_optional("matplotlib.pyplot", extra="viz")
         results = self.results
         if results is None:
             raise ValueError("Results are not available. Please run the simulation first.")
+        plt = import_optional("matplotlib.pyplot", extra="viz")
         if indices is None:
             indices = list(range(len(results)))
         for plot_i, index in enumerate(indices):
@@ -139,10 +139,10 @@ class Simulator:
         Saves as ``{id}_{timestamp}.png`` (``id`` is set per simulator subclass).
         Does not open an interactive window.
         """
-        plt = import_optional("matplotlib.pyplot", extra="viz")
         results = self.results
         if results is None:
             raise ValueError("Results are not available. Please run the simulation first.")
+        plt = import_optional("matplotlib.pyplot", extra="viz")
         if indices is None:
             indices = list(range(len(results)))
         stamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")

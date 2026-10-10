@@ -69,6 +69,10 @@ def test_simulator_get_results_requires_run():
     )
     with pytest.raises(ValueError, match="Results are not available"):
         sim.get_results()
+    with pytest.raises(ValueError, match="Results are not available"):
+        sim.plot_results()
+    with pytest.raises(ValueError, match="Results are not available"):
+        sim.save_result_plot()
 
 
 @pytest.mark.viz

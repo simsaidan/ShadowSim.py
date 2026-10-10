@@ -67,8 +67,7 @@ def combined_hamiltonian_matrix(
         elif d != target_dim:
             raise ValueError(f"Hamiltonian dimensions disagree: got {d} vs {target_dim}")
 
-    if target_dim is None:
-        raise ValueError("hamiltonians must be a non-empty list")
+    assert target_dim is not None, "hamiltonians must be a non-empty list"
 
     H_tot = np.zeros((target_dim, target_dim), dtype=np.complex128)
     for h in hamiltonians:

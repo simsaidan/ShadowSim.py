@@ -16,6 +16,8 @@ def test_hamiltonian_str_repr_equality_and_conversions():
     assert "Hamiltonian(matrix=" in repr(h)
     assert h == other
     assert h != different
+    assert h != "not a hamiltonian"
+    assert not (h == "not a hamiltonian")
 
     h_set = h.to_hamiltonian_set()
     assert isinstance(h_set, HamiltonianSet)
