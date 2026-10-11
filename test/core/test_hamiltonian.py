@@ -1,3 +1,6 @@
+import subprocess
+import sys
+
 import numpy as np
 import pytest
 
@@ -33,9 +36,9 @@ def test_hamiltonian_str_repr_equality_and_conversions():
 
 def test_hamiltonian_to_local_hamiltonian_validates_local_dim():
     h = Hamiltonian(Z)
-    with pytest.raises(AssertionError, match="local_dim must be an integer"):
+    with pytest.raises(TypeError, match="local_dim must be an integer"):
         h.to_local_hamiltonian(local_dim=2.0)  # type: ignore[arg-type]
-    with pytest.raises(AssertionError, match="local_dim must be a positive integer"):
+    with pytest.raises(ValueError, match="local_dim must be a positive integer"):
         h.to_local_hamiltonian(local_dim=0)
     with pytest.raises(ValueError, match="not a power of local_dim"):
         Hamiltonian(np.eye(3, dtype=np.complex128)).to_local_hamiltonian(local_dim=2)
@@ -60,8 +63,42 @@ def test_hamiltonian_from_pauli_label_and_sum():
     assert from_sum.pauli_sum is not None
 
 
+def test_hamiltonian_rejects_non_square_matrix():
+    matrix = np.ones((2, 3), dtype=np.complex128)
+    with pytest.raises(ValueError, match=r"square 2D array; got shape \(2, 3\)"):
+        Hamiltonian(matrix)
+
+
+def test_hamiltonian_rejects_non_hermitian_matrix():
+    matrix = np.array([[0.0, 1.0], [0.0, 0.0]], dtype=np.complex128)
+    with pytest.raises(ValueError, match=r"Hermitian; got shape \(2, 2\)"):
+        Hamiltonian(matrix)
+
+
+def test_hamiltonian_validation_survives_without_assertions():
+    script = """
+import numpy as np
+from shadowsim.core import Hamiltonian
+matrix = np.array([[0.0, 1.0], [0.0, 0.0]], dtype=np.complex128)
+try:
+    Hamiltonian(matrix)
+except ValueError as exc:
+    if "shape" not in str(exc):
+        raise SystemExit("missing shape")
+else:
+    raise SystemExit("no error")
+"""
+    result = subprocess.run(
+        [sys.executable, "-O", "-c", script],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0, result.stderr + result.stdout
+
+
 def test_hamiltonian_rejects_non_hermitian_pauli_expression():
-    with pytest.raises(AssertionError, match="Hermitian"):
+    with pytest.raises(ValueError, match=r"Hermitian; got shape \(2, 2\)"):
         Hamiltonian("1j*X")
 
 

@@ -31,15 +31,18 @@ class Hamiltonian(Operator):
             PauliString, or real-coefficient PauliSum.
         """
         if isinstance(matrix, np.ndarray):
-            assert isinstance(matrix, np.ndarray), "matrix must be a numpy array"
-            assert hermitian(matrix), "matrix must be Hermitian"
-            assert matrix.ndim == 2 and matrix.shape[0] == matrix.shape[1], "matrix must be a square 2D array"
+            if matrix.ndim != 2 or matrix.shape[0] != matrix.shape[1]:
+                raise ValueError(f"matrix must be a square 2D array; got shape {matrix.shape}")
+            if not hermitian(matrix):
+                raise ValueError(f"matrix must be Hermitian; got shape {matrix.shape}")
             super().__init__(matrix)
             return
 
         if isinstance(matrix, (str, PauliString, PauliSum)):
             pauli_sum = _coerce_pauli_sum(matrix)
-            assert pauli_sum.is_hermitian(), "matrix must be Hermitian"
+            if not pauli_sum.is_hermitian():
+                dim = 2**pauli_sum.num_qubits
+                raise ValueError(f"matrix must be Hermitian; got shape {(dim, dim)}")
             super().__init__(pauli_sum)
             return
 
@@ -83,8 +86,10 @@ class Hamiltonian(Operator):
         Parameter local_dim: The local dimension of the Hamiltonian.
         Precondition: local_dim is a positive integer.
         """
-        assert isinstance(local_dim, int), "local_dim must be an integer"
-        assert local_dim > 0, "local_dim must be a positive integer"
+        if not isinstance(local_dim, int):
+            raise TypeError(f"local_dim must be an integer; got {type(local_dim)!r}")
+        if local_dim <= 0:
+            raise ValueError(f"local_dim must be a positive integer; got {local_dim}")
 
         from shadowsim.core.local_hamiltonian import LocalHamiltonian  # noqa: PLC0415
 

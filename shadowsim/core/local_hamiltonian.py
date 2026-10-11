@@ -22,16 +22,11 @@ class LocalHamiltonian(LocalOperator, Hamiltonian):
         local_dim: int = 2,
     ) -> None:
         """Initialize a LocalHamiltonian on contiguous sites."""
-        assert isinstance(matrix, np.ndarray), "matrix must be a numpy array"
-        assert matrix.ndim == 2 and matrix.shape[0] == matrix.shape[1], "matrix must be a square 2D array"
-        assert hermitian(matrix), "matrix must be Hermitian"
-        assert isinstance(sites, list), "sites must be a list"
-        assert all(isinstance(site, int) for site in sites), "all sites must be integers"
-        assert len(set(sites)) == len(sites), "all sites must be unique"
-        assert len(sites) >= 1, "there must be at least one site"
-        assert max(sites) - min(sites) + 1 == len(sites), "sites must be a contiguous range of integers"
-        assert isinstance(local_dim, int), "local_dim must be an integer"
-        assert local_dim > 0, "local_dim must be a positive integer"
+        if isinstance(matrix, np.ndarray):
+            if matrix.ndim != 2 or matrix.shape[0] != matrix.shape[1]:
+                raise ValueError(f"matrix must be a square 2D array; got shape {matrix.shape}")
+            if not hermitian(matrix):
+                raise ValueError(f"matrix must be Hermitian; got shape {matrix.shape}")
         super().__init__(matrix, sites, local_dim)
 
     def to_full_hamiltonian(self, total_sites: int) -> Hamiltonian:
@@ -40,11 +35,14 @@ class LocalHamiltonian(LocalOperator, Hamiltonian):
         Parameter total_sites: The total number of sites in the full system.
         Precondition: total_sites is a positive integer.
         """
-        assert isinstance(total_sites, int), "total_sites must be an integer"
-        assert total_sites >= 1, "total_sites must be positive"
+        if not isinstance(total_sites, int):
+            raise TypeError(f"total_sites must be an integer; got {type(total_sites)!r}")
+        if total_sites < 1:
+            raise ValueError(f"total_sites must be positive; got {total_sites}")
 
         lo, hi = min(self.sites), max(self.sites)
-        assert lo >= 0, "site indices must be non-negative"
+        if lo < 0:
+            raise ValueError(f"site indices must be non-negative; got {self.sites}")
         if hi >= total_sites:
             raise ValueError(f"total_sites={total_sites} is too small for local sites {self.sites}")
 

@@ -23,9 +23,9 @@ def test_hamiltonian_set_protocols_and_repr():
 
 
 def test_hamiltonian_set_validates_inputs():
-    with pytest.raises(AssertionError, match="hamiltonians must be a list"):
+    with pytest.raises(TypeError, match="hamiltonians must be a list"):
         HamiltonianSet(Hamiltonian(Z))  # type: ignore[arg-type]
-    with pytest.raises(AssertionError, match="all hamiltonians must be Hamiltonian"):
+    with pytest.raises(TypeError, match=r"Hamiltonian, str, PauliString, or PauliSum; got <class 'int'>"):
         HamiltonianSet([Hamiltonian(Z), 123])  # type: ignore[list-item]
     with pytest.raises(ValueError, match="expected Pauli word|invalid Pauli"):
         HamiltonianSet([Hamiltonian(Z), "nope"])

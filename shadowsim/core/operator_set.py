@@ -16,7 +16,8 @@ class OperatorSet:
         Parameter operators: Operators, or values coercible via ``Operator``
             (Pauli strings / expressions / PauliSum).
         """
-        assert isinstance(operators, list), "operators must be a list"
+        if not isinstance(operators, list):
+            raise TypeError(f"operators must be a list; got {type(operators)!r}")
         coerced: list[Operator] = []
         for op in operators:
             if isinstance(op, Operator):
@@ -24,7 +25,7 @@ class OperatorSet:
             elif isinstance(op, (str, PauliString, PauliSum)):
                 coerced.append(Operator(op))
             else:
-                assert False, "all operators must be Operator objects"
+                raise TypeError(f"all operators must be Operator, str, PauliString, or PauliSum; got {type(op)!r}")
         self.operators = coerced
         self.operator_count = len(coerced)
 
@@ -38,8 +39,10 @@ class OperatorSet:
 
     def __getitem__(self, index: int) -> Operator:
         """Return the operator at the given index."""
-        assert isinstance(index, int), "index must be an integer"
-        assert index >= 0 and index < self.operator_count, "index must be within the range of the operator set"
+        if not isinstance(index, int):
+            raise TypeError(f"index must be an integer; got {type(index)!r}")
+        if index < 0 or index >= self.operator_count:
+            raise IndexError(f"index must be within the range of the operator set; got {index}")
         return self.operators[index]
 
     def __str__(self) -> str:

@@ -17,18 +17,20 @@ def test_operator_set_init_and_basic_protocols():
 
 
 def test_operator_set_rejects_invalid_input_types():
-    with pytest.raises(AssertionError, match="operators must be a list"):
+    with pytest.raises(TypeError, match="operators must be a list"):
         OperatorSet(tuple())  # type: ignore[arg-type]
-    with pytest.raises(AssertionError, match="all operators must be Operator objects"):
+    with pytest.raises(TypeError, match=r"Operator, str, PauliString, or PauliSum; got <class 'numpy.ndarray'>"):
         OperatorSet([np.eye(2)])  # type: ignore[list-item]
 
 
 def test_operator_set_getitem_validates_index():
     op_set = OperatorSet([Operator(np.eye(2))])
-    with pytest.raises(AssertionError, match="index must be an integer"):
+    with pytest.raises(TypeError, match="index must be an integer"):
         _ = op_set["0"]  # type: ignore[index]
-    with pytest.raises(AssertionError, match="within the range"):
+    with pytest.raises(IndexError, match="within the range"):
         _ = op_set[2]
+    with pytest.raises(IndexError, match="within the range"):
+        _ = op_set[-1]
 
 
 def test_operator_set_coerces_pauli_labels():
