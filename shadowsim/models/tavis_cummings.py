@@ -126,8 +126,9 @@ def tavis_cummings(
 
     The cavity Fock space is truncated to four levels and encoded on two qubits;
     each emitter is a two-level system on its own qubit. Only ``cavity_levels=4``
-    is supported in v1. ``n_emitters=1`` with default frequencies/couplings
-    reproduces README Example 2 / ``examples/simple_algo_benchmark.py``.
+    is supported in v1. The one-emitter case is ``jaynes_cummings``.
+    ``n_emitters=1`` with default frequencies/couplings reproduces README
+    Example 2 / ``examples/simple_algo_benchmark.py``.
 
     ``kappa`` and ``gamma`` are Lindblad amplitudes (as in the historical
     examples), not decay rates. ``omega_e``, ``gamma``, and ``g`` may be scalars
