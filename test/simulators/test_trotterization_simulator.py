@@ -2,6 +2,7 @@
 
 import numpy as np
 import pytest
+import scipy.linalg
 
 pytestmark = pytest.mark.qiskit
 
@@ -14,10 +15,15 @@ from shadowsim.benchmarking import Benchmark
 from shadowsim.core import Hamiltonian, LocalHamiltonian, Operator, State
 from shadowsim.simulators import TrotterizationSimulator, population_one
 from shadowsim.simulators.simulator import Simulator
-from shadowsim.simulators.trotterization_simulator import _trace_qubits, _trotter_circuit_counts
+from shadowsim.simulators.trotterization_simulator import (
+    _trace_qubits,
+    _trotter_circuit_counts,
+    _trotter_slice_unitaries,
+)
 
 Z = np.diag([1.0, -1.0]).astype(np.complex128)
 X = np.array([[0.0, 1.0], [1.0, 0.0]], dtype=np.complex128)
+Y = np.array([[0.0, -1j], [1j, 0.0]], dtype=np.complex128)
 ONE = np.array([[0.0, 0.0], [0.0, 1.0]], dtype=np.complex128)
 
 
@@ -110,6 +116,30 @@ def test_trotterization_simulator_rejects_nonpositive_num_steps():
 def test_trotterization_simulator_rejects_nonpositive_trotter_depth():
     with pytest.raises(ValueError, match="trotter_depth must be a positive integer"):
         _tiny(trotter_depth=0)
+
+
+def test_trotterization_simulator_default_order_is_one():
+    assert _tiny().order == 1
+
+
+def test_trotterization_simulator_rejects_unsupported_order():
+    with pytest.raises(ValueError, match="order must be 1 or 2"):
+        _tiny(order=3)  # type: ignore[arg-type]
+
+
+def test_trotterization_simulator_records_order(monkeypatch):
+    seen = []
+
+    def fake_counts(*args, **kwargs):
+        seen.append(kwargs["order"])
+        return {"0": 10}
+
+    monkeypatch.setattr(trotter_module, "_trotter_circuit_counts", fake_counts)
+
+    result = _tiny(order=2, time_steps=1).simulate()
+
+    assert seen == [2]
+    assert result.metadata["order"] == 2
 
 
 def test_trotterization_simulator_rejects_non_int_seed():
@@ -249,6 +279,19 @@ def test_trotter_circuit_counts_rejects_nonpositive_num_steps():
         )
 
 
+def test_trotter_circuit_counts_rejects_unsupported_order():
+    with pytest.raises(ValueError, match="order must be 1 or 2"):
+        _trotter_circuit_counts(
+            [LocalHamiltonian(Z, [0])],
+            State(np.array([1.0, 0.0], dtype=np.complex128), 1),
+            num_qubits=1,
+            t=0.0,
+            num_steps=1,
+            shots=1,
+            order=3,  # type: ignore[arg-type]
+        )
+
+
 def test_trotter_circuit_counts_rejects_nonpositive_trotter_depth():
     with pytest.raises(ValueError, match="trotter_depth must be a positive integer"):
         _trotter_circuit_counts(
@@ -276,6 +319,117 @@ def test_trotter_circuit_counts_verbose_prints_iterations(monkeypatch, capsys):
     )
 
     assert "Working on iteration 0 out of 1" in capsys.readouterr().out
+
+
+def _product_unitary(hamiltonians, t, num_steps, trotter_depth, order):
+    """Multiply one-qubit slice unitaries. The first slice factor is applied first."""
+    delta = t / (num_steps * trotter_depth)
+    steps = _trotter_slice_unitaries(hamiltonians, delta, order)
+    unitary = np.eye(2, dtype=np.complex128)
+    for _ in range(num_steps * trotter_depth):
+        for matrix, _sites in steps:
+            unitary = matrix @ unitary
+    return unitary
+
+
+def test_order_one_slice_matches_first_order_product():
+    terms = [LocalHamiltonian(X, [0]), LocalHamiltonian(Z, [1])]
+    delta = 0.25
+    steps = _trotter_slice_unitaries(terms, delta, 1)
+
+    assert [sites for _matrix, sites in steps] == [[0], [1]]
+    assert np.allclose(steps[0][0], scipy.linalg.expm(-1j * X * delta))
+    assert np.allclose(steps[1][0], scipy.linalg.expm(-1j * Z * delta))
+
+
+def test_order_two_slice_is_strang():
+    terms = [LocalHamiltonian(X, [0]), LocalHamiltonian(Y, [1]), LocalHamiltonian(Z, [0])]
+    delta = 0.4
+    steps = _trotter_slice_unitaries(terms, delta, 2)
+    expected = [
+        (scipy.linalg.expm(-1j * X * delta / 2), [0]),
+        (scipy.linalg.expm(-1j * Y * delta / 2), [1]),
+        (scipy.linalg.expm(-1j * Z * delta), [0]),
+        (scipy.linalg.expm(-1j * Y * delta / 2), [1]),
+        (scipy.linalg.expm(-1j * X * delta / 2), [0]),
+    ]
+
+    assert [sites for _matrix, sites in steps] == [sites for _matrix, sites in expected]
+    for got, want in zip(steps, expected, strict=True):
+        assert np.allclose(got[0], want[0])
+
+
+@pytest.mark.parametrize("order", [1, 2])
+def test_single_term_product_is_exact(order):
+    term = [LocalHamiltonian(X, [0])]
+    t = 0.7
+    num_steps = 4
+    trotter_depth = 3
+    got = _product_unitary(term, t, num_steps, trotter_depth, order)
+    exact = scipy.linalg.expm(-1j * X * t)
+    assert np.linalg.norm(got - exact) < 1e-8
+
+
+def test_order_two_is_closer_than_order_one_for_noncommuting_terms():
+    terms = [LocalHamiltonian(X, [0]), LocalHamiltonian(Z, [0])]
+    t = 1.0
+    num_steps = 2
+    trotter_depth = 2
+    exact = scipy.linalg.expm(-1j * (X + Z) * t)
+    err1 = np.linalg.norm(_product_unitary(terms, t, num_steps, trotter_depth, 1) - exact)
+    err2 = np.linalg.norm(_product_unitary(terms, t, num_steps, trotter_depth, 2) - exact)
+
+    assert err1 > 1e-6
+    assert err2 < err1
+
+
+@pytest.mark.parametrize("order", [1, 2])
+def test_circuit_repeats_slice_unitaries(monkeypatch, order):
+    captured = []
+
+    class FakeResult:
+        def get_counts(self):
+            return {"0": 1}
+
+    class FakeJob:
+        def result(self):
+            return FakeResult()
+
+    class FakeBackend:
+        def run(self, compiled, shots):
+            captured.append(compiled)
+            return FakeJob()
+
+    monkeypatch.setattr(trotter_module, "AerSimulator", lambda *args, **kwargs: FakeBackend())
+    monkeypatch.setattr(trotter_module, "transpile", lambda circ, backend: circ)
+
+    terms = [LocalHamiltonian(X, [0]), LocalHamiltonian(Z, [0])]
+    t = 0.5
+    num_steps = 2
+    trotter_depth = 3
+    _trotter_circuit_counts(
+        terms,
+        State(np.array([1.0, 0.0], dtype=np.complex128), 1),
+        num_qubits=1,
+        t=t,
+        num_steps=num_steps,
+        trotter_depth=trotter_depth,
+        order=order,
+        shots=1,
+    )
+
+    delta = t / (num_steps * trotter_depth)
+    expected = [matrix for matrix, _sites in _trotter_slice_unitaries(terms, delta, order)]
+    expected = expected * (num_steps * trotter_depth)
+    got = [
+        np.asarray(instruction.operation.params[0], dtype=np.complex128)
+        for instruction in captured[0].data
+        if instruction.operation.name == "unitary"
+    ]
+
+    assert len(got) == len(expected)
+    for matrix, want in zip(got, expected, strict=True):
+        assert np.allclose(matrix, want)
 
 
 # Single-term H=X is exact under first-order Trotter; residual is shot noise only.

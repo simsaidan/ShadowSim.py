@@ -2,7 +2,7 @@
 
 from collections.abc import Sequence
 from time import perf_counter
-from typing import Any, Callable, List, cast
+from typing import Any, Callable, List, Literal, cast
 
 import scipy
 from qiskit import QuantumCircuit, QuantumRegister, transpile
@@ -55,9 +55,35 @@ def _trace_qubits(
     return groups
 
 
-def _make_h_gate(h_matrix: _Matrix, t: float, num_steps: int, trotter_depth: int = 1) -> UnitaryGate:
-    """Build a local product-formula unitary for one Hamiltonian term."""
-    return UnitaryGate(scipy.linalg.expm(-1j * h_matrix * t / (num_steps * trotter_depth)))
+def _check_order(order: int) -> None:
+    """Reject product-formula orders other than 1 or 2."""
+    if order not in (1, 2):
+        raise ValueError("order must be 1 or 2")
+
+
+def _local_evolution(h_matrix: _Matrix, dt: float) -> _Matrix:
+    """Return the local unitary exp(-i H dt)."""
+    return scipy.linalg.expm(-1j * h_matrix * dt)
+
+
+def _trotter_slice_unitaries(
+    hamiltonians: Sequence[LocalHamiltonian],
+    delta: float,
+    order: Literal[1, 2],
+) -> list[tuple[_Matrix, list[int]]]:
+    """Return one slice of local unitaries in the order they are applied.
+
+    ``delta`` is the slice width. ``order=1`` applies each term for time ``delta``.
+    ``order=2`` is a Strang step: half-steps forward, a full step on the last term,
+    then half-steps in reverse. The first entry is applied first.
+    """
+    _check_order(order)
+    if order == 1:
+        return [(_local_evolution(h_i.matrix, delta), list(h_i.sites)) for h_i in hamiltonians]
+    forward = [(_local_evolution(h_i.matrix, delta / 2), list(h_i.sites)) for h_i in hamiltonians[:-1]]
+    last = hamiltonians[-1]
+    full = (_local_evolution(last.matrix, delta), list(last.sites))
+    return [*forward, full, *reversed(forward)]
 
 
 def _trotter_circuit_counts(
@@ -67,11 +93,16 @@ def _trotter_circuit_counts(
     t: float,
     num_steps: int,
     trotter_depth: int = 1,
+    order: Literal[1, 2] = 1,
     verbose: bool = False,
     shots: int = 10000,
     seed: int | None = None,
 ) -> dict[str, Any]:
-    """Run a closed-system first-order product formula on Aer and return counts."""
+    """Run a closed-system product formula on Aer and return counts.
+
+    ``order=1`` is the first-order product. ``order=2`` is one Strang step per slice.
+    ``trotter_depth`` is the number of slices in this time sample, for both orders.
+    """
     if shots <= 0:
         raise ValueError("shots must be a positive integer")
     if seed is not None and not isinstance(seed, int):
@@ -80,8 +111,12 @@ def _trotter_circuit_counts(
         raise ValueError("num_steps must be a positive integer")
     if trotter_depth <= 0:
         raise ValueError("trotter_depth must be a positive integer")
+    _check_order(order)
 
-    h_gates = [_make_h_gate(h_i.matrix, t, num_steps, trotter_depth) for h_i in hamiltonians]
+    delta = t / (num_steps * trotter_depth)
+    slice_gates = [
+        (UnitaryGate(matrix), sites) for matrix, sites in _trotter_slice_unitaries(hamiltonians, delta, order)
+    ]
     body = QuantumRegister(num_qubits)
     circ = QuantumCircuit(body)
 
@@ -93,8 +128,8 @@ def _trotter_circuit_counts(
         if verbose and i % 10 == 0:
             print(f"Working on iteration {i} out of {num_steps}")
         for _ in range(trotter_depth):
-            for gate, h_i in zip(h_gates, hamiltonians):
-                circ.append(gate, reversed([body[j] for j in h_i.sites]))
+            for gate, sites in slice_gates:
+                circ.append(gate, reversed([body[j] for j in sites]))
 
     circ.barrier()
     circ.measure_all()
@@ -105,7 +140,14 @@ def _trotter_circuit_counts(
 
 
 class TrotterizationSimulator(Simulator):
-    """Simulate closed-system dynamics with a first-order Trotter product formula via Aer."""
+    """Simulate closed-system dynamics with a Trotter product formula via Aer.
+
+    ``order=1`` (the default) applies each local term once per slice of width
+    ``t / (num_steps * trotter_depth)``, in list order. ``order=2`` uses one Strang
+    step per slice: half-steps forward, a full step on the last term, then half-steps
+    in reverse. ``trotter_depth`` is how many slices fit in one time sample, for both
+    orders.
+    """
 
     def __init__(
         self,
@@ -118,6 +160,7 @@ class TrotterizationSimulator(Simulator):
         time_steps: int,
         num_steps: int,
         trotter_depth: int = 1,
+        order: Literal[1, 2] = 1,
         measurement_groups: list[int | list[int]] | None = None,
         reducers: list[Callable[[dict[str, int]], float]] | None = None,
         verbose: bool = False,
@@ -147,6 +190,7 @@ class TrotterizationSimulator(Simulator):
             raise ValueError("num_steps must be a positive integer")
         if trotter_depth <= 0:
             raise ValueError("trotter_depth must be a positive integer")
+        _check_order(order)
         if shots <= 0:
             raise ValueError("shots must be a positive integer")
         if seed is not None and not isinstance(seed, int):
@@ -154,6 +198,7 @@ class TrotterizationSimulator(Simulator):
 
         self.num_steps = num_steps
         self.trotter_depth = trotter_depth
+        self.order = order
         self.verbose = verbose
         self.shots = shots
         self.seed = seed
@@ -185,6 +230,7 @@ class TrotterizationSimulator(Simulator):
                 t,
                 self.num_steps,
                 self.trotter_depth,
+                order=self.order,
                 verbose=self.verbose,
                 shots=self.shots,
                 seed=self.seed,
@@ -204,6 +250,7 @@ class TrotterizationSimulator(Simulator):
             shots=self.shots,
             num_steps=self.num_steps,
             trotter_depth=self.trotter_depth,
+            order=self.order,
             measurement_group_count=len(self.measurement_groups),
         )
 
@@ -214,6 +261,7 @@ class TrotterizationSimulator(Simulator):
             f"num_qubits={self.num_qubits}, "
             f"num_steps={self.num_steps}, "
             f"trotter_depth={self.trotter_depth}, "
+            f"order={self.order}, "
             f"time_steps={self.time_steps}, "
             f"shots={self.shots}, "
             f"seed={self.seed}"
@@ -232,6 +280,7 @@ class TrotterizationSimulator(Simulator):
             f"time_steps={self.time_steps}, "
             f"num_steps={self.num_steps}, "
             f"trotter_depth={self.trotter_depth}, "
+            f"order={self.order}, "
             f"measurement_groups={self.measurement_groups!r}, "
             f"verbose={self.verbose!r}, "
             f"shots={self.shots}, "
