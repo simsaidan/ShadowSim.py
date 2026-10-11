@@ -33,19 +33,19 @@ class IsingModel:
     Qubits are labeled ``0 .. num_qubits - 1``. Couplings act on the edge set
     ``edges``; single-site fields are on every qubit. Contiguous nearest-neighbor
     ZZ terms (``|i - j| == 1``) and single-site fields are exposed as
-    ``LocalHamiltonian`` terms for
-    Split-J / Trotter. Non-contiguous ZZ edges (periodic wrap or custom
+    ``LocalHamiltonian`` terms. Non-contiguous ZZ edges (periodic wrap or custom
     long-range couplings) appear only in ``full_hamiltonians`` / ``pauli_sum``.
 
     Attributes:
         full_hamiltonians: Hamiltonian terms in the full Hilbert space.
-        local_hamiltonians: Contiguous local Hamiltonian terms.
+        local_hamiltonians: Contiguous nearest-neighbor ZZ terms
+            (``|i - j| == 1``) and single-site fields.
         c_ops_full: Lindblad operators in the full space (empty; closed system).
         c_ops_local: Local Lindblad operators (empty; closed system).
         psi0: Default initial state (all-|0⟩ classical, all-|+⟩ transverse).
         e_ops: Per-site ``Z`` observables.
-        measurement_groups: One Split-J group per qubit site.
-        reducers: Split-J count reducers matching ``measurement_groups``.
+        measurement_groups: One group per qubit site.
+        reducers: Count reducers aligned with ``measurement_groups``.
         pauli_sum: Full Hamiltonian as a sparse Pauli sum.
         edges: Resolved undirected interaction pairs ``(i, j)`` with ``i < j``.
         num_qubits: Number of qubits.
