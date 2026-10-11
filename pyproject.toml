@@ -49,6 +49,10 @@ docs = [
     "mkdocs-api-autonav>=0.4",
     "mkdocstrings[python]>=0.24",
     "markdown-exec[ansi]>=1.7",
+    "mkdocs-bibtex>=4.4",
+    "pybtex>=0.24",
+    # mkdocs-bibtex formats citations through pandoc.
+    "pypandoc-binary",
     # Needed so mkdocstrings can format signatures during the docs build.
     "ruff==0.16.10",
 ]
