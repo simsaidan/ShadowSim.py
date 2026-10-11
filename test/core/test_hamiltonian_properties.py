@@ -29,8 +29,10 @@ def test_hamiltonian_accepts_real_pauli_sums(ps: PauliSum):
 @given(real_pauli_sums())
 def test_hamiltonian_rejects_complex_pauli_sums(ps: PauliSum):
     terms = {lab: complex(coeff) + 0.5j for lab, coeff in ps.terms.items()}
-    with pytest.raises(AssertionError, match="Hermitian"):
+    with pytest.raises(ValueError, match="Hermitian") as exc_info:
         Hamiltonian(PauliSum(terms))
+    dim = 2**ps.num_qubits
+    assert f"shape {(dim, dim)}" in str(exc_info.value)
 
 
 @given(hermitian_matrices(min_dim=2, max_dim=8))
@@ -44,8 +46,9 @@ def test_hamiltonian_accepts_hermitian_dense_matrices(matrix: np.ndarray):
 def test_hamiltonian_rejects_non_hermitian_dense_matrices(dim: int):
     matrix = np.eye(dim, dtype=np.complex128)
     matrix[0, 1] = 1.0 + 2j
-    with pytest.raises(AssertionError, match="Hermitian"):
+    with pytest.raises(ValueError, match="Hermitian") as exc_info:
         Hamiltonian(matrix)
+    assert f"shape {matrix.shape}" in str(exc_info.value)
 
 
 @given(

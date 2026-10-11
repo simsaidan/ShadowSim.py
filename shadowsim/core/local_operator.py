@@ -24,16 +24,24 @@ class LocalOperator(Operator):
         Parameter local_dim: The local dimension of the operator.
         Precondition: local_dim is a positive integer.
         """
-        assert isinstance(matrix, np.ndarray), "matrix must be a numpy array"
-        assert matrix.ndim == 2 and matrix.shape[0] == matrix.shape[1], "matrix must be a square 2D array"
-        assert isinstance(sites, list), "sites must be a list"
-        assert all(isinstance(site, int) for site in sites), "all sites must be integers"
-        assert len(set(sites)) == len(sites), "all sites must be unique"
-        assert len(sites) >= 1, "there must be at least one site"
-        assert max(sites) - min(sites) + 1 == len(sites), """sites
-        must be a contiguous range of integers"""
-        assert isinstance(local_dim, int), "local_dim must be an integer"
-        assert local_dim > 0, "local_dim must be a positive integer"
+        if not isinstance(matrix, np.ndarray):
+            raise TypeError(f"matrix must be a numpy array; got {type(matrix)!r}")
+        if matrix.ndim != 2 or matrix.shape[0] != matrix.shape[1]:
+            raise ValueError(f"matrix must be a square 2D array; got shape {matrix.shape}")
+        if not isinstance(sites, list):
+            raise TypeError(f"sites must be a list; got {type(sites)!r}")
+        if not all(isinstance(site, int) for site in sites):
+            raise TypeError(f"all sites must be integers; got {sites}")
+        if len(set(sites)) != len(sites):
+            raise ValueError(f"all sites must be unique; got {sites}")
+        if len(sites) < 1:
+            raise ValueError(f"there must be at least one site; got {sites}")
+        if max(sites) - min(sites) + 1 != len(sites):
+            raise ValueError(f"sites must be a contiguous range of integers; got {sites}")
+        if not isinstance(local_dim, int):
+            raise TypeError(f"local_dim must be an integer; got {type(local_dim)!r}")
+        if local_dim <= 0:
+            raise ValueError(f"local_dim must be a positive integer; got {local_dim}")
 
         expected_dim = local_dim ** len(sites)
         if matrix.shape[0] != expected_dim:
@@ -73,11 +81,14 @@ class LocalOperator(Operator):
         Parameter total_sites: The total number of sites in the full system.
         Precondition: total_sites is a positive integer.
         """
-        assert isinstance(total_sites, int), "total_sites must be an integer"
-        assert total_sites >= 1, "total_sites must be positive"
+        if not isinstance(total_sites, int):
+            raise TypeError(f"total_sites must be an integer; got {type(total_sites)!r}")
+        if total_sites < 1:
+            raise ValueError(f"total_sites must be positive; got {total_sites}")
 
         lo, hi = min(self.sites), max(self.sites)
-        assert lo >= 0, "site indices must be non-negative"
+        if lo < 0:
+            raise ValueError(f"site indices must be non-negative; got {self.sites}")
         if hi >= total_sites:
             raise ValueError(f"total_sites={total_sites} is too small for local sites {self.sites}")
 

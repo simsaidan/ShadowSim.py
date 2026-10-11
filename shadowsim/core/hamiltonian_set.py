@@ -16,7 +16,8 @@ class HamiltonianSet:
         Parameter hamiltonians: Hamiltonians, or values coercible via
             ``Hamiltonian`` (Pauli strings / expressions / PauliSum).
         """
-        assert isinstance(hamiltonians, list), "hamiltonians must be a list"
+        if not isinstance(hamiltonians, list):
+            raise TypeError(f"hamiltonians must be a list; got {type(hamiltonians)!r}")
         coerced: list[Hamiltonian] = []
         for h in hamiltonians:
             if isinstance(h, Hamiltonian):
@@ -24,7 +25,7 @@ class HamiltonianSet:
             elif isinstance(h, (str, PauliString, PauliSum)):
                 coerced.append(Hamiltonian(h))
             else:
-                assert False, "all hamiltonians must be Hamiltonian objects"
+                raise TypeError(f"all hamiltonians must be Hamiltonian, str, PauliString, or PauliSum; got {type(h)!r}")
         self.hamiltonians = coerced
         self.hamiltonian_count = len(coerced)
 
