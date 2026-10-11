@@ -132,6 +132,26 @@ def test_benchmark_save_result_plot_writes_three_files(tmp_path, monkeypatch):
 
 
 @pytest.mark.viz
+def test_benchmark_save_result_plot_uses_output_dir(tmp_path, monkeypatch):
+    pytest.importorskip("matplotlib")
+    monkeypatch.chdir(tmp_path)
+    a, b = _pair()
+    b._curves = [np.cos(b.tlist) + 0.1, np.sin(b.tlist) - 0.1]
+    benchmark = Benchmark(a, b)
+    benchmark.run()
+
+    out = tmp_path / "plots"
+    paths = benchmark.save_result_plot(dpi=80, output_dir=out)
+
+    assert len(paths) == 3
+    for path in paths:
+        assert path.is_file()
+        assert path.parent == out
+    assert paths[2].name.startswith("benchmark_abs_diff_b_")
+    assert not (tmp_path / "results").exists()
+
+
+@pytest.mark.viz
 def test_benchmark_save_result_plot_writes_five_files_for_three_sims(tmp_path, monkeypatch):
     pytest.importorskip("matplotlib")
     monkeypatch.chdir(tmp_path)
@@ -363,3 +383,16 @@ def test_save_error_metrics_writes_json(tmp_path, monkeypatch):
     custom = tmp_path / "out" / "metrics.json"
     assert benchmark.save_error_metrics(path=custom) == custom
     assert json.loads(custom.read_text()) == payload
+
+    out = tmp_path / "metrics"
+    metrics_path = benchmark.save_error_metrics(output_dir=out)
+    assert metrics_path.is_file()
+    assert metrics_path.parent == out
+    assert metrics_path.name.startswith("benchmark_error_metrics_")
+    assert json.loads(metrics_path.read_text()) == payload
+
+    explicit = tmp_path / "elsewhere" / "explicit.json"
+    assert benchmark.save_error_metrics(path=explicit, output_dir=out) == explicit
+    assert explicit.is_file()
+    assert json.loads(explicit.read_text()) == payload
+    assert not (out / explicit.name).exists()

@@ -110,14 +110,19 @@ class Benchmark:
         indices: list[int] | None = None,
         *,
         path: Path | None = None,
+        output_dir: str | Path = "results",
     ) -> Path:
-        """Write error and resource metrics to JSON under ``results/`` (or ``path``).
+        """Write error and resource metrics to JSON.
+
+        When ``path`` is set, that file is written and ``output_dir`` is ignored.
+        Otherwise the timestamped JSON is written under ``output_dir`` (default
+        ``results/``), which is created if it does not exist.
 
         Payload shape: ``{"errors": error_metrics(...), "resources": resource_metrics()}``.
         """
         if path is None:
             stamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
-            path = Path("results") / f"benchmark_error_metrics_{stamp}.json"
+            path = Path(output_dir) / f"benchmark_error_metrics_{stamp}.json"
         else:
             path = Path(path)
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -136,15 +141,26 @@ class Benchmark:
         labels: list[str] | None = None,
         titles: list[str] | None = None,
         title: str | None = None,
+        output_dir: str | Path = "results",
     ) -> list[Path]:
         """Save plots for each simulator and abs-diff vs the reference.
 
+        Every file from this call is written under ``output_dir`` (default
+        ``results/``), which is created if it does not exist.
         Returns ``[ref_plot, *challenger_plots, *diff_plots]``.
         """
         paths: list[Path] = []
         for i, simulator in enumerate(self.simulators):
             sim_title = titles[i] if titles is not None and i < len(titles) else None
-            paths.append(simulator.save_result_plot(indices=indices, dpi=dpi, labels=labels, title=sim_title))
+            paths.append(
+                simulator.save_result_plot(
+                    indices=indices,
+                    dpi=dpi,
+                    labels=labels,
+                    title=sim_title,
+                    output_dir=output_dir,
+                )
+            )
         for challenger in self.challengers:
             paths.append(
                 self._save_abs_diff_plot(
@@ -153,6 +169,7 @@ class Benchmark:
                     dpi=dpi,
                     title=title,
                     labels=labels,
+                    output_dir=output_dir,
                 )
             )
         return paths
@@ -180,6 +197,7 @@ class Benchmark:
         dpi: float,
         title: str | None,
         labels: list[str] | None = None,
+        output_dir: str | Path = "results",
     ) -> Path:
         ra, rb = self._matching_results(challenger)
         plt = import_optional("matplotlib.pyplot", extra="viz")
@@ -187,7 +205,7 @@ class Benchmark:
             indices = list(range(len(ra)))
         stamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
         challenger_id = challenger.id
-        path = Path("results") / f"benchmark_abs_diff_{challenger_id}_{stamp}.png"
+        path = Path(output_dir) / f"benchmark_abs_diff_{challenger_id}_{stamp}.png"
         path.parent.mkdir(parents=True, exist_ok=True)
 
         fig, ax = plt.subplots()

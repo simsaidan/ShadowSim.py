@@ -1,3 +1,5 @@
+from pathlib import Path
+
 import numpy as np
 import pytest
 
@@ -105,14 +107,21 @@ def test_simulator_plot_and_save_result_plot(tmp_path, monkeypatch):
     assert shown["called"]
     sim.plot_results(indices=[0])  # explicit indices, no title
 
-    # Defaults: indices=None, no title.
+    # Defaults: indices=None, no title, output_dir="results".
     path = sim.save_result_plot(dpi=80)
     assert path.is_file()
+    assert path.parent == Path("results")
     assert "tiny_" in path.name
 
     # Explicit indices + title hit the remaining branch edges.
     path2 = sim.save_result_plot(indices=[0], dpi=80, title="saved", labels=["pop"])
     assert path2.is_file()
+
+    custom_dir = tmp_path / "plots"
+    path_custom = sim.save_result_plot(dpi=80, output_dir=custom_dir)
+    assert path_custom.is_file()
+    assert path_custom.parent == custom_dir
+    assert "tiny_" in path_custom.name
 
     text = str(sim)
     rep = repr(sim)
