@@ -21,9 +21,9 @@ simulator = QutipSimulator(
     [],
     amplitude,
     OperatorSet(["ZI", "IZ"]),
-    amplitude.get_num_qubits(),
-    1.0,
-    21,
+    num_qubits=amplitude.get_num_qubits(),
+    total_time=1.0,
+    time_steps=21,
 )
 result = simulator.simulate()
 

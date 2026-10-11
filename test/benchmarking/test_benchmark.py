@@ -26,10 +26,10 @@ class StubSimulator(Simulator):
             [Hamiltonian(Z)],
             [],
             State(np.array([1.0, 0.0], dtype=np.complex128), 1),
-            1,
-            total_time,
-            time_steps,
-            id,
+            num_qubits=1,
+            total_time=total_time,
+            time_steps=time_steps,
+            id=id,
         )
         if curves is None:
             t = self.tlist

@@ -112,6 +112,7 @@ class TrotterizationSimulator(Simulator):
         hamiltonians: list[LocalHamiltonian],
         lindblads: Sequence[Operator],
         initial_state: State,
+        *,
         num_qubits: int,
         total_time: float,
         time_steps: int,
@@ -129,10 +130,10 @@ class TrotterizationSimulator(Simulator):
             hamiltonians,
             lindblads,
             initial_state,
-            num_qubits,
-            total_time,
-            time_steps,
-            "trotterization_simulator",
+            num_qubits=num_qubits,
+            total_time=total_time,
+            time_steps=time_steps,
+            id="trotterization_simulator",
         )
         if self.lindblads:
             raise ValueError("TrotterizationSimulator is closed-system only; lindblads must be empty")

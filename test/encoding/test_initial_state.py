@@ -31,7 +31,15 @@ def test_state_encoder_encode_is_not_implemented():
     ids=["basis", "angle", "amplitude"],
 )
 def test_encoded_state_is_simulator_initial_state(state):
-    sim = Simulator([Hamiltonian(_Z)], [], state, state.get_num_qubits(), 1.0, 2, "encoding")
+    sim = Simulator(
+        [Hamiltonian(_Z)],
+        [],
+        state,
+        num_qubits=state.get_num_qubits(),
+        total_time=1.0,
+        time_steps=2,
+        id="encoding",
+    )
     assert sim.initial_state is state
     assert sim.num_qubits == state.get_num_qubits()
     assert np.isclose(np.linalg.norm(state.to_numpy()), 1.0)

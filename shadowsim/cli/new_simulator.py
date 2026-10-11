@@ -156,6 +156,7 @@ class {names.class_name}(Simulator):
         hamiltonians: list[Hamiltonian],
         lindblads: list[Operator],
         initial_state: State,
+        *,
         num_qubits: int,
         total_time: float,
         time_steps: int,
@@ -165,10 +166,10 @@ class {names.class_name}(Simulator):
             hamiltonians,
             lindblads,
             initial_state,
-            num_qubits,
-            total_time,
-            time_steps,
-            "{names.simulator_id}",
+            num_qubits=num_qubits,
+            total_time=total_time,
+            time_steps=time_steps,
+            id="{names.simulator_id}",
         )
 
     def simulate(self) -> SimulationResult:
@@ -225,9 +226,9 @@ def _tiny():
         [Hamiltonian(Z)],
         [],
         State(np.array([1.0, 0.0], dtype=np.complex128), 1),
-        1,
-        0.1,
-        3,
+        num_qubits=1,
+        total_time=0.1,
+        time_steps=3,
     )
 
 

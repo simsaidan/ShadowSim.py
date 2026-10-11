@@ -228,6 +228,29 @@ def test_split_jmatrix_omits_seed_when_none(monkeypatch):
     assert ctor_kwargs == [{}]
 
 
+def test_splitjmatrix_simulator_run_settings_are_keyword_only():
+    hamiltonians = [LocalHamiltonian(Z, [0])]
+    state = State(np.array([1.0, 0.0]), 1)
+    with pytest.raises(TypeError, match="positional"):
+        SplitJMatrixSimulator(hamiltonians, [], state, 1)
+    with pytest.raises(TypeError, match="positional"):
+        SplitJMatrixSimulator(hamiltonians, [], state, 1, 1.0, 2, 1)
+
+    sim = SplitJMatrixSimulator(
+        hamiltonians,
+        [],
+        state,
+        num_qubits=1,
+        total_time=1.0,
+        time_steps=2,
+        num_steps=4,
+    )
+    assert sim.num_qubits == 1
+    assert sim.total_time == 1.0
+    assert sim.time_steps == 2
+    assert sim.num_steps == 4
+
+
 def test_splitjmatrix_simulator_rejects_non_local_lindblad():
     with pytest.raises(TypeError, match="must be LocalOperator"):
         SplitJMatrixSimulator(
