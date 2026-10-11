@@ -9,7 +9,7 @@ Convert QuTiP ``Qobj`` values to ShadowSim core types and back::
     psi = from_qutip(psi0)                  # → State (ket)
     rho = from_qutip(qutip_rho)             # → DensityOperator
 
-Hermitian PSD unit-trace opers become :class:`~shadowsim.core.density_operator.DensityOperator`.
+Hermitian PSD unit-trace opers become ``DensityOperator``.
 Override with ``kind="hamiltonian"`` or ``kind="operator"`` when needed (e.g. a
 projector used as an observable).
 """
@@ -41,10 +41,10 @@ def from_qutip(
 
     When ``kind`` is omitted, inference is:
 
-    - ket or bra → :class:`~shadowsim.core.state.State`
-    - square Hermitian PSD unit-trace oper → :class:`~shadowsim.core.density_operator.DensityOperator`
-    - other square Hermitian oper → :class:`~shadowsim.core.hamiltonian.Hamiltonian`
-    - other square oper → :class:`~shadowsim.core.operator.Operator`
+    - ket or bra → ``State``
+    - square Hermitian PSD unit-trace oper → ``DensityOperator``
+    - other square Hermitian oper → ``Hamiltonian``
+    - other square oper → ``Operator``
 
     Args:
         qobj: QuTiP quantum object to convert.

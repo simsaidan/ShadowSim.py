@@ -14,7 +14,7 @@ class HamiltonianSet:
         """Initialize a HamiltonianSet of quantum Hamiltonians.
 
         Parameter hamiltonians: Hamiltonians, or values coercible via
-            :class:`Hamiltonian` (Pauli strings / expressions / PauliSum).
+            ``Hamiltonian`` (Pauli strings / expressions / PauliSum).
         """
         assert isinstance(hamiltonians, list), "hamiltonians must be a list"
         coerced: list[Hamiltonian] = []

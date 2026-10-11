@@ -145,10 +145,10 @@ def run_shadow_simulation(
     tol: float = 1e-10,
     verbose: bool = False,
 ) -> ShadowSimulationResult:
-    """Build the shadow model and evolve it with :class:`QutipSimulator`.
+    """Build the shadow model and evolve it with ``QutipSimulator``.
 
-    Constructs :class:`ShadowHamiltonian` on the physical system, builds a
-    :class:`ShadowState` ordered to match the closure basis of ``H_S``, pads
+    Constructs ``ShadowHamiltonian`` on the physical system, builds a
+    ``ShadowState`` ordered to match the closure basis of ``H_S``, pads
     ``H_S`` to a power-of-two Hilbert space, and simulates with QuTiP.
     Default shadow-space observables are computational-basis projectors.
 

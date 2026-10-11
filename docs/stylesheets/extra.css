@@ -1,0 +1,4 @@
+/* Display math uses width: min-content, which collapses the equation to a blank gap. */
+.md-typeset div.arithmatex > * {
+  width: auto !important;
+}

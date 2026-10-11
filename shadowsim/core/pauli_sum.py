@@ -104,7 +104,7 @@ class PauliSum:
 
     @classmethod
     def from_pauli_string(cls, pauli_string: PauliString, coeff: complex = 1 + 0j) -> Self:
-        """Build a one-term PauliSum from a :class:`PauliString`."""
+        """Build a one-term PauliSum from a ``PauliString``."""
         return cls({str(pauli_string): coeff})
 
     @property
@@ -182,7 +182,7 @@ class PauliSum:
 
 
 def parse_pauli_expression(expr: str) -> PauliSum:
-    """Parse a Pauli word or linear combination into a :class:`PauliSum`.
+    """Parse a Pauli word or linear combination into a ``PauliSum``.
 
     Supports forms such as ``XII``, ``XXI + XYZ``, ``0.5*XXI - XYZ``,
     and ``-1+0.5j*XX``.

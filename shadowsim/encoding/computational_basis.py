@@ -12,7 +12,7 @@ class ComputationalBasisEncoding(StateEncoder):
 
     An integer \(k\) in \(0 .. 2^n - 1\) becomes the one-hot vector with a 1
     at index \(k\). A length-\(n\) sequence of bits \(b_0, b_1, \ldots, b_{n-1}\)
-    uses the same layout as :func:`shadowsim.utils.tensor.tensor`: \(b_0\) is
+    uses the same layout as ``tensor``: \(b_0\) is
     the most significant qubit, and
 
     \[

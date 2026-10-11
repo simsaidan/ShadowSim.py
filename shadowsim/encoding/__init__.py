@@ -1,4 +1,7 @@
-"""Classical-data encodings of quantum states."""
+"""Prepare a normalized quantum state from classical data.
+
+``encode`` returns a ``State`` that any simulator accepts as ``initial_state``.
+"""
 
 from shadowsim.encoding.amplitude import AmplitudeEncoding
 from shadowsim.encoding.angle import AngleEncoding

@@ -8,7 +8,7 @@ from shadowsim.core.state import State
 
 
 class StateEncoder(ABC):
-    """Prepare a normalized :class:`~shadowsim.core.state.State` from classical data.
+    """Prepare a normalized ``State`` from classical data.
 
     Subclasses define which classical inputs they accept. Every encoding returns
     a state vector that simulators can take as ``initial_state``.

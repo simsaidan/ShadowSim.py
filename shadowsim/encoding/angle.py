@@ -18,7 +18,7 @@ class AngleEncoding(StateEncoder):
     \]
 
     Angles are not amplitudes: they are not normalized. The first angle is the
-    first factor of :func:`shadowsim.utils.tensor.tensor`, so it is the most
+    first factor of ``tensor``, so it is the most
     significant qubit. The number of qubits is the length of ``data``.
 
     Examples:

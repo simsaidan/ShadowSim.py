@@ -16,15 +16,15 @@ theme:
   palette:
     - media: "(prefers-color-scheme: light)"
       scheme: default
-      primary: teal
-      accent: deep orange
+      primary: indigo
+      accent: indigo
       toggle:
         icon: material/brightness-7
         name: Switch to dark mode
     - media: "(prefers-color-scheme: dark)"
       scheme: slate
-      primary: teal
-      accent: deep orange
+      primary: indigo
+      accent: indigo
       toggle:
         icon: material/brightness-4
         name: Switch to light mode
@@ -58,10 +58,8 @@ markdown_extensions:
 
 nav:
   - Home: index.md
-  - API Reference:
-      - State encoding: reference/encoding.md
-      - Utils: reference/utils.md
-      - Combined Hamiltonian matrix: reference/combined_hamiltonian_matrix.md
+  # Replaced by the api-autonav plugin with one page per public module.
+  - API Reference
 
 plugins:
   - meta
@@ -85,6 +83,16 @@ plugins:
             docstring_section_style: list
             show_signature_annotations: true
             members_order: source
+  - api-autonav:
+      modules:
+        - shadowsim
+      nav_section_title: API Reference
+      api_root_uri: reference
+      exclude_private: true
+      show_full_namespace: false
+
+extra_css:
+  - stylesheets/extra.css
 
 extra_javascript:
   - javascript/mathjax.js
