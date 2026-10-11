@@ -43,7 +43,7 @@ see [CONTRIBUTING.md](CONTRIBUTING.md).
 Public objects are imported from their domain subpackages:
 ```python
 from shadowsim.core import DensityOperator, Hamiltonian, Operator, State
-from shadowsim.encoding import AmplitudeEncoding, AngleEncoding, ComputationalBasisEncoding
+from shadowsim.encoding import AmplitudeEncoding, AngleEncoding, ComputationalBasisEncoding, GrayEncoding
 from shadowsim.shadow import ShadowHamiltonian, check_invariance
 from shadowsim.simulators import QutipSimulator, SimulationResult
 ```
@@ -54,9 +54,10 @@ from shadowsim.simulators import QutipSimulator, SimulationResult
 
 ```python
 import numpy as np
-from shadowsim.encoding import AmplitudeEncoding, AngleEncoding, ComputationalBasisEncoding
+from shadowsim.encoding import AmplitudeEncoding, AngleEncoding, ComputationalBasisEncoding, GrayEncoding
 
 basis = ComputationalBasisEncoding(2).encode([1, 0])  # |10>
+gray = GrayEncoding(2).encode([1, 0])  # |11>, Gray code of binary 2
 angle = AngleEncoding().encode([np.pi / 2, 0.0])
 amplitude = AmplitudeEncoding().encode([1.0, 1.0, 0.0])  # zero-padded to 2 qubits
 ```
