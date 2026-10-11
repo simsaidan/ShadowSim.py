@@ -134,6 +134,7 @@ module = [
     "shadowsim.interop.qutip",
     "shadowsim.models",
     "shadowsim.models.ising",
+    "shadowsim.models.jaynes_cummings",
     "shadowsim.models.tavis_cummings",
     "shadowsim.benchmarking",
     "shadowsim.benchmarking.benchmark",

@@ -6,7 +6,7 @@ import numpy as np
 
 from shadowsim import interop, simulators
 from shadowsim.core import Hamiltonian, State
-from shadowsim.models import ising, tavis_cummings
+from shadowsim.models import ising, jaynes_cummings, tavis_cummings
 from shadowsim.shadow import ShadowHamiltonian
 
 
@@ -41,7 +41,7 @@ def _plot() -> None:
 
 def main() -> None:
     """Import the core API, then require hints for missing extras."""
-    for obj in (Hamiltonian, ShadowHamiltonian, ising, tavis_cummings, interop, simulators.Simulator):
+    for obj in (Hamiltonian, ShadowHamiltonian, ising, jaynes_cummings, tavis_cummings, interop, simulators.Simulator):
         if obj is None:
             raise SystemExit("core import returned None")
 

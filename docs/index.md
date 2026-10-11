@@ -27,7 +27,7 @@ hide:
 
 ## Background
 
-ShadowSim builds shadow Hamiltonians for small qubit systems, following shadow Hamiltonian simulation [@somma2024shadow]. The open cavity–emitter example is a Tavis–Cummings model [@sims2025tavis].
+ShadowSim builds shadow Hamiltonians for small qubit systems, following shadow Hamiltonian simulation [@somma2024shadow]. The open cavity–emitter example is a Tavis–Cummings model [@sims2025tavis]. The single-emitter factory is Jaynes–Cummings.
 
 \bibliography
 
