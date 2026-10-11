@@ -43,9 +43,25 @@ see [CONTRIBUTING.md](CONTRIBUTING.md).
 Public objects are imported from their domain subpackages:
 ```python
 from shadowsim.core import DensityOperator, Hamiltonian, Operator, State
+from shadowsim.encoding import AmplitudeEncoding, AngleEncoding, ComputationalBasisEncoding
 from shadowsim.shadow import ShadowHamiltonian, check_invariance
 from shadowsim.simulators import QutipSimulator, SimulationResult
 ```
+
+### State encoding
+
+`shadowsim.encoding` turns classical data into a normalized `State`. Simulators take that state as `initial_state`.
+
+```python
+import numpy as np
+from shadowsim.encoding import AmplitudeEncoding, AngleEncoding, ComputationalBasisEncoding
+
+basis = ComputationalBasisEncoding(2).encode([1, 0])  # |10>
+angle = AngleEncoding().encode([np.pi / 2, 0.0])
+amplitude = AmplitudeEncoding().encode([1.0, 1.0, 0.0])  # zero-padded to 2 qubits
+```
+
+[`examples/state_encoding.py`](examples/state_encoding.py) passes an encoded state to `QutipSimulator`.
 
 ### QuTiP interop
 
@@ -318,6 +334,14 @@ Hamiltonian (for example with `run_shadow_simulation`). Contiguous
 nearest-neighbor ZZ terms are also available as `model.local_hamiltonians` for
 Split-J / Trotter; non-contiguous edges (periodic wrap or custom long-range
 couplings) appear only in the full-space operators.
+
+### Example 4: Encoding classical data as an initial state
+
+[`examples/state_encoding.py`](examples/state_encoding.py) prepares computational-basis, angle, and amplitude states, then evolves the amplitude state with QuTiP.
+
+```bash
+uv run python examples/state_encoding.py
+```
 
 ## Documentation
 

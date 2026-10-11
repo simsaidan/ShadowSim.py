@@ -3,6 +3,7 @@
 __all__ = [
     "benchmarking",
     "core",
+    "encoding",
     "interop",
     "models",
     "shadow",

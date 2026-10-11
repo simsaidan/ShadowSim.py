@@ -59,6 +59,7 @@ markdown_extensions:
 nav:
   - Home: index.md
   - API Reference:
+      - State encoding: reference/encoding.md
       - Utils: reference/utils.md
       - Combined Hamiltonian matrix: reference/combined_hamiltonian_matrix.md
 
