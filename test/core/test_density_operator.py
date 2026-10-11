@@ -31,6 +31,16 @@ def test_density_operator_from_state():
     assert np.allclose(rho.matrix, [[0.0, 0.0], [0.0, 1.0]])
 
 
+def test_density_operator_purity():
+    psi = State(np.array([1.0, 0.0], dtype=np.complex128), 1)
+    pure = DensityOperator.from_state(psi)
+    assert isinstance(pure.purity(), float)
+    assert pure.purity() == pytest.approx(1.0)
+
+    mixed = DensityOperator(MIXED)
+    assert mixed.purity() == pytest.approx(0.5)
+
+
 def test_density_operator_rejects_bad_inputs():
     with pytest.raises(TypeError, match="numpy array"):
         DensityOperator([[1.0, 0.0], [0.0, 0.0]])  # type: ignore[arg-type]

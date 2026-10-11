@@ -53,6 +53,16 @@ class DensityOperator(Operator):
         """Return the trace of the density matrix."""
         return complex(np.trace(self.matrix))
 
+    def purity(self) -> float:
+        """Return the purity ``Tr(ρ²)`` as a real float.
+
+        For a valid density operator on a ``d``-dimensional space the value
+        lies in ``[1/d, 1]``: ``1`` for a pure state and ``1/d`` for the
+        maximally mixed state ``I/d``. Because a density operator is
+        Hermitian, this equals the squared Frobenius norm of the matrix.
+        """
+        return float(np.trace(self.matrix @ self.matrix).real)
+
     def __str__(self) -> str:
         """Return a string representation of the density operator."""
         return f"DensityOperator(matrix={self.matrix})"

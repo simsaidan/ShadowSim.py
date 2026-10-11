@@ -2,8 +2,9 @@
 
 Invariants exercised by Hypothesis tests in this module:
 
-* ``from_state`` yields a rank-1 projector with trace 1 that is PSD.
+* ``from_state`` yields a rank-1 projector with trace 1, purity 1, and PSD.
 * Convex combinations of pure states form valid density operators (small dim).
+  Purity is strictly less than 1 when the combination is not a projector.
 """
 
 import numpy as np
@@ -26,6 +27,7 @@ def test_density_operator_from_state_is_pure_projector(sample: tuple[np.ndarray,
     expected = ket @ ket.conj().T
     assert np.allclose(rho.matrix, expected, atol=ATOL, rtol=RTOL)
     assert np.isclose(rho.trace(), 1.0)
+    assert np.isclose(rho.purity(), 1.0, atol=ATOL, rtol=RTOL)
     assert hermitian(rho.matrix)
     assert positive_semidefinite(rho.matrix)
     # Rank-1: ρ² = ρ
@@ -58,3 +60,7 @@ def test_density_operator_accepts_mixed_states(rho: np.ndarray):
     assert np.isclose(op.trace(), 1.0)
     assert hermitian(op.matrix)
     assert positive_semidefinite(op.matrix)
+    purity = op.purity()
+    assert isinstance(purity, float)
+    if not np.allclose(op.matrix @ op.matrix, op.matrix, atol=ATOL, rtol=RTOL):
+        assert purity < 1.0
