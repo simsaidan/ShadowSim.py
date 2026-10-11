@@ -2,13 +2,14 @@
 
 import numpy as np
 import pytest
-import scipy.linalg
 
 pytestmark = pytest.mark.qiskit
 
 pytest.importorskip("qiskit")
 pytest.importorskip("qiskit_aer")
 pytest.importorskip("scipy")
+
+import scipy.linalg
 
 import shadowsim.simulators.trotterization_simulator as trotter_module
 from shadowsim.benchmarking import Benchmark
