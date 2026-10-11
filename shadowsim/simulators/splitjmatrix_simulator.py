@@ -151,6 +151,7 @@ class SplitJMatrixSimulator(Simulator):
         hamiltonians: List[LocalHamiltonian],
         lindblads: List[LocalOperator],
         initial_state: State,
+        *,
         num_qubits: int,
         total_time: float,
         time_steps: int,
@@ -168,10 +169,10 @@ class SplitJMatrixSimulator(Simulator):
             hamiltonians,
             lindblads,
             initial_state,
-            num_qubits,
-            total_time,
-            time_steps,
-            "split_jmatrix_simulator",
+            num_qubits=num_qubits,
+            total_time=total_time,
+            time_steps=time_steps,
+            id="split_jmatrix_simulator",
         )
         for L in self.lindblads:
             if not isinstance(L, LocalOperator):

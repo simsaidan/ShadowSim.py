@@ -64,6 +64,29 @@ def test_trotterization_simulator_is_simulator():
     assert sim.id == "trotterization_simulator"
 
 
+def test_trotterization_simulator_run_settings_are_keyword_only():
+    hamiltonians = [LocalHamiltonian(Z, [0])]
+    state = State(np.array([1.0, 0.0], dtype=np.complex128), 1)
+    with pytest.raises(TypeError, match="positional"):
+        TrotterizationSimulator(hamiltonians, [], state, 1)
+    with pytest.raises(TypeError, match="positional"):
+        TrotterizationSimulator(hamiltonians, [], state, 1, 0.1, 3, 4)
+
+    sim = TrotterizationSimulator(
+        hamiltonians,
+        [],
+        state,
+        num_qubits=1,
+        total_time=0.1,
+        time_steps=3,
+        num_steps=4,
+    )
+    assert sim.num_qubits == 1
+    assert sim.total_time == 0.1
+    assert sim.time_steps == 3
+    assert sim.num_steps == 4
+
+
 def test_trotterization_simulator_rejects_lindblads():
     with pytest.raises(ValueError, match="closed-system"):
         _tiny(lindblads=[Operator(Z)])
@@ -274,18 +297,18 @@ def test_trotterization_qutip_closed_agreement():
         [],
         psi0,
         [Operator(ONE)],
-        1,
-        TOTAL_TIME,
-        TIME_STEPS,
+        num_qubits=1,
+        total_time=TOTAL_TIME,
+        time_steps=TIME_STEPS,
     )
     trotter_simulator = TrotterizationSimulator(
         [LocalHamiltonian(X, [0])],
         [],
         psi0,
-        1,
-        TOTAL_TIME,
-        TIME_STEPS,
-        NUM_STEPS,
+        num_qubits=1,
+        total_time=TOTAL_TIME,
+        time_steps=TIME_STEPS,
+        num_steps=NUM_STEPS,
         measurement_groups=[0],
         reducers=[population_one],
         shots=SHOTS,

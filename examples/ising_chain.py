@@ -21,9 +21,9 @@ simulator = QutipSimulator(
     model.c_ops_full,
     model.psi0,
     model.e_ops,
-    model.num_qubits,
-    2.0,
-    101,
+    num_qubits=model.num_qubits,
+    total_time=2.0,
+    time_steps=101,
 )
 result = simulator.simulate()
 

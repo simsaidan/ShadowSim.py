@@ -159,9 +159,9 @@ def test_generated_stub_imports_and_raises(tmp_path):
         [Hamiltonian(z)],
         [],
         State(np.array([1.0, 0.0], dtype=np.complex128), 1),
-        1,
-        0.1,
-        3,
+        num_qubits=1,
+        total_time=0.1,
+        time_steps=3,
     )
     assert sim.id == "bar_simulator"
     with pytest.raises(NotImplementedError, match="TODO: implement"):

@@ -214,9 +214,9 @@ def run_shadow_simulation(
         [],
         shadow_state,
         e_ops,
-        shadow_nq,
-        total_time,
-        time_steps,
+        num_qubits=shadow_nq,
+        total_time=total_time,
+        time_steps=time_steps,
     )
     simulator.simulate()
     expectations = [np.asarray(curve, dtype=np.float64) for curve in simulator.get_results()]

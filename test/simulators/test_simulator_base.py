@@ -19,9 +19,9 @@ def test_qutip_simulator_str_and_repr():
         [],
         State(np.array([1.0, 0.0], dtype=np.complex128), 1),
         [Operator(Z)],
-        1,
-        0.1,
-        3,
+        num_qubits=1,
+        total_time=0.1,
+        time_steps=3,
     )
     text = str(sim)
     rep = repr(sim)
@@ -32,16 +32,41 @@ def test_qutip_simulator_str_and_repr():
     assert "time_steps=3" in rep
 
 
+@pytest.mark.qutip
+def test_qutip_simulator_run_settings_are_keyword_only():
+    pytest.importorskip("qutip")
+    from shadowsim.simulators import QutipSimulator
+
+    hamiltonians = [Hamiltonian(Z)]
+    state = State(np.array([1.0, 0.0], dtype=np.complex128), 1)
+    observables = [Operator(Z)]
+    with pytest.raises(TypeError, match="positional"):
+        QutipSimulator(hamiltonians, [], state, observables, 1, 0.1, 3)
+
+    sim = QutipSimulator(
+        hamiltonians,
+        [],
+        state,
+        observables,
+        num_qubits=1,
+        total_time=0.1,
+        time_steps=3,
+    )
+    assert sim.num_qubits == 1
+    assert sim.total_time == 0.1
+    assert sim.time_steps == 3
+
+
 def test_simulator_rejects_empty_hamiltonians():
     with pytest.raises(ValueError, match="non-empty list"):
         Simulator(
             [],
             [],
             State(np.array([1.0, 0.0], dtype=np.complex128), 1),
-            1,
-            1.0,
-            2,
-            "base",
+            num_qubits=1,
+            total_time=1.0,
+            time_steps=2,
+            id="base",
         )
 
 
@@ -50,10 +75,10 @@ def test_simulator_base_simulate_not_implemented():
         [Hamiltonian(Z)],
         [],
         State(np.array([1.0, 0.0], dtype=np.complex128), 1),
-        1,
-        1.0,
-        2,
-        "base",
+        num_qubits=1,
+        total_time=1.0,
+        time_steps=2,
+        id="base",
     )
     with pytest.raises(NotImplementedError, match="Subclasses must implement"):
         sim.simulate()
@@ -64,10 +89,10 @@ def test_simulator_get_results_requires_run():
         [Hamiltonian(Z)],
         [],
         State(np.array([1.0, 0.0], dtype=np.complex128), 1),
-        1,
-        1.0,
-        2,
-        "base",
+        num_qubits=1,
+        total_time=1.0,
+        time_steps=2,
+        id="base",
     )
     with pytest.raises(ValueError, match="Results are not available"):
         sim.get_results()
@@ -90,10 +115,10 @@ def test_simulator_plot_and_save_result_plot(tmp_path, monkeypatch):
         [Hamiltonian(Z)],
         [],
         State(np.array([1.0, 0.0], dtype=np.complex128), 1),
-        1,
-        1.0,
-        3,
-        "tiny",
+        num_qubits=1,
+        total_time=1.0,
+        time_steps=3,
+        id="tiny",
     )
     sim.run()
 

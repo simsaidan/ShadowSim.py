@@ -27,9 +27,9 @@ qutip_simulator = QutipSimulator(
     [],
     initial_state,
     observables,
-    3,
-    5.0,
-    400,
+    num_qubits=3,
+    total_time=5.0,
+    time_steps=400,
 )
 
 qutip_simulator.simulate()

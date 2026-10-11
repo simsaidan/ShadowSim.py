@@ -28,10 +28,10 @@ def _plot() -> None:
         [Hamiltonian("Z")],
         [],
         State(np.array([1.0, 0.0], dtype=np.complex128), 1),
-        1,
-        0.1,
-        2,
-        "core-check",
+        num_qubits=1,
+        total_time=0.1,
+        time_steps=2,
+        id="core-check",
     )
     # A result has to exist first; otherwise the missing-run check fires
     # before the matplotlib import this script is here to require.

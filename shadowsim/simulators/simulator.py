@@ -26,6 +26,7 @@ class Simulator:
         hamiltonians: Sequence[Hamiltonian],
         lindblads: Sequence[Operator],
         initial_state: State,
+        *,
         num_qubits: int,
         total_time: float,
         time_steps: int,

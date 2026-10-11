@@ -26,6 +26,7 @@ class QutipSimulator(Simulator):
         lindblads: Sequence[Operator],
         initial_state: State,
         observables: OperatorSet | Sequence[Operator],
+        *,
         num_qubits: int,
         total_time: float,
         time_steps: int,
@@ -35,10 +36,10 @@ class QutipSimulator(Simulator):
             hamiltonians,
             lindblads,
             initial_state,
-            num_qubits,
-            total_time,
-            time_steps,
-            "qutip_simulator",
+            num_qubits=num_qubits,
+            total_time=total_time,
+            time_steps=time_steps,
+            id="qutip_simulator",
         )
         self.observables = observables
 

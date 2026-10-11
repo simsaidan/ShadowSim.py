@@ -195,10 +195,10 @@ def test_make_result_stores_last_result_and_keeps_traces():
         [Hamiltonian(Z)],
         [],
         State(np.array([1.0, 0.0], dtype=np.complex128), 1),
-        1,
-        1.0,
-        3,
-        "tiny",
+        num_qubits=1,
+        total_time=1.0,
+        time_steps=3,
+        id="tiny",
     )
     result = sim.simulate()
     assert sim.results == [[0.0, 0.5, 1.0]]

@@ -224,19 +224,19 @@ qutip_simulator = QutipSimulator(
     model.c_ops_full,
     model.psi0,
     model.e_ops,
-    model.num_qubits,
-    0.25,
-    301,
+    num_qubits=model.num_qubits,
+    total_time=0.25,
+    time_steps=301,
 )
 # Split JMatrix simulator
 splitjmatrix_simulator = SplitJMatrixSimulator(
     model.local_hamiltonians,
     model.c_ops_local,
     model.psi0,
-    model.num_qubits,
-    0.25,
-    301,
-    40,
+    num_qubits=model.num_qubits,
+    total_time=0.25,
+    time_steps=301,
+    num_steps=40,
     measurement_groups=model.measurement_groups,
     reducers=list(model.reducers),
     shots=10000,
@@ -322,9 +322,9 @@ simulator = QutipSimulator(
     model.c_ops_full,  # empty; closed system
     model.psi0,
     model.e_ops,
-    model.num_qubits,
-    2.0,
-    101,
+    num_qubits=model.num_qubits,
+    total_time=2.0,
+    time_steps=101,
 )
 result = simulator.simulate()
 ```
