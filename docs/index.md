@@ -25,6 +25,12 @@ hide:
 !!! note "Work in progress"
     Public APIs are still **draft** until a stable release. Expect changes.
 
+## Background
+
+ShadowSim builds shadow Hamiltonians for small qubit systems, following shadow Hamiltonian simulation [@somma2024shadow]. The open cavity–emitter example is a Tavis–Cummings model [@sims2025tavis].
+
+\bibliography
+
 ## Local preview
 
 ```bash

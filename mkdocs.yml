@@ -55,11 +55,13 @@ markdown_extensions:
       emoji_generator: !!python/name:material.extensions.emoji.to_svg
   - toc:
       permalink: true
+  - footnotes
 
 nav:
   - Home: index.md
   # Replaced by the api-autonav plugin with one page per public module.
   - API Reference
+  - References: references.md
 
 plugins:
   - meta
@@ -83,6 +85,12 @@ plugins:
             docstring_section_style: list
             show_signature_annotations: true
             members_order: source
+  - bibtex:
+      bib_file: docs/refs.bib
+      bib_by_default: false
+      # The References page renders \full_bibliography itself. Leaving the
+      # plugin command active emits footnote back-links to other pages.
+      full_bib_command: \disable_full_bibliography
   - api-autonav:
       modules:
         - shadowsim
@@ -90,6 +98,9 @@ plugins:
       api_root_uri: reference
       exclude_private: true
       show_full_namespace: false
+
+hooks:
+  - docs/hooks/full_bibliography.py
 
 extra_css:
   - stylesheets/extra.css
