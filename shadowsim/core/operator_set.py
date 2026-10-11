@@ -13,7 +13,7 @@ class OperatorSet:
     def __init__(self, operators: Sequence[Operator | str | PauliString | PauliSum]) -> None:
         """Initialize an OperatorSet object which represents a set of quantum operators.
 
-        Parameter operators: Operators, or values coercible via :class:`Operator`
+        Parameter operators: Operators, or values coercible via ``Operator``
             (Pauli strings / expressions / PauliSum).
         """
         assert isinstance(operators, list), "operators must be a list"

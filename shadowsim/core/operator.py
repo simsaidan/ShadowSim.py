@@ -38,9 +38,9 @@ class Operator:
     """Represent a quantum operator.
 
     Construct from a dense matrix, a Pauli label/expression string (e.g. ``XII``
-    or ``XXI + XYZ``), a :class:`PauliString`, or a :class:`PauliSum`.
+    or ``XXI + XYZ``), a ``PauliString``, or a ``PauliSum``.
 
-    Label-based inputs store a :class:`PauliSum` and only materialize ``.matrix``
+    Label-based inputs store a ``PauliSum`` and only materialize ``.matrix``
     on first access.
     """
 

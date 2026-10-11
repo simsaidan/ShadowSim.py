@@ -33,7 +33,7 @@ class IsingModel:
     Qubits are labeled ``0 .. num_qubits - 1``. Couplings act on the edge set
     ``edges``; single-site fields are on every qubit. Contiguous nearest-neighbor
     ZZ terms (``|i - j| == 1``) and single-site fields are exposed as
-    :class:`~shadowsim.core.local_hamiltonian.LocalHamiltonian` terms for
+    ``LocalHamiltonian`` terms for
     Split-J / Trotter. Non-contiguous ZZ edges (periodic wrap or custom
     long-range couplings) appear only in ``full_hamiltonians`` / ``pauli_sum``.
 
@@ -150,15 +150,15 @@ def ising(
     boundary: BoundaryKind = _DEFAULT_BOUNDARY,
     edges: Sequence[tuple[int, int]] | None = None,
 ) -> IsingModel:
-    """Build a classical or transverse-field Ising model.
+    r"""Build a classical or transverse-field Ising model.
 
-    Classical field::
+    **Classical field**
 
-        H = J ∑_{(i,j)∈E} Z_i Z_j + h ∑_i Z_i
+    \(H = J \sum_{(i,j) \in E} Z_i Z_j + h \sum_i Z_i\)
 
-    Transverse field::
+    **Transverse field**
 
-        H = J ∑_{(i,j)∈E} Z_i Z_j + h ∑_i X_i
+    \(H = J \sum_{(i,j) \in E} Z_i Z_j + h \sum_i X_i\)
 
     Connectivity ``E`` comes from a 1D chain preset (``topology="chain"`` with
     ``boundary="open"`` or ``"periodic"``) or from an explicit ``edges`` list.

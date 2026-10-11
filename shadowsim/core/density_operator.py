@@ -43,7 +43,7 @@ class DensityOperator(Operator):
 
     @classmethod
     def from_state(cls, state: State) -> Self:
-        """Build the pure-state projector ``|ψ⟩⟨ψ|`` from a :class:`State`."""
+        """Build the pure-state projector ``|ψ⟩⟨ψ|`` from a ``State``."""
         if not isinstance(state, State):
             raise TypeError(f"state must be a State; got {type(state)!r}")
         ket = np.asarray(state.state, dtype=np.complex128).reshape(-1, 1)

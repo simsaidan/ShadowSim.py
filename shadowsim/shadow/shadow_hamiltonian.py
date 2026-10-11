@@ -315,7 +315,7 @@ class ShadowHamiltonian:
     def get_H_S(self) -> npt.NDArray[np.complexfloating]:
         """Return the shadow Hamiltonian in the closed Pauli basis.
 
-        Same as :attr:`shadow`. Shape ``(m, m)`` with ``m = len(self.basis)``,
+        Same as ``shadow``. Shape ``(m, m)`` with ``m = len(self.basis)``,
         independent of ``2^n`` (unless m happens to match by coincidence).
         """
         return self.H_S

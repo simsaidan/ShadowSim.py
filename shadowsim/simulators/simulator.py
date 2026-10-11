@@ -62,7 +62,7 @@ class Simulator:
         states: list[np.ndarray] | None = None,
         **extra_meta: Any,
     ) -> SimulationResult:
-        """Build a :class:`SimulationResult`, store it on ``self.last_result``, and return it.
+        """Build a ``SimulationResult``, store it on ``self.last_result``, and return it.
 
         ``self.results`` remains the low-level list of expectation traces; callers that
         need metadata should use the returned object or ``self.last_result``.

@@ -345,7 +345,7 @@ uv run python examples/state_encoding.py
 
 ## Documentation
 
-- [API / site docs](https://simsaidan.github.io/ShadowSim.py/) (`docs/`; preview with `uv sync --group docs && uv run mkdocs serve`)
+- [API / site docs](https://simsaidan.github.io/ShadowSim.py/) (`docs/`; preview with `uv sync --group docs --extra qutip --extra qiskit && uv run mkdocs serve`)
 - [Contributing](CONTRIBUTING.md)
 
 ## Contributing

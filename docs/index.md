@@ -10,7 +10,7 @@ hide:
 
     ---
 
-    Start with the [API reference](reference/utils.md) for standalone utilities.
+    Browse the [API reference](reference/shadowsim/index.md), generated from the package.
 
 -   :material-github:{ .lg .middle } __Source__
 
@@ -28,12 +28,14 @@ hide:
 ## Local preview
 
 ```bash
-uv sync --group docs
+uv sync --group docs --extra qutip --extra qiskit
 uv run mkdocs serve
 ```
 
 Open the URL printed in the terminal (usually `http://127.0.0.1:8000`).
 
+The API reference is generated from `shadowsim`. Optional backends are imported during the build, so the `qutip` and `qiskit` extras need to be installed.
+
 ## Customizing this site
 
-Edit **`mkdocs.yml`** (theme, colors, fonts, nav) and add Markdown files under **`docs/`**. Push to `main` to redeploy.
+Edit **`mkdocs.yml`** (theme, colors, fonts, nav) and add Markdown files under **`docs/`**. The API section is filled in by `mkdocs-api-autonav`. Push to `main` to redeploy.

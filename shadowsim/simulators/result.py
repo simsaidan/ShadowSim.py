@@ -114,7 +114,7 @@ class SimulationResult:
 
     @classmethod
     def load(cls, path: str | Path) -> "SimulationResult":
-        """Reload a result previously written by :meth:`save`."""
+        """Reload a result previously written by ``save``."""
         root = Path(path)
         if not root.is_dir():
             raise FileNotFoundError(f"SimulationResult directory not found: {root}")

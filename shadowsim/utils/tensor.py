@@ -12,7 +12,7 @@ def tensor(lst: list[np.ndarray]) -> np.ndarray:
         A_1 \otimes A_2 \otimes \cdots \otimes A_n
     \]
 
-    via successive applications of :func:`numpy.kron`.
+    via successive applications of ``numpy.kron``.
 
     Args:
         lst: Non-empty sequence of NumPy arrays to tensor together.
