@@ -331,9 +331,9 @@ result = simulator.simulate()
 
 Use `model.hamiltonian` or `model.pauli_sum` when you only need the combined
 Hamiltonian (for example with `run_shadow_simulation`). Contiguous
-nearest-neighbor ZZ terms are also available as `model.local_hamiltonians` for
-Split-J / Trotter; non-contiguous edges (periodic wrap or custom long-range
-couplings) appear only in the full-space operators.
+nearest-neighbor ZZ terms (`|i - j| == 1`) and single-site fields are also
+available as `model.local_hamiltonians`. Non-contiguous edges (periodic wrap
+or custom long-range couplings) appear only in the full-space operators.
 
 ### Example 4: Encoding classical data as an initial state
 
