@@ -133,10 +133,12 @@ class Simulator:
         dpi: float = 150,
         labels: list[str] | None = None,
         title: str | None = None,
+        output_dir: str | Path = "results",
     ) -> Path:
-        """Plot expectation traces vs `tlist` and save under ``results/``.
+        """Plot expectation traces vs `tlist` and save under ``output_dir``.
 
         Saves as ``{id}_{timestamp}.png`` (``id`` is set per simulator subclass).
+        ``output_dir`` defaults to ``results/`` and is created if it does not exist.
         Does not open an interactive window.
         """
         results = self.results
@@ -146,7 +148,7 @@ class Simulator:
         if indices is None:
             indices = list(range(len(results)))
         stamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
-        path = Path("results") / f"{self.id}_{stamp}.png"
+        path = Path(output_dir) / f"{self.id}_{stamp}.png"
         path.parent.mkdir(parents=True, exist_ok=True)
 
         fig, ax = plt.subplots()
