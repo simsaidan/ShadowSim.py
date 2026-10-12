@@ -124,6 +124,7 @@ module = [
     "shadowsim.simulators.reducers",
     "shadowsim.simulators.result",
     "shadowsim.simulators.simulator",
+    "shadowsim.simulators._time_points",
     "shadowsim.simulators.splitjmatrix_simulator",
     "shadowsim.simulators.trotterization_simulator",
     "shadowsim.shadow",
@@ -145,6 +146,9 @@ disallow_untyped_defs = true
 [tool.pytest.ini_options]
 # Allow ``from strategies...`` imports without colliding with the stdlib ``test`` package.
 pythonpath = ["test"]
+# Local server tests block on HTTPServer's poll loop. They stay out of the
+# default run; ``pytest test/cli/test_serve.py`` still collects them.
+addopts = "--ignore=test/cli/test_serve.py"
 markers = [
     "slow: integration tests that run real quantum simulators (kept on by default in CI)",
     "qutip: tests that require the qutip extra",

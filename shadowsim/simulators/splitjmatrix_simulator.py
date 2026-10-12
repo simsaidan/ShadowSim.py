@@ -13,6 +13,7 @@ from shadowsim.core.local_hamiltonian import LocalHamiltonian
 from shadowsim.core.local_operator import LocalOperator
 from shadowsim.core.operator import _Matrix
 from shadowsim.core.state import State
+from shadowsim.simulators._time_points import map_time_points
 from shadowsim.simulators.reducers import cavity_population, population_one
 from shadowsim.simulators.result import SimulationResult
 from shadowsim.simulators.simulator import Simulator
@@ -144,7 +145,14 @@ def _split_jmatrix(
 
 
 class SplitJMatrixSimulator(Simulator):
-    """Simulate open-system dynamics with the Split JMatrix method via Aer."""
+    """Simulate open-system dynamics with the Split JMatrix method via Aer.
+
+    Each time point starts from ``initial_state`` and uses the same ``seed``.
+    ``workers=1`` (the default) runs those points serially, in ``tlist`` order.
+    ``workers`` greater than 1 runs one process-pool task per time point.
+    Traces are still returned in ``tlist`` order, and ``progress(index, total)``
+    may run in completion order.
+    """
 
     def __init__(
         self,
@@ -163,6 +171,7 @@ class SplitJMatrixSimulator(Simulator):
         shots: int = 10000,
         seed: int | None = None,
         progress: ProgressCallback | None = None,
+        workers: int = 1,
     ) -> None:
         """Initialize a Split JMatrix simulator for the given model."""
         super().__init__(
@@ -184,12 +193,17 @@ class SplitJMatrixSimulator(Simulator):
             raise ValueError("shots must be a positive integer")
         if seed is not None and not isinstance(seed, int):
             raise TypeError("seed must be an int or None")
+        if isinstance(workers, bool) or not isinstance(workers, int):
+            raise TypeError("workers must be an int")
+        if workers < 1:
+            raise ValueError("workers must be a positive integer")
         self.num_steps = num_steps
         self.trotter_depth = trotter_depth
         self.verbose = verbose
         self.shots = shots
         self.seed = seed
         self.progress = progress
+        self.workers = workers
         if measurement_groups is None:
             measurement_groups = list(range(self.num_qubits))
         self.measurement_groups = measurement_groups
@@ -200,9 +214,23 @@ class SplitJMatrixSimulator(Simulator):
             raise ValueError("reducers and measurement_groups must have the same length")
         self.reducers = reducers
 
-    def simulate(self) -> SimulationResult:
-        """Evolve the system with Split JMatrix and store reduced traces."""
-        started = perf_counter()
+    def _reduce_counts(self, counts: dict[str, Any]) -> list[float]:
+        """Reduce one time point's counts to one sample per measurement group."""
+        traced = _trace_qubits(flip_dict(counts), self.measurement_groups)
+        if isinstance(traced, dict):
+            groups = [traced]
+        else:
+            groups = traced
+        return [float(reducer(groups[j])) for j, reducer in enumerate(self.reducers)]
+
+    def _on_parallel_result(self, index: int, counts: dict[str, Any]) -> list[float]:
+        """Reduce a finished time point. Runs in the parent process."""
+        if self.verbose:
+            print(f"Working on time step {round(self.tlist[index], 3)}")
+        return self._reduce_counts(counts)
+
+    def _simulate_serial(self) -> list[list[float]]:
+        """Run every time point on this process, in ``tlist`` order."""
         results: list[list[float]] = [[] for _ in range(len(self.measurement_groups))]
         total = len(self.tlist)
         for i, t in enumerate(self.tlist):
@@ -222,12 +250,54 @@ class SplitJMatrixSimulator(Simulator):
                 shots=self.shots,
                 seed=self.seed,
             )
-            counts = flip_dict(counts)
-            traced = _trace_qubits(counts, self.measurement_groups)
-            if isinstance(traced, dict):
-                traced = [traced]
-            for j, reducer in enumerate(self.reducers):
-                results[j].append(float(reducer(traced[j])))
+            for j, sample in enumerate(self._reduce_counts(counts)):
+                results[j].append(sample)
+        return results
+
+    def _simulate_parallel(self) -> list[list[float]]:
+        """Run one process-pool task per time point and assemble ``tlist`` order."""
+        hamiltonians = cast(list[LocalHamiltonian], self.hamiltonians)
+        lindblads = cast(list[LocalOperator], self.lindblads)
+        calls = [
+            (
+                _split_jmatrix,
+                (
+                    hamiltonians,
+                    lindblads,
+                    self.initial_state,
+                    self.num_qubits,
+                    t,
+                    self.num_steps,
+                    self.trotter_depth,
+                ),
+                {
+                    "verbose": self.verbose,
+                    "shots": self.shots,
+                    # Same seed the serial loop passes for this circuit.
+                    "seed": self.seed,
+                },
+            )
+            for t in self.tlist
+        ]
+        samples_by_time = cast(
+            list[list[float]],
+            map_time_points(
+                self.workers,
+                calls,
+                progress=self.progress,
+                on_result=self._on_parallel_result,
+            ),
+        )
+        width = len(self.measurement_groups)
+        return [[samples[j] for samples in samples_by_time] for j in range(width)]
+
+    def simulate(self) -> SimulationResult:
+        """Evolve the system with Split JMatrix and store reduced traces."""
+        started = perf_counter()
+        if self.workers == 1:
+            results = self._simulate_serial()
+        else:
+            results = self._simulate_parallel()
         runtime = perf_counter() - started
         self.results = results
         return self._make_result(
@@ -270,6 +340,7 @@ class SplitJMatrixSimulator(Simulator):
             f"verbose={self.verbose!r}, "
             f"shots={self.shots}, "
             f"seed={self.seed!r}, "
+            f"workers={self.workers}, "
             f"progress={self.progress!r}"
             ")"
         )

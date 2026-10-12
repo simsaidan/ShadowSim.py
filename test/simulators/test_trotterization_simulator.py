@@ -148,6 +148,18 @@ def test_trotterization_simulator_rejects_non_int_seed():
         _tiny(seed=1.5)  # type: ignore[arg-type]
 
 
+def test_trotterization_simulator_rejects_nonpositive_workers():
+    with pytest.raises(ValueError, match="workers must be a positive integer"):
+        _tiny(workers=0)
+
+
+def test_trotterization_simulator_rejects_non_int_workers():
+    with pytest.raises(TypeError, match="workers must be an int"):
+        _tiny(workers=1.5)  # type: ignore[arg-type]
+    with pytest.raises(TypeError, match="workers must be an int"):
+        _tiny(workers=True)  # type: ignore[arg-type]
+
+
 def test_trotterization_simulator_rejects_reducer_length_mismatch():
     with pytest.raises(ValueError, match="reducers and measurement_groups"):
         _tiny(measurement_groups=[0], reducers=[population_one, population_one])
@@ -232,6 +244,7 @@ def test_trotterization_simulator_str_and_repr():
     assert "num_steps=4" in str(sim)
     assert "TrotterizationSimulator(" in repr(sim)
     assert "time_steps=3" in repr(sim)
+    assert "workers=1" in repr(sim)
 
 
 def test_trace_qubits_accepts_single_int_index():
