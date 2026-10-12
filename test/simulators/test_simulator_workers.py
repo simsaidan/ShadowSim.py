@@ -77,8 +77,9 @@ def _counts_for_time(args: tuple[object, ...], time_index: int, *, later: float)
 class _LastFinishesFirst:
     """Finish the later submission before ``as_completed`` sees the earlier one."""
 
-    def __init__(self, max_workers: int) -> None:
+    def __init__(self, max_workers: int, mp_context: object | None = None) -> None:
         self.max_workers = max_workers
+        self.mp_context = mp_context
         self._jobs: list[tuple[Future[dict[str, int]], Callable[..., dict[str, int]], tuple[object, ...]]] = []
         self._thread: threading.Thread | None = None
 
@@ -125,8 +126,9 @@ class _LastFinishesFirst:
 class _RunSubmitted:
     """Run each submission in this process and store its outcome on the future."""
 
-    def __init__(self, max_workers: int) -> None:
+    def __init__(self, max_workers: int, mp_context: object | None = None) -> None:
         self.max_workers = max_workers
+        self.mp_context = mp_context
 
     def submit(
         self,

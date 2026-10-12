@@ -1,5 +1,6 @@
 """Run independent simulator time points on a process pool."""
 
+import multiprocessing
 from collections.abc import Callable, Sequence
 from concurrent.futures import Future, ProcessPoolExecutor, as_completed
 from typing import Any
@@ -37,7 +38,9 @@ def map_time_points(
             cancelled first.
     """
     total = len(calls)
-    executor = ProcessPoolExecutor(max_workers=workers)
+    # Linux defaults to fork. Pytest has already started threads, and a forked
+    # worker deadlocks there. spawn matches macOS and Windows.
+    executor = ProcessPoolExecutor(max_workers=workers, mp_context=multiprocessing.get_context("spawn"))
     ordered: list[Any] = [None] * total
     try:
         futures: dict[Future[Any], int] = {
