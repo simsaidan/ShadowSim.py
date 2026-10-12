@@ -189,6 +189,46 @@ def test_out_of_order_completion_keeps_tlist_order(
     assert seen == [(1, 2), (0, 2)]
 
 
+@pytest.mark.parametrize(
+    ("make", "module", "circuit_name", "time_index"),
+    [
+        pytest.param(_make_split, splitj_module, "_split_jmatrix", 4, id="split_j"),
+        pytest.param(_make_trotter, trotter_module, "_trotter_circuit_counts", 3, id="trotter"),
+    ],
+)
+def test_parallel_verbose_prints_each_finished_time(
+    make: _Make,
+    module: ModuleType,
+    circuit_name: str,
+    time_index: int,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    sim = make(workers=2, verbose=True)
+    later = float(sim.tlist[-1])
+
+    def fake_counts(*args: object, **kwargs: object) -> dict[str, int]:
+        return _counts_for_time(args, time_index, later=later)
+
+    monkeypatch.setattr(module, circuit_name, fake_counts)
+    monkeypatch.setattr(time_points, "ProcessPoolExecutor", _RunSubmitted)
+
+    sim.simulate()
+
+    output = capsys.readouterr().out
+    for t in sim.tlist:
+        assert f"Working on time step {round(float(t), 3)}" in output
+
+
+def test_map_time_points_keeps_the_raw_result_without_a_hook(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(time_points, "ProcessPoolExecutor", _RunSubmitted)
+
+    def echo(value: int) -> int:
+        return value
+
+    assert time_points.map_time_points(2, [(echo, (1,), {}), (echo, (2,), {})]) == [1, 2]
+
+
 @pytest.mark.parametrize("make", _SIMULATORS)
 def test_workers_below_one_are_rejected(make: _Make) -> None:
     with pytest.raises(ValueError, match="workers must be a positive integer"):
