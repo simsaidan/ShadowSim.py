@@ -35,6 +35,7 @@ Repository = "https://github.com/simsaidan/ShadowSim.py"
 
 [project.scripts]
 new-simulator = "shadowsim.cli.new_simulator:main"
+shadowsim = "shadowsim.cli.serve:main"
 
 [dependency-groups]
 dev = [
