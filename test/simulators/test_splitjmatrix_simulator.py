@@ -118,6 +118,18 @@ def test_splitjmatrix_simulator_rejects_non_int_seed():
         _simulator(seed=1.5)  # type: ignore[arg-type]
 
 
+def test_splitjmatrix_simulator_rejects_nonpositive_workers():
+    with pytest.raises(ValueError, match="workers must be a positive integer"):
+        _simulator(workers=0)
+
+
+def test_splitjmatrix_simulator_rejects_non_int_workers():
+    with pytest.raises(TypeError, match="workers must be an int"):
+        _simulator(workers=1.5)  # type: ignore[arg-type]
+    with pytest.raises(TypeError, match="workers must be an int"):
+        _simulator(workers=True)  # type: ignore[arg-type]
+
+
 def test_trace_qubits_accepts_single_int_index():
     assert _trace_qubits({"01": 3, "11": 2}, 1) == {"1": 5}
 
@@ -279,4 +291,5 @@ def test_splitjmatrix_simulator_str_and_repr():
     assert "SplitJMatrixSimulator(" in rep
     assert "shots=42" in rep
     assert "seed=7" in rep
+    assert "workers=1" in rep
     assert "progress=" in rep

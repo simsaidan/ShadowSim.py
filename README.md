@@ -260,6 +260,9 @@ QuTiP is deterministic. Split JMatrix estimates populations from a finite
 systematic split-J / Trotter bias that does not vanish with more shots. Use a
 lower `shots` for smoke checks and a higher budget for publication figures; pass
 `verbose=True` or a `progress(step, total)` callback for long-run feedback.
+`workers=1` (the default) runs each time point serially. A larger `workers`
+value runs those independent points on a process pool; traces stay in `tlist`
+order.
 
 ```python
 benchmark = Benchmark(qutip_simulator, splitjmatrix_simulator)
