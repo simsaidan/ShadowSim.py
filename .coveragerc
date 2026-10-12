@@ -16,6 +16,8 @@ omit =
     */.tox/*
     */venv/*
     */.venv/*
+    # Excluded from the default pytest run; see pytest addopts.
+    */cli/serve.py
 
 [html]
 directory = coverage_html_report
