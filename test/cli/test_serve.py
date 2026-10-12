@@ -56,5 +56,70 @@ def test_main_opens_the_browser_by_default(monkeypatch: pytest.MonkeyPatch):
     assert seen["open_browser"] is True
 
 
-def test_serve_rejects_an_invalid_port():
+def test_serve_rejects_an_invalid_port(capsys: pytest.CaptureFixture[str]):
     assert serve("127.0.0.1", 70000, open_browser=False) == 1
+    assert serve("127.0.0.1", -1, open_browser=False) == 1
+    assert "port must be between 0 and 65535" in capsys.readouterr().err
+
+
+def test_serve_reports_a_busy_port(capsys: pytest.CaptureFixture[str]):
+    busy = HTTPServer(("127.0.0.1", 0), _Handler)
+    port = busy.server_address[1]
+    try:
+        assert serve("127.0.0.1", port, open_browser=False) == 1
+    finally:
+        busy.server_close()
+    assert "could not bind" in capsys.readouterr().err
+
+
+def test_serve_answers_then_stops(monkeypatch: pytest.MonkeyPatch):
+    opened: list[str] = []
+    monkeypatch.setattr("shadowsim.cli.serve.webbrowser.open", lambda url: opened.append(url) or True)
+
+    started = threading.Event()
+    servers: list[HTTPServer] = []
+
+    class _RecordingServer(HTTPServer):
+        def serve_forever(self, poll_interval: float = 0.5) -> None:
+            servers.append(self)
+            started.set()
+            super().serve_forever(poll_interval)
+
+    monkeypatch.setattr("shadowsim.cli.serve.HTTPServer", _RecordingServer)
+
+    result: dict[str, int] = {}
+
+    def run() -> None:
+        result["code"] = serve("127.0.0.1", 0, open_browser=True)
+
+    thread = threading.Thread(target=run)
+    thread.start()
+    assert started.wait(timeout=2)
+    server = servers[0]
+    _host, port = server.server_address[:2]
+    try:
+        with urllib.request.urlopen(f"http://127.0.0.1:{port}/") as response:
+            assert b"<body></body>" in response.read()
+    finally:
+        server.shutdown()
+        thread.join(timeout=5)
+    assert result["code"] == 0
+    assert opened == [f"http://127.0.0.1:{port}/"]
+
+
+def test_serve_formats_an_ipv6_address_and_stops_on_interrupt(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+):
+    class _IPv6Server(HTTPServer):
+        def __init__(self, server_address: tuple[str, int], request_handler_class: type[_Handler]) -> None:
+            super().__init__(("127.0.0.1", 0), request_handler_class)
+            self.server_address = (b"::1", 4321)
+
+        def serve_forever(self, poll_interval: float = 0.5) -> None:
+            raise KeyboardInterrupt
+
+    monkeypatch.setattr("shadowsim.cli.serve.HTTPServer", _IPv6Server)
+    assert serve("127.0.0.1", 0, open_browser=False) == 0
+    output = capsys.readouterr().out
+    assert "http://[::1]:4321/" in output
+    assert "Stopped." in output
