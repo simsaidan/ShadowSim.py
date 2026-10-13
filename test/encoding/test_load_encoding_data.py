@@ -145,3 +145,11 @@ def test_rejects_multi_column_txt(tmp_path: Path):
     path.write_text("0.1 0.2\n0.3 0.4\n")
     with pytest.raises(ValueError, match="finite real"):
         load_encoding_data(path)
+
+
+def test_rejects_non_numeric_txt(tmp_path: Path):
+    path = tmp_path / "notes.txt"
+    path.write_text("not-a-number\n")
+    with pytest.raises(ValueError, match="could not load") as exc_info:
+        load_encoding_data(path)
+    assert isinstance(exc_info.value.__cause__, ValueError)
