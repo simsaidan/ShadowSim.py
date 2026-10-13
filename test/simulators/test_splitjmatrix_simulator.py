@@ -7,6 +7,7 @@ pytest.importorskip("qiskit")
 pytest.importorskip("qiskit_aer")
 pytest.importorskip("scipy")
 
+import shadowsim.simulators.circuit_backend as circuit_backend_module
 import shadowsim.simulators.splitjmatrix_simulator as splitjmatrix_module
 from shadowsim.core import LocalHamiltonian, Operator, State
 from shadowsim.simulators import SplitJMatrixSimulator
@@ -183,8 +184,8 @@ def _fake_aer_backend(monkeypatch, ctor_kwargs_log=None):
         def run(self, compiled, shots):
             return FakeJob()
 
-    monkeypatch.setattr(splitjmatrix_module, "AerSimulator", FakeBackend)
-    monkeypatch.setattr(splitjmatrix_module, "transpile", lambda circ, backend: circ)
+    monkeypatch.setattr(circuit_backend_module, "AerSimulator", FakeBackend)
+    monkeypatch.setattr(circuit_backend_module, "transpile", lambda circ, backend: circ)
 
 
 def test_split_jmatrix_verbose_prints_iterations(monkeypatch, capsys):

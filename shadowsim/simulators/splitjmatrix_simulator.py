@@ -5,15 +5,15 @@ from typing import Any, Callable, List, cast
 
 import numpy as np
 import scipy
-from qiskit import QuantumCircuit, QuantumRegister, transpile
+from qiskit import QuantumCircuit, QuantumRegister
 from qiskit.circuit.library import UnitaryGate
-from qiskit_aer import AerSimulator
 
 from shadowsim.core.local_hamiltonian import LocalHamiltonian
 from shadowsim.core.local_operator import LocalOperator
 from shadowsim.core.operator import _Matrix
 from shadowsim.core.state import State
 from shadowsim.simulators._time_points import map_time_points
+from shadowsim.simulators.circuit_backend import AerCircuitBackend, CircuitBackend
 from shadowsim.simulators.reducers import cavity_population, population_one
 from shadowsim.simulators.result import SimulationResult
 from shadowsim.simulators.simulator import Simulator
@@ -107,6 +107,7 @@ def _split_jmatrix(
     verbose: bool = False,
     shots: int = 10000,
     seed: int | None = None,
+    circuit_backend: CircuitBackend | None = None,
 ) -> dict[str, Any]:
     if shots <= 0:
         raise ValueError("shots must be a positive integer")
@@ -137,15 +138,15 @@ def _split_jmatrix(
     circ.barrier()
 
     circ.measure_all()
-    backend = AerSimulator(seed_simulator=seed) if seed is not None else AerSimulator()
-    compiled = transpile(circ, backend)
-    job = backend.run(compiled, shots=shots)
-    result = job.result()
-    return result.get_counts()
+    counts_backend = circuit_backend if circuit_backend is not None else AerCircuitBackend()
+    return counts_backend.run_counts(circ, shots=shots, seed=seed)
 
 
 class SplitJMatrixSimulator(Simulator):
-    """Simulate open-system dynamics with the Split JMatrix method via Aer.
+    """Simulate open-system dynamics with the Split JMatrix method.
+
+    Counts come from ``circuit_backend``. Omitting it uses :class:`AerCircuitBackend`.
+    With ``workers`` greater than 1, that backend is pickled into each worker process.
 
     Each time point starts from ``initial_state`` and uses the same ``seed``.
     ``workers=1`` (the default) runs those points serially, in ``tlist`` order.
@@ -173,6 +174,7 @@ class SplitJMatrixSimulator(Simulator):
         seed: int | None = None,
         progress: ProgressCallback | None = None,
         workers: int = 1,
+        circuit_backend: CircuitBackend | None = None,
     ) -> None:
         """Initialize a Split JMatrix simulator for the given model."""
         super().__init__(
@@ -203,6 +205,7 @@ class SplitJMatrixSimulator(Simulator):
         self.verbose = verbose
         self.shots = shots
         self.seed = seed
+        self.circuit_backend = circuit_backend if circuit_backend is not None else AerCircuitBackend()
         self.progress = progress
         self.workers = workers
         if measurement_groups is None:
@@ -257,6 +260,7 @@ class SplitJMatrixSimulator(Simulator):
                 verbose=self.verbose,
                 shots=self.shots,
                 seed=self.seed,
+                circuit_backend=self.circuit_backend,
             )
             for j, sample in enumerate(self._reduce_counts(counts)):
                 results[j].append(sample)
@@ -285,6 +289,7 @@ class SplitJMatrixSimulator(Simulator):
                     "shots": self.shots,
                     # Same seed the serial loop passes for this circuit.
                     "seed": self.seed,
+                    "circuit_backend": self.circuit_backend,
                 },
             )
             for t in self.tlist
@@ -319,6 +324,7 @@ class SplitJMatrixSimulator(Simulator):
             trotter_depth=self.trotter_depth,
             measurement_group_count=len(self.measurement_groups),
             lindblad_count=len(self.lindblads),
+            circuit_backend=self.circuit_backend.name,
         )
 
     def __str__(self) -> str:

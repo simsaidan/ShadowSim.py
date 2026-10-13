@@ -10,6 +10,9 @@ from shadowsim.simulators.result import SimulationResult
 from shadowsim.simulators.simulator import Simulator
 
 if TYPE_CHECKING:
+    from shadowsim.simulators.circuit_backend import AerCircuitBackend as AerCircuitBackend
+    from shadowsim.simulators.circuit_backend import CircuitBackend as CircuitBackend
+    from shadowsim.simulators.circuit_backend import QiskitCircuitBackend as QiskitCircuitBackend
     from shadowsim.simulators.qutip_simulator import QutipSimulator as QutipSimulator
     from shadowsim.simulators.splitjmatrix_simulator import SplitJMatrixSimulator as SplitJMatrixSimulator
     from shadowsim.simulators.trotterization_simulator import TrotterizationSimulator as TrotterizationSimulator
@@ -17,12 +20,18 @@ if TYPE_CHECKING:
 # Backends loaded on first access: name -> (module, extra).
 # extra is None when the backend has no optional dependency.
 _EXPORTS: dict[str, tuple[str, str | None]] = {
+    "AerCircuitBackend": ("shadowsim.simulators.circuit_backend", "qiskit"),
+    "CircuitBackend": ("shadowsim.simulators.circuit_backend", "qiskit"),
+    "QiskitCircuitBackend": ("shadowsim.simulators.circuit_backend", "qiskit"),
     "QutipSimulator": ("shadowsim.simulators.qutip_simulator", "qutip"),
     "SplitJMatrixSimulator": ("shadowsim.simulators.splitjmatrix_simulator", "qiskit"),
     "TrotterizationSimulator": ("shadowsim.simulators.trotterization_simulator", "qiskit"),
 }
 
 __all__ = [
+    "AerCircuitBackend",
+    "CircuitBackend",
+    "QiskitCircuitBackend",
     "QutipSimulator",
     "SimulationJob",
     "SimulationResult",

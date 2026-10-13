@@ -1,18 +1,18 @@
-"""Closed-system Trotterization simulator via Aer product formulas."""
+"""Closed-system Trotterization simulator."""
 
 from collections.abc import Sequence
 from time import perf_counter
 from typing import Any, Callable, List, Literal, cast
 
 import scipy
-from qiskit import QuantumCircuit, QuantumRegister, transpile
+from qiskit import QuantumCircuit, QuantumRegister
 from qiskit.circuit.library import UnitaryGate
-from qiskit_aer import AerSimulator
 
 from shadowsim.core.local_hamiltonian import LocalHamiltonian
 from shadowsim.core.operator import Operator, _Matrix
 from shadowsim.core.state import State
 from shadowsim.simulators._time_points import map_time_points
+from shadowsim.simulators.circuit_backend import AerCircuitBackend, CircuitBackend
 from shadowsim.simulators.reducers import population_one
 from shadowsim.simulators.result import SimulationResult
 from shadowsim.simulators.simulator import Simulator
@@ -98,9 +98,11 @@ def _trotter_circuit_counts(
     verbose: bool = False,
     shots: int = 10000,
     seed: int | None = None,
+    circuit_backend: CircuitBackend | None = None,
 ) -> dict[str, Any]:
-    """Run a closed-system product formula on Aer and return counts.
+    """Run a closed-system product formula and return counts.
 
+    ``circuit_backend`` executes the circuit. Omitting it uses :class:`AerCircuitBackend`.
     ``order=1`` is the first-order product. ``order=2`` is one Strang step per slice.
     ``trotter_depth`` is the number of slices in this time sample, for both orders.
     """
@@ -134,14 +136,15 @@ def _trotter_circuit_counts(
 
     circ.barrier()
     circ.measure_all()
-    backend = AerSimulator(seed_simulator=seed) if seed is not None else AerSimulator()
-    compiled = transpile(circ, backend)
-    job = backend.run(compiled, shots=shots)
-    return job.result().get_counts()
+    counts_backend = circuit_backend if circuit_backend is not None else AerCircuitBackend()
+    return counts_backend.run_counts(circ, shots=shots, seed=seed)
 
 
 class TrotterizationSimulator(Simulator):
-    """Simulate closed-system dynamics with a Trotter product formula via Aer.
+    """Simulate closed-system dynamics with a Trotter product formula.
+
+    Counts come from ``circuit_backend``. Omitting it uses :class:`AerCircuitBackend`.
+    With ``workers`` greater than 1, that backend is pickled into each worker process.
 
     ``order=1`` (the default) applies each local term once per slice of width
     ``t / (num_steps * trotter_depth)``, in list order. ``order=2`` uses one Strang
@@ -176,6 +179,7 @@ class TrotterizationSimulator(Simulator):
         seed: int | None = None,
         progress: ProgressCallback | None = None,
         workers: int = 1,
+        circuit_backend: CircuitBackend | None = None,
     ) -> None:
         """Initialize a closed-system Trotterization simulator for the given model."""
         super().__init__(
@@ -215,6 +219,7 @@ class TrotterizationSimulator(Simulator):
         self.verbose = verbose
         self.shots = shots
         self.seed = seed
+        self.circuit_backend = circuit_backend if circuit_backend is not None else AerCircuitBackend()
         self.progress = progress
         self.workers = workers
         if measurement_groups is None:
@@ -269,6 +274,7 @@ class TrotterizationSimulator(Simulator):
                 verbose=self.verbose,
                 shots=self.shots,
                 seed=self.seed,
+                circuit_backend=self.circuit_backend,
             )
             for j, sample in enumerate(self._reduce_counts(counts)):
                 results[j].append(sample)
@@ -296,6 +302,7 @@ class TrotterizationSimulator(Simulator):
                     "shots": self.shots,
                     # Same seed the serial loop passes for this circuit.
                     "seed": self.seed,
+                    "circuit_backend": self.circuit_backend,
                 },
             )
             for t in self.tlist
@@ -330,6 +337,7 @@ class TrotterizationSimulator(Simulator):
             trotter_depth=self.trotter_depth,
             order=self.order,
             measurement_group_count=len(self.measurement_groups),
+            circuit_backend=self.circuit_backend.name,
         )
 
     def __str__(self) -> str:
