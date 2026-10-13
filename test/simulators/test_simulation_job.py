@@ -94,6 +94,24 @@ def test_failed_job_raises_the_simulate_exception() -> None:
     assert job.status is SimulationStatus.FAILED
 
 
+def test_result_rejects_an_inconsistent_job() -> None:
+    class Idle(Simulator):
+        def simulate(self) -> SimulationResult:
+            return _curve(self)
+
+    job = SimulationJob(_new(Idle, "idle"))
+    with pytest.raises(TimeoutError, match="still running"):
+        job.result(timeout=0)
+
+    job._status = SimulationStatus.SUCCEEDED
+    with pytest.raises(RuntimeError, match="without a result"):
+        job.result()
+
+    job._status = SimulationStatus.FAILED
+    with pytest.raises(RuntimeError, match="without an exception"):
+        job.result()
+
+
 def test_second_start_while_running_raises() -> None:
     entered = threading.Event()
     release = threading.Event()
