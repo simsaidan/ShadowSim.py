@@ -11,6 +11,7 @@ pytest.importorskip("scipy")
 
 import scipy.linalg
 
+import shadowsim.simulators.circuit_backend as circuit_backend_module
 import shadowsim.simulators.trotterization_simulator as trotter_module
 from shadowsim.benchmarking import Benchmark
 from shadowsim.core import Hamiltonian, LocalHamiltonian, Operator, State
@@ -61,8 +62,8 @@ def _fake_aer_backend(monkeypatch, ctor_kwargs_log=None):
         def run(self, compiled, shots):
             return FakeJob()
 
-    monkeypatch.setattr(trotter_module, "AerSimulator", FakeBackend)
-    monkeypatch.setattr(trotter_module, "transpile", lambda circ, backend: circ)
+    monkeypatch.setattr(circuit_backend_module, "AerSimulator", FakeBackend)
+    monkeypatch.setattr(circuit_backend_module, "transpile", lambda circ, backend: circ)
 
 
 def test_trotterization_simulator_is_simulator():
@@ -414,8 +415,8 @@ def test_circuit_repeats_slice_unitaries(monkeypatch, order):
             captured.append(compiled)
             return FakeJob()
 
-    monkeypatch.setattr(trotter_module, "AerSimulator", lambda *args, **kwargs: FakeBackend())
-    monkeypatch.setattr(trotter_module, "transpile", lambda circ, backend: circ)
+    monkeypatch.setattr(circuit_backend_module, "AerSimulator", lambda *args, **kwargs: FakeBackend())
+    monkeypatch.setattr(circuit_backend_module, "transpile", lambda circ, backend: circ)
 
     terms = [LocalHamiltonian(X, [0]), LocalHamiltonian(Z, [0])]
     t = 0.5
