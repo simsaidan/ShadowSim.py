@@ -93,6 +93,13 @@ Serialize and reload with `result.save(path)` / `SimulationResult.load(path)` (d
 `.npy` arrays plus `meta.json`). Low-level expectation curves remain on `simulator.results`
 for plotting and benchmarking.
 
+`start()` runs that same `simulate()` call on a worker thread and returns a `SimulationJob`
+immediately. Poll `status` (`pending`, `running`, `succeeded`, or `failed`). `result()` waits
+for the `SimulationResult`; pass `timeout` to stop waiting while the job is still running,
+which raises `TimeoutError`. If `simulate()` raised, `result()` raises that exception. Split J
+and Trotter jobs count finished time points in `completed_steps` and `total_steps`. A QuTiP
+job leaves both as `None`.
+
 The following simulators are supported by the package:
 
 | Name | Type | Can handle open systems |
