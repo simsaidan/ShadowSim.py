@@ -151,7 +151,8 @@ class SplitJMatrixSimulator(Simulator):
     ``workers=1`` (the default) runs those points serially, in ``tlist`` order.
     ``workers`` greater than 1 runs one process-pool task per time point.
     Traces are still returned in ``tlist`` order, and ``progress(index, total)``
-    may run in completion order.
+    may run in completion order. A job from ``start()`` counts each finished
+    time point in ``completed_steps``.
     """
 
     def __init__(
@@ -229,10 +230,17 @@ class SplitJMatrixSimulator(Simulator):
             print(f"Working on time step {round(self.tlist[index], 3)}")
         return self._reduce_counts(counts)
 
+    def _on_parallel_progress(self, index: int, total: int) -> None:
+        """Forward one finished parallel time point to the user and the active job."""
+        if self.progress is not None:
+            self.progress(index, total)
+        self._report_completed_step(total)
+
     def _simulate_serial(self) -> list[list[float]]:
         """Run every time point on this process, in ``tlist`` order."""
         results: list[list[float]] = [[] for _ in range(len(self.measurement_groups))]
         total = len(self.tlist)
+        self._begin_step_progress(total)
         for i, t in enumerate(self.tlist):
             if self.progress is not None:
                 self.progress(i, total)
@@ -252,10 +260,12 @@ class SplitJMatrixSimulator(Simulator):
             )
             for j, sample in enumerate(self._reduce_counts(counts)):
                 results[j].append(sample)
+            self._report_completed_step(total)
         return results
 
     def _simulate_parallel(self) -> list[list[float]]:
         """Run one process-pool task per time point and assemble ``tlist`` order."""
+        self._begin_step_progress(len(self.tlist))
         hamiltonians = cast(list[LocalHamiltonian], self.hamiltonians)
         lindblads = cast(list[LocalOperator], self.lindblads)
         calls = [
@@ -284,7 +294,7 @@ class SplitJMatrixSimulator(Simulator):
             map_time_points(
                 self.workers,
                 calls,
-                progress=self.progress,
+                progress=self._on_parallel_progress,
                 on_result=self._on_parallel_result,
             ),
         )

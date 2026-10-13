@@ -121,6 +121,7 @@ module = [
     "shadowsim.encoding.load",
     "shadowsim.encoding.state_encoder",
     "shadowsim.simulators",
+    "shadowsim.simulators.job",
     "shadowsim.simulators.qutip_simulator",
     "shadowsim.simulators.reducers",
     "shadowsim.simulators.result",

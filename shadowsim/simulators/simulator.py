@@ -1,5 +1,6 @@
 """Base simulator interface and plotting helpers."""
 
+import threading
 from collections.abc import Sequence
 from datetime import datetime
 from pathlib import Path
@@ -11,6 +12,7 @@ from shadowsim._optional import import_optional
 from shadowsim.core.hamiltonian import Hamiltonian
 from shadowsim.core.operator import Operator
 from shadowsim.core.state import State
+from shadowsim.simulators.job import SimulationJob, SimulationStatus
 from shadowsim.simulators.result import SimulationResult, package_version
 
 # QuTiP stores ndarray traces; shot-based backends store lists of floats.
@@ -45,6 +47,8 @@ class Simulator:
         self.results: _Traces | None = None
         self.last_result: SimulationResult | None = None
         self.tlist = np.linspace(0, self.total_time, self.time_steps)
+        self._active_job: SimulationJob | None = None
+        self._job_lock = threading.Lock()
 
     def run(self) -> SimulationResult:
         """Run the simulation and return its results."""
@@ -53,6 +57,55 @@ class Simulator:
     def simulate(self) -> SimulationResult:
         """Run the backend-specific simulation."""
         raise NotImplementedError("Subclasses must implement simulate()")
+
+    def start(self) -> SimulationJob:
+        """Run ``simulate()`` on a worker thread and return a job handle.
+
+        The handle comes back while that call is still in progress. ``simulate()``
+        and ``run()`` stay synchronous and keep their current return values.
+        Split J and Trotter record finished time points on ``completed_steps``
+        and ``total_steps``. QuTiP leaves both ``None``.
+
+        Returns:
+            A job that moves from pending to running, then to succeeded or failed.
+
+        Raises:
+            RuntimeError: This simulator already has a pending or running job.
+        """
+        with self._job_lock:
+            active = self._active_job
+            if active is not None and active.status in {SimulationStatus.PENDING, SimulationStatus.RUNNING}:
+                raise RuntimeError("a simulation is already running")
+            job = SimulationJob(self)
+            self._active_job = job
+            job._launch()
+            return job
+
+    def _running_job(self) -> SimulationJob | None:
+        """Return the job executing ``simulate()`` right now, if any."""
+        job = self._active_job
+        if job is not None and job.status is SimulationStatus.RUNNING:
+            return job
+        return None
+
+    def _begin_step_progress(self, total: int) -> None:
+        """Set the running job to zero completed steps out of ``total``.
+
+        No-op when this ``simulate()`` call was not launched by ``start()``.
+        """
+        job = self._running_job()
+        if job is not None:
+            job._begin_steps(total)
+
+    def _report_completed_step(self, total: int) -> None:
+        """Count one finished time point on the running job.
+
+        No-op when this ``simulate()`` call was not launched by ``start()``,
+        so a direct ``simulate()`` leaves any user progress callback unchanged.
+        """
+        job = self._running_job()
+        if job is not None:
+            job._note_completed_step(total)
 
     def _make_result(
         self,
