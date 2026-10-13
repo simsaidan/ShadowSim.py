@@ -62,6 +62,8 @@ angle = AngleEncoding().encode([np.pi / 2, 0.0])
 amplitude = AmplitudeEncoding().encode([1.0, 1.0, 0.0])  # zero-padded to 2 qubits
 ```
 
+`load_encoding_data` reads a 1D vector from a `.npy`, `.txt`, or `.csv` file for an encoder, as in `AmplitudeEncoding().encode(load_encoding_data("amplitudes.npy"))`.
+
 [`examples/state_encoding.py`](examples/state_encoding.py) passes an encoded state to `QutipSimulator`.
 
 ### QuTiP interop

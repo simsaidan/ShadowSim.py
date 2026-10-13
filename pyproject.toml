@@ -118,6 +118,7 @@ module = [
     "shadowsim.encoding.amplitude",
     "shadowsim.encoding.angle",
     "shadowsim.encoding.computational_basis",
+    "shadowsim.encoding.load",
     "shadowsim.encoding.state_encoder",
     "shadowsim.simulators",
     "shadowsim.simulators.qutip_simulator",
