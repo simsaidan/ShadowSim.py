@@ -72,7 +72,7 @@ where = ["."]
 include = ["shadowsim*"]
 
 [tool.setuptools.package-data]
-shadowsim = ["py.typed"]
+shadowsim = ["py.typed", "cli/site/*"]
 
 [build-system]
 requires = ["setuptools>=77.0.3"]

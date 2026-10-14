@@ -1,5 +1,5 @@
-# MkDocs
-site/
+# MkDocs build output at the repo root. The leading slash leaves shadowsim/cli/site tracked.
+/site/
 
 # local doc build env
 .venv-docs/
