@@ -10,7 +10,7 @@ from http.server import HTTPServer
 
 import pytest
 
-from shadowsim.cli.run import build_simulator
+from shadowsim.cli.run import _initial_state, build_simulator
 from shadowsim.cli.serve import _Handler
 
 
@@ -62,7 +62,16 @@ def forbid_qutip(monkeypatch: pytest.MonkeyPatch) -> None:
         ({"qubits": "1"}, "at least 2"),
         ({"qubits": 1}, "at least 2"),
         ({"qubits": "2.5"}, "integer"),
+        ({"qubits": 2.5}, "integer"),
+        ({"qubits": float("nan")}, "integer"),
+        ({"qubits": "nope"}, "integer"),
+        ({"qubits": True}, "integer"),
+        ({"qubits": None}, "integer"),
         ({"qubits": ""}, "integer"),
+        ({"total": "nope"}, "positive number"),
+        ({"total": True}, "positive number"),
+        ({"total": float("inf")}, "positive number"),
+        ({"simulator": None}, "only QuTiP"),
         ({"state": "nope"}, "unknown initial state"),
         ({"model": "nope"}, "unknown model"),
     ],
@@ -70,6 +79,12 @@ def forbid_qutip(monkeypatch: pytest.MonkeyPatch) -> None:
 def test_build_simulator_rejects(overrides: dict[str, object], message: str, forbid_qutip: None) -> None:
     with pytest.raises(ValueError, match=message):
         build_simulator(_selection(**overrides))
+
+
+@pytest.mark.parametrize("time_steps", [0, True, 1.5])
+def test_time_steps_must_be_a_positive_integer(time_steps: object, forbid_qutip: None) -> None:
+    with pytest.raises(ValueError, match="positive integer"):
+        build_simulator(_selection(), time_steps=time_steps)  # type: ignore[arg-type]
 
 
 def test_missing_total_time_is_rejected(forbid_qutip: None) -> None:
@@ -108,6 +123,24 @@ def test_tavis_cummings_ignores_the_qubits_field() -> None:
     simulator = build_simulator(_selection(model="tavis", qubits="1"), time_steps=2)
     assert simulator.num_qubits == 3
     assert simulator.initial_state.get_num_qubits() == 3
+
+
+def test_one_qubit_encodings_prepare_that_size() -> None:
+    assert _initial_state("angle", 1).get_num_qubits() == 1
+    assert _initial_state("amplitude", 1).get_num_qubits() == 1
+
+
+def test_initial_state_rejects_an_unknown_id() -> None:
+    with pytest.raises(ValueError, match="unknown initial state"):
+        _initial_state("nope", 2)
+
+
+@pytest.mark.qutip
+def test_integral_float_settings_build_the_simulator() -> None:
+    pytest.importorskip("qutip")
+    simulator = build_simulator(_selection(qubits=2.0, total=0.5), time_steps=2)
+    assert simulator.num_qubits == 2
+    assert simulator.total_time == 0.5
 
 
 @pytest.mark.qutip
