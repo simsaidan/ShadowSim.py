@@ -1,4 +1,4 @@
-/* Builder page components. Placement is local to the page; Run does not call a backend. */
+/* Builder page components. Placement is local to the page; Run does not call the package. */
 
 const LANES = [
   {
@@ -21,6 +21,13 @@ const LANES = [
     hint: "The algorithm that runs it",
     pick: "Pick a simulator",
     tone: "blue",
+  },
+  {
+    id: "backend",
+    title: "Backend",
+    hint: "Where the circuit runs",
+    pick: "Pick a backend",
+    tone: "violet",
   },
   {
     id: "then",
@@ -53,6 +60,10 @@ const BLOCKS = {
     { id: "splitj", title: "Split JMatrix", detail: "Quantum-inspired. Open or closed", phrase: "Split JMatrix" },
     { id: "trotter", title: "Trotterization", detail: "Quantum-inspired. Closed only", phrase: "Trotterization" },
   ],
+  backend: [
+    { id: "aer", title: "Aer", detail: "Local shot simulator. Default.", phrase: "Aer" },
+    { id: "qiskit", title: "Qiskit", detail: "Caller-supplied BackendV2.", phrase: "a Qiskit backend" },
+  ],
   then: [
     { id: "plot", title: "Plot results", detail: "Curves for each observable", phrase: "plot results" },
     {
@@ -83,22 +94,15 @@ const STATE_LINES = {
   amplitude: "state = AmplitudeEncoding().encode([1.0, 0.5, 0.25])",
 };
 
-const MODEL_LINES = {
-  tfim: 'model = ising(n_qubits=4, J=1.0, h=0.5, field="transverse")',
-  classical: 'model = ising(n_qubits=4, J=1.0, h=0.5, field="classical")',
-  tavis: "model = tavis_cummings()",
-};
-
-const QUTIP_CALL = `sim = QutipSimulator(model.full_hamiltonians, model.c_ops_full, state,
-                    model.e_ops, num_qubits=model.num_qubits,
-                    total_time=2.0, time_steps=101)`;
-
 const selection = {
   state: "basis",
   model: "tfim",
   simulator: "qutip",
+  backend: "aer",
   then: "save",
 };
+
+const settings = { qubits: "4", start: "0", end: "2" };
 
 let dragging = null;
 
@@ -125,23 +129,68 @@ function isComplete() {
   return LANES.every((lane) => blockById(lane.id, selection[lane.id]));
 }
 
+function settingNumber(key, fallback) {
+  const value = Number(settings[key]);
+  return Number.isFinite(value) ? value : fallback;
+}
+
+function formatSetting(key, fallback) {
+  const value = settingNumber(key, fallback);
+  return Object.is(value, -0) ? "0" : String(value);
+}
+
+function qubitPhrase() {
+  const label = formatSetting("qubits", 4);
+  return Number(label) === 1 ? "1 qubit" : `${label} qubits`;
+}
+
+function pyFloat(value) {
+  if (!Number.isFinite(value)) return "0.0";
+  return Number.isInteger(value) ? `${value}.0` : String(value);
+}
+
+function duration() {
+  return settingNumber("end", 2) - settingNumber("start", 0);
+}
+
+function modelLine() {
+  const qubits = Math.max(1, Math.round(settingNumber("qubits", 4)));
+  if (selection.model === "classical") {
+    return `model = ising(n_qubits=${qubits}, J=1.0, h=0.5, field="classical")`;
+  }
+  if (selection.model === "tavis") return "model = tavis_cummings()";
+  return `model = ising(n_qubits=${qubits}, J=1.0, h=0.5, field="transverse")`;
+}
+
+function qutipCall(name) {
+  return `${name} = QutipSimulator(model.full_hamiltonians, model.c_ops_full, state,
+                    model.e_ops, num_qubits=model.num_qubits,
+                    total_time=${pyFloat(duration())}, time_steps=101)`;
+}
+
+function backendSetup(backendId) {
+  if (backendId === "aer") return "circuit_backend = AerCircuitBackend()";
+  return "circuit_backend = QiskitCircuitBackend(backend)";
+}
+
 function circuitCall(simulatorId) {
-  if (simulatorId === "qutip") return QUTIP_CALL;
+  if (simulatorId === "qutip") return qutipCall("sim");
   const name = simulatorId === "splitj" ? "SplitJMatrixSimulator" : "TrotterizationSimulator";
   return `sim = ${name}(
     model.local_hamiltonians,
     model.c_ops_local,
     state,
     num_qubits=model.num_qubits,
-    total_time=2.0,
+    total_time=${pyFloat(duration())},
     time_steps=101,
     num_steps=20,
     reducers=list(model.reducers),
+    circuit_backend=circuit_backend,
 )`;
 }
 
 function referenceCall() {
-  return QUTIP_CALL.replace("sim = ", "reference = ");
+  return qutipCall("reference");
 }
 
 function previewText() {
@@ -155,7 +204,9 @@ function previewText() {
   if (selection.then === "compare" || selection.then === "export") {
     lines.push("from shadowsim.benchmarking import Benchmark");
   }
-  lines.push("", STATE_LINES[selection.state], "", MODEL_LINES[selection.model], "", circuitCall(selection.simulator), "");
+  const beforeSimulator = ["", STATE_LINES[selection.state], "", modelLine(), ""];
+  if (selection.simulator !== "qutip") beforeSimulator.push(backendSetup(selection.backend), "");
+  lines.push(...beforeSimulator, circuitCall(selection.simulator), "");
   if (selection.then === "plot") lines.push("sim.simulate()", "sim.plot_results()");
   else if (selection.then === "save") lines.push('sim.simulate().save("results/run1")');
   else if (selection.then === "compare") lines.push(referenceCall(), "Benchmark(reference, sim).run()");
@@ -256,6 +307,7 @@ function summaryComponent() {
   const state = blockById("state", selection.state);
   const model = blockById("model", selection.model);
   const simulator = blockById("simulator", selection.simulator);
+  const backend = blockById("backend", selection.backend);
   const action = blockById("then", selection.then);
   return el(
     "p",
@@ -266,10 +318,52 @@ function summaryComponent() {
     el("strong", {}, model.title),
     " model with ",
     el("strong", {}, simulator.title),
+    " on ",
+    el("strong", {}, backend.phrase),
     ", then ",
     el("strong", {}, action.phrase),
+    ", on ",
+    el("strong", {}, qubitPhrase()),
+    " from ",
+    el("strong", {}, `t = ${formatSetting("start", 0)}`),
+    " to ",
+    el("strong", {}, `t = ${formatSetting("end", 2)}`),
     ".",
   );
+}
+
+function settingsComponent() {
+  const field = (key, label, inputMode) =>
+    el(
+      "label",
+      { className: "setting" },
+      label,
+      el("input", {
+        type: "text",
+        inputmode: inputMode,
+        value: settings[key],
+        "aria-label": label,
+        oninput: (event) => {
+          settings[key] = event.target.value.trim();
+          refreshSummaryAndPreview();
+        },
+      }),
+    );
+  return el(
+    "div",
+    { className: "settings" },
+    el("h2", {}, "Settings"),
+    field("qubits", "Qubits", "numeric"),
+    field("start", "Start time", "decimal"),
+    field("end", "End time", "decimal"),
+  );
+}
+
+function refreshSummaryAndPreview() {
+  const summary = document.querySelector(".summary");
+  if (summary) summary.replaceWith(summaryComponent());
+  const preview = document.querySelector(".panel pre");
+  if (preview) preview.textContent = previewText();
 }
 
 function statusComponent() {
@@ -318,7 +412,7 @@ function layoutComponent() {
     layout.append(chevron);
   });
   const run = el("button", { className: "run", type: "button" }, "Run simulation");
-  run.style.gridColumn = "9";
+  run.style.gridColumn = String(1 + LANES.length * 2);
   run.style.gridRow = "1";
   layout.append(run);
   return layout;
@@ -332,6 +426,7 @@ function draw(board) {
       "Drag a block up into its slot, or tap it to place it. Blocks flow left to right.",
     ),
     layoutComponent(),
+    settingsComponent(),
     summaryComponent(),
     statusComponent(),
     panelsComponent(),
