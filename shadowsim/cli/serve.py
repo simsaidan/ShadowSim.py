@@ -1,11 +1,15 @@
 """Serve the local ShadowSim builder page."""
 
 import argparse
+import json
 import sys
 import webbrowser
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
+from typing import Any
 from urllib.parse import urlsplit
+
+from shadowsim.cli.run import build_simulator
 
 _SITE_DIR = Path(__file__).resolve().parent / "site"
 _CONTENT_TYPES = {
@@ -35,7 +39,7 @@ def _site_asset(url_path: str) -> tuple[Path, str] | None:
 
 
 class _Handler(BaseHTTPRequestHandler):
-    """Serve the builder page and its style and script files."""
+    """Serve the builder page and run a selection posted to ``/runs``."""
 
     def do_GET(self) -> None:
         """Return a site asset, or 404 for every other path."""
@@ -51,9 +55,76 @@ class _Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
+    def do_POST(self) -> None:
+        """Run a posted selection, or 404 for every path other than ``/runs``."""
+        if urlsplit(self.path).path != "/runs":
+            self.send_error(404)
+            return
+        try:
+            selection = _json_object(self._body())
+        except ValueError as exc:
+            _send_json(self, 400, {"error": str(exc)})
+            return
+        try:
+            result = build_simulator(selection).simulate()
+        except ValueError as exc:
+            _send_json(self, 400, {"error": str(exc)})
+            return
+        except Exception as exc:
+            _send_json(self, 500, {"error": str(exc)})
+            return
+        _send_json(
+            self,
+            200,
+            {
+                "times": result.times.tolist(),
+                "observables": [curve.tolist() for curve in result.observables],
+                "runtime": result.runtime,
+                "algorithm": result.algorithm,
+            },
+        )
+
+    def _body(self) -> bytes:
+        """Return the request body, or raise if its length is missing."""
+        length = self.headers.get("Content-Length")
+        if length is None:
+            raise ValueError("request body must be JSON")
+        try:
+            size = int(length)
+        except ValueError:
+            raise ValueError("request body must be JSON") from None
+        if size < 0:
+            raise ValueError("request body must be JSON")
+        return self.rfile.read(size)
+
     def log_message(self, format: str, *args: object) -> None:
         """Keep request logs off the terminal."""
         return
+
+
+def _json_object(body: bytes) -> dict[str, Any]:
+    """Parse ``body`` as a JSON object.
+
+    Raises:
+        ValueError: The body is not a JSON object.
+    """
+    try:
+        payload = json.loads(body)
+    except json.JSONDecodeError:
+        raise ValueError("request body must be JSON") from None
+    if not isinstance(payload, dict):
+        raise ValueError("request body must be a JSON object")
+    return payload
+
+
+def _send_json(handler: BaseHTTPRequestHandler, status: int, payload: dict[str, Any]) -> None:
+    """Write ``payload`` as a JSON response."""
+    body = json.dumps(payload).encode("utf-8")
+    handler.send_response(status)
+    handler.send_header("Content-Type", "application/json")
+    handler.send_header("Content-Length", str(len(body)))
+    handler.end_headers()
+    handler.wfile.write(body)
 
 
 def build_parser() -> argparse.ArgumentParser:
