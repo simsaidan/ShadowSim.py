@@ -102,9 +102,12 @@ const selection = {
   then: "save",
 };
 
-const settings = { qubits: "4", start: "0", end: "2" };
+const settings = { qubits: "", total: "" };
 
 let dragging = null;
+let running = false;
+
+const CURVE_COLORS = ["#4c4cb8", "#1f7a6c", "#a67c1a", "#b66880", "#6a4ca8"];
 
 function el(tag, props, ...children) {
   const node = document.createElement(tag);
@@ -129,43 +132,43 @@ function isComplete() {
   return LANES.every((lane) => blockById(lane.id, selection[lane.id]));
 }
 
-function settingNumber(key, fallback) {
+function settingNumber(key) {
+  if (settings[key] === "") return null;
   const value = Number(settings[key]);
-  return Number.isFinite(value) ? value : fallback;
+  return Number.isFinite(value) ? value : null;
 }
 
-function formatSetting(key, fallback) {
-  const value = settingNumber(key, fallback);
+function formatSetting(key) {
+  const value = settingNumber(key);
+  if (value == null) return null;
   return Object.is(value, -0) ? "0" : String(value);
 }
 
 function qubitPhrase() {
-  const label = formatSetting("qubits", 4);
+  const label = formatSetting("qubits");
+  if (label == null) return null;
   return Number(label) === 1 ? "1 qubit" : `${label} qubits`;
 }
 
 function pyFloat(value) {
-  if (!Number.isFinite(value)) return "0.0";
   return Number.isInteger(value) ? `${value}.0` : String(value);
 }
 
-function duration() {
-  return settingNumber("end", 2) - settingNumber("start", 0);
+function settingsReady() {
+  return qubitPhrase() != null && settingNumber("total") != null;
 }
 
 function modelLine() {
-  const qubits = Math.max(1, Math.round(settingNumber("qubits", 4)));
-  if (selection.model === "classical") {
-    return `model = ising(n_qubits=${qubits}, J=1.0, h=0.5, field="classical")`;
-  }
   if (selection.model === "tavis") return "model = tavis_cummings()";
-  return `model = ising(n_qubits=${qubits}, J=1.0, h=0.5, field="transverse")`;
+  const qubits = Math.round(settingNumber("qubits"));
+  const field = selection.model === "classical" ? "classical" : "transverse";
+  return `model = ising(n_qubits=${qubits}, J=1.0, h=0.5, field="${field}")`;
 }
 
 function qutipCall(name) {
   return `${name} = QutipSimulator(model.full_hamiltonians, model.c_ops_full, state,
                     model.e_ops, num_qubits=model.num_qubits,
-                    total_time=${pyFloat(duration())}, time_steps=101)`;
+                    total_time=${pyFloat(settingNumber("total"))}, time_steps=101)`;
 }
 
 function backendSetup(backendId) {
@@ -181,7 +184,7 @@ function circuitCall(simulatorId) {
     model.c_ops_local,
     state,
     num_qubits=model.num_qubits,
-    total_time=${pyFloat(duration())},
+    total_time=${pyFloat(settingNumber("total"))},
     time_steps=101,
     num_steps=20,
     reducers=list(model.reducers),
@@ -194,7 +197,7 @@ function referenceCall() {
 }
 
 function previewText() {
-  if (!isComplete()) return "";
+  if (!isComplete() || !settingsReady()) return "";
   const lines = [
     "import numpy as np",
     "from shadowsim.encoding import *",
@@ -309,6 +312,8 @@ function summaryComponent() {
   const simulator = blockById("simulator", selection.simulator);
   const backend = blockById("backend", selection.backend);
   const action = blockById("then", selection.then);
+  const qubits = qubitPhrase();
+  const total = formatSetting("total");
   return el(
     "p",
     { className: "summary" },
@@ -322,12 +327,10 @@ function summaryComponent() {
     el("strong", {}, backend.phrase),
     ", then ",
     el("strong", {}, action.phrase),
-    ", on ",
-    el("strong", {}, qubitPhrase()),
-    " from ",
-    el("strong", {}, `t = ${formatSetting("start", 0)}`),
-    " to ",
-    el("strong", {}, `t = ${formatSetting("end", 2)}`),
+    qubits ? ", on " : "",
+    qubits ? el("strong", {}, qubits) : "",
+    total ? " for a total time of " : "",
+    total ? el("strong", {}, total) : "",
     ".",
   );
 }
@@ -354,29 +357,177 @@ function settingsComponent() {
     { className: "settings" },
     el("h2", {}, "Settings"),
     field("qubits", "Qubits", "numeric"),
-    field("start", "Start time", "decimal"),
-    field("end", "End time", "decimal"),
+    field("total", "Total time", "decimal"),
   );
 }
 
 function refreshSummaryAndPreview() {
   const summary = document.querySelector(".summary");
   if (summary) summary.replaceWith(summaryComponent());
-  const preview = document.querySelector(".panel pre");
-  if (preview) preview.textContent = previewText();
+  if (!running) {
+    const status = document.querySelector(".status");
+    if (status) status.replaceWith(statusComponent());
+  }
+  const panel = document.querySelector('.panel[aria-label="Code preview"]');
+  const body = panel?.querySelector("pre, .placeholder");
+  if (body) body.replaceWith(codeBody());
+}
+
+function statusMessage() {
+  if (!isComplete()) return "Place a block in each slot.";
+  if (!settingsReady()) return "Enter qubits and total time.";
+  return "Ready to run.";
 }
 
 function statusComponent() {
-  const ready = isComplete();
+  const ready = isComplete() && settingsReady();
   return el(
     "p",
     { className: ready ? "status ready" : "status", role: "status" },
-    ready ? "Ready to run." : "Place a block in each slot.",
+    statusMessage(),
   );
 }
 
-function panelsComponent() {
+function codeBody() {
   const code = previewText();
+  if (code) return el("pre", {}, code);
+  const message = isComplete()
+    ? "Enter qubits and total time to preview the script."
+    : "Place a block in each slot to preview the script.";
+  return el("p", { className: "placeholder" }, message);
+}
+
+function setStatus(message, ready) {
+  const status = document.querySelector(".status");
+  if (!status) return;
+  status.replaceWith(el("p", { className: ready ? "status ready" : "status", role: "status" }, message));
+}
+
+function setResults(node) {
+  const panel = document.querySelector('.panel[aria-label="Results"]');
+  const body = panel?.querySelector(":scope > .placeholder, :scope > .chart");
+  if (body) body.replaceWith(node);
+}
+
+function formatAxis(value) {
+  if (!Number.isFinite(value)) return "";
+  if (Number.isInteger(value)) return String(value);
+  return String(Math.round(value * 1000) / 1000);
+}
+
+function chartComponent(payload) {
+  const times = Array.isArray(payload.times) ? payload.times : [];
+  const curves = Array.isArray(payload.observables) ? payload.observables : [];
+  if (!times.length || !curves.length) {
+    return el("p", { className: "placeholder" }, "The run returned no curves.");
+  }
+  const width = 640;
+  const height = 220;
+  const pad = 28;
+  const first = Number(times[0]);
+  const last = Number(times[times.length - 1]);
+  let yMin = Infinity;
+  let yMax = -Infinity;
+  for (const curve of curves) {
+    for (const value of curve) {
+      const y = Number(value);
+      if (!Number.isFinite(y)) continue;
+      yMin = Math.min(yMin, y);
+      yMax = Math.max(yMax, y);
+    }
+  }
+  if (!Number.isFinite(yMin) || !Number.isFinite(yMax)) {
+    return el("p", { className: "placeholder" }, "The run returned no curves.");
+  }
+  if (yMin === yMax) {
+    yMin -= 1;
+    yMax += 1;
+  }
+  const xSpan = last - first || 1;
+  const ySpan = yMax - yMin;
+  const sx = (time) => pad + ((Number(time) - first) / xSpan) * (width - pad * 2);
+  const sy = (value) => height - pad - ((Number(value) - yMin) / ySpan) * (height - pad * 2);
+  const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  svg.setAttribute("class", "plot");
+  svg.setAttribute("viewBox", `0 0 ${width} ${height}`);
+  svg.setAttribute("role", "img");
+  svg.setAttribute("aria-label", "Observable curves");
+  const axis = document.createElementNS("http://www.w3.org/2000/svg", "line");
+  axis.setAttribute("x1", String(pad));
+  axis.setAttribute("x2", String(width - pad));
+  axis.setAttribute("y1", String(height - pad));
+  axis.setAttribute("y2", String(height - pad));
+  svg.append(axis);
+  curves.forEach((curve, index) => {
+    const line = document.createElementNS("http://www.w3.org/2000/svg", "polyline");
+    line.setAttribute("fill", "none");
+    line.setAttribute("stroke", CURVE_COLORS[index % CURVE_COLORS.length]);
+    line.setAttribute("stroke-width", "2");
+    line.setAttribute(
+      "points",
+      curve.map((value, point) => `${sx(times[point])},${sy(value)}`).join(" "),
+    );
+    svg.append(line);
+  });
+  const startLabel = document.createElementNS("http://www.w3.org/2000/svg", "text");
+  startLabel.setAttribute("x", String(pad));
+  startLabel.setAttribute("y", String(height - 8));
+  startLabel.textContent = formatAxis(first);
+  const endLabel = document.createElementNS("http://www.w3.org/2000/svg", "text");
+  endLabel.setAttribute("x", String(width - pad));
+  endLabel.setAttribute("y", String(height - 8));
+  endLabel.setAttribute("text-anchor", "end");
+  endLabel.textContent = formatAxis(last);
+  svg.append(startLabel, endLabel);
+  return el(
+    "div",
+    { className: "chart" },
+    svg,
+    el(
+      "ul",
+      { className: "legend" },
+      ...curves.map((_, index) =>
+        el(
+          "li",
+          {},
+          el("i", { style: `background:${CURVE_COLORS[index % CURVE_COLORS.length]}` }),
+          `Observable ${index}`,
+        ),
+      ),
+    ),
+  );
+}
+
+async function startRun() {
+  if (running || !isComplete() || !settingsReady()) return;
+  running = true;
+  const button = document.querySelector(".run");
+  if (button) button.disabled = true;
+  setStatus("Running.");
+  setResults(el("p", { className: "placeholder" }, "Running."));
+  try {
+    const response = await fetch("/runs", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ...selection, qubits: settings.qubits, total: settings.total }),
+    });
+    const payload = await response.json();
+    if (!response.ok) {
+      setResults(el("p", { className: "placeholder" }, payload.error || "The run failed."));
+      return;
+    }
+    setResults(chartComponent(payload));
+  } catch {
+    setResults(el("p", { className: "placeholder" }, "The run failed."));
+  } finally {
+    running = false;
+    const run = document.querySelector(".run");
+    if (run) run.disabled = false;
+    setStatus(statusMessage(), isComplete() && settingsReady());
+  }
+}
+
+function panelsComponent() {
   return el(
     "div",
     { className: "panels" },
@@ -384,7 +535,7 @@ function panelsComponent() {
       "section",
       { className: "panel", "aria-label": "Code preview" },
       el("h2", {}, "Code preview"),
-      code ? el("pre", {}, code) : el("p", { className: "placeholder" }, "Place a block in each slot to preview the script."),
+      codeBody(),
     ),
     el(
       "section",
@@ -411,7 +562,7 @@ function layoutComponent() {
     chevron.style.gridRow = "1";
     layout.append(chevron);
   });
-  const run = el("button", { className: "run", type: "button" }, "Run simulation");
+  const run = el("button", { className: "run", type: "button", onclick: () => void startRun() }, "Run simulation");
   run.style.gridColumn = String(1 + LANES.length * 2);
   run.style.gridRow = "1";
   layout.append(run);
@@ -434,12 +585,14 @@ function draw(board) {
 }
 
 function place(laneId, blockId) {
+  if (running) return;
   selection[laneId] = blockId;
   dragging = null;
   draw(document.querySelector(".board"));
 }
 
 function clearLane(laneId) {
+  if (running) return;
   selection[laneId] = null;
   draw(document.querySelector(".board"));
 }

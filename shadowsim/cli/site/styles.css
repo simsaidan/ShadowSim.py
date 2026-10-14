@@ -216,6 +216,12 @@ body {
 
 .run:hover { background: #2a2444; }
 
+.run:disabled {
+  background: var(--navy);
+  cursor: default;
+  opacity: 0.72;
+}
+
 .run:focus-visible,
 .block:focus-visible,
 .remove:focus-visible {
@@ -329,6 +335,42 @@ body {
 }
 
 .placeholder { color: var(--muted); }
+
+.chart { margin-top: 14px; }
+
+.plot {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+.plot line { stroke: var(--line); }
+
+.plot text {
+  fill: var(--muted);
+  font-size: 12px;
+  font-family: inherit;
+}
+
+.legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px 16px;
+  margin: 10px 0 0;
+  padding: 0;
+  color: var(--muted);
+  font-size: 12.5px;
+  list-style: none;
+}
+
+.legend i {
+  display: inline-block;
+  width: 14px;
+  height: 3px;
+  margin-right: 6px;
+  border-radius: 999px;
+  vertical-align: middle;
+}
 
 .narrow-screen {
   display: none;
