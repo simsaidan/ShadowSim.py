@@ -1,4 +1,4 @@
-"""Tests for the local blank-page server."""
+"""Tests for the local builder page server."""
 
 import threading
 import urllib.error
@@ -10,7 +10,7 @@ import pytest
 from shadowsim.cli.serve import _Handler, main, serve
 
 
-def test_index_is_a_blank_page():
+def test_index_serves_the_builder_page():
     server = HTTPServer(("127.0.0.1", 0), _Handler)
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
@@ -20,10 +20,22 @@ def test_index_is_a_blank_page():
             body = response.read().decode("utf-8")
             assert response.status == 200
             assert response.headers["Content-Type"].startswith("text/html")
-            assert "<body></body>" in body
+            assert "Build a simulation" in body
+            assert 'src="/builder.js"' in body
+        with urllib.request.urlopen(f"http://127.0.0.1:{port}/styles.css") as response:
+            assert response.status == 200
+            assert response.headers["Content-Type"].startswith("text/css")
+            assert ".board" in response.read().decode("utf-8")
+        with urllib.request.urlopen(f"http://127.0.0.1:{port}/builder.js") as response:
+            assert response.status == 200
+            assert "javascript" in response.headers["Content-Type"]
+            assert "Transverse-field Ising" in response.read().decode("utf-8")
         with pytest.raises(urllib.error.HTTPError) as exc_info:
             urllib.request.urlopen(f"http://127.0.0.1:{port}/other")
         assert exc_info.value.code == 404
+        with pytest.raises(urllib.error.HTTPError) as missing:
+            urllib.request.urlopen(f"http://127.0.0.1:{port}/missing.js")
+        assert missing.value.code == 404
     finally:
         server.shutdown()
         server.server_close()
@@ -99,7 +111,7 @@ def test_serve_answers_then_stops(monkeypatch: pytest.MonkeyPatch):
     _host, port = server.server_address[:2]
     try:
         with urllib.request.urlopen(f"http://127.0.0.1:{port}/") as response:
-            assert b"<body></body>" in response.read()
+            assert b"Build a simulation" in response.read()
     finally:
         server.shutdown()
         thread.join(timeout=5)

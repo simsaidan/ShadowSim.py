@@ -1,35 +1,55 @@
-"""Serve a blank local ShadowSim page."""
+"""Serve the local ShadowSim builder page."""
 
 import argparse
 import sys
 import webbrowser
 from http.server import BaseHTTPRequestHandler, HTTPServer
+from pathlib import Path
 from urllib.parse import urlsplit
 
-_BLANK_PAGE = b"""<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="utf-8">
-<title>ShadowSim</title>
-</head>
-<body></body>
-</html>
-"""
+_SITE_DIR = Path(__file__).resolve().parent / "site"
+_CONTENT_TYPES = {
+    ".html": "text/html; charset=utf-8",
+    ".css": "text/css; charset=utf-8",
+    ".js": "text/javascript; charset=utf-8",
+}
+
+
+def _site_asset(url_path: str) -> tuple[Path, str] | None:
+    """Map a request path to one file in the site directory.
+
+    Args:
+        url_path: URL path from the request, without the query string.
+
+    Returns:
+        The file and its content type, or ``None`` when the path is not a site asset.
+    """
+    relative = "index.html" if url_path == "/" else url_path.lstrip("/")
+    if not relative or relative != Path(relative).name or relative.startswith("."):
+        return None
+    path = _SITE_DIR / relative
+    content_type = _CONTENT_TYPES.get(path.suffix)
+    if content_type is None or not path.is_file():
+        return None
+    return path, content_type
 
 
 class _Handler(BaseHTTPRequestHandler):
-    """Serve the blank index page."""
+    """Serve the builder page and its style and script files."""
 
     def do_GET(self) -> None:
-        """Return the blank page for ``/`` and 404 for every other path."""
-        if urlsplit(self.path).path != "/":
+        """Return a site asset, or 404 for every other path."""
+        asset = _site_asset(urlsplit(self.path).path)
+        if asset is None:
             self.send_error(404)
             return
+        path, content_type = asset
+        body = path.read_bytes()
         self.send_response(200)
-        self.send_header("Content-Type", "text/html; charset=utf-8")
-        self.send_header("Content-Length", str(len(_BLANK_PAGE)))
+        self.send_header("Content-Type", content_type)
+        self.send_header("Content-Length", str(len(body)))
         self.end_headers()
-        self.wfile.write(_BLANK_PAGE)
+        self.wfile.write(body)
 
     def log_message(self, format: str, *args: object) -> None:
         """Keep request logs off the terminal."""
@@ -40,7 +60,7 @@ def build_parser() -> argparse.ArgumentParser:
     """Build the ``shadowsim`` argument parser."""
     parser = argparse.ArgumentParser(prog="shadowsim", description="ShadowSim commands.")
     subparsers = parser.add_subparsers(dest="command", required=True)
-    serve_parser = subparsers.add_parser("serve", help="Open a blank local page.")
+    serve_parser = subparsers.add_parser("serve", help="Open the local builder page.")
     serve_parser.add_argument("--host", default="127.0.0.1", help="Address to bind (default: 127.0.0.1).")
     serve_parser.add_argument("--port", type=int, default=8000, help="Port to bind (default: 8000).")
     serve_parser.add_argument("--no-browser", action="store_true", help="Do not open a browser window.")
@@ -48,7 +68,7 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def serve(host: str, port: int, *, open_browser: bool) -> int:
-    """Bind a local server and serve the blank page until interrupted.
+    """Bind a local server and serve the builder page until interrupted.
 
     Args:
         host: Address to bind.
