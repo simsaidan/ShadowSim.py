@@ -11,7 +11,7 @@ pytest.importorskip("scipy")
 
 import scipy.linalg
 
-import shadowsim.simulators.circuit_backend as circuit_backend_module
+import shadowsim.backends.circuit as circuit_backend_module
 import shadowsim.simulators.trotterization_simulator as trotter_module
 from shadowsim.benchmarking import Benchmark
 from shadowsim.core import Hamiltonian, LocalHamiltonian, Operator, State

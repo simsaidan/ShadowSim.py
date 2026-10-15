@@ -127,7 +127,6 @@ module = [
     "shadowsim.simulators.result",
     "shadowsim.simulators.simulator",
     "shadowsim.simulators._time_points",
-    "shadowsim.simulators.circuit_backend",
     "shadowsim.simulators.splitjmatrix_simulator",
     "shadowsim.simulators.trotterization_simulator",
     "shadowsim.shadow",
@@ -141,6 +140,8 @@ module = [
     "shadowsim.models.ising",
     "shadowsim.models.jaynes_cummings",
     "shadowsim.models.tavis_cummings",
+    "shadowsim.backends",
+    "shadowsim.backends.circuit",
     "shadowsim.benchmarking",
     "shadowsim.benchmarking.benchmark",
 ]
