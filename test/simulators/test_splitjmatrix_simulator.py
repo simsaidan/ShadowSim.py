@@ -7,7 +7,7 @@ pytest.importorskip("qiskit")
 pytest.importorskip("qiskit_aer")
 pytest.importorskip("scipy")
 
-import shadowsim.simulators.circuit_backend as circuit_backend_module
+import shadowsim.backends.circuit as circuit_backend_module
 import shadowsim.simulators.splitjmatrix_simulator as splitjmatrix_module
 from shadowsim.core import LocalHamiltonian, Operator, State
 from shadowsim.simulators import SplitJMatrixSimulator

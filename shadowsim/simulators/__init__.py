@@ -10,28 +10,19 @@ from shadowsim.simulators.result import SimulationResult
 from shadowsim.simulators.simulator import Simulator
 
 if TYPE_CHECKING:
-    from shadowsim.simulators.circuit_backend import AerCircuitBackend as AerCircuitBackend
-    from shadowsim.simulators.circuit_backend import CircuitBackend as CircuitBackend
-    from shadowsim.simulators.circuit_backend import QiskitCircuitBackend as QiskitCircuitBackend
     from shadowsim.simulators.qutip_simulator import QutipSimulator as QutipSimulator
     from shadowsim.simulators.splitjmatrix_simulator import SplitJMatrixSimulator as SplitJMatrixSimulator
     from shadowsim.simulators.trotterization_simulator import TrotterizationSimulator as TrotterizationSimulator
 
-# Backends loaded on first access: name -> (module, extra).
-# extra is None when the backend has no optional dependency.
+# Simulators loaded on first access: name -> (module, extra).
+# extra is None when the simulator has no optional dependency.
 _EXPORTS: dict[str, tuple[str, str | None]] = {
-    "AerCircuitBackend": ("shadowsim.simulators.circuit_backend", "qiskit"),
-    "CircuitBackend": ("shadowsim.simulators.circuit_backend", "qiskit"),
-    "QiskitCircuitBackend": ("shadowsim.simulators.circuit_backend", "qiskit"),
     "QutipSimulator": ("shadowsim.simulators.qutip_simulator", "qutip"),
     "SplitJMatrixSimulator": ("shadowsim.simulators.splitjmatrix_simulator", "qiskit"),
     "TrotterizationSimulator": ("shadowsim.simulators.trotterization_simulator", "qiskit"),
 }
 
 __all__ = [
-    "AerCircuitBackend",
-    "CircuitBackend",
-    "QiskitCircuitBackend",
     "QutipSimulator",
     "SimulationJob",
     "SimulationResult",
@@ -45,7 +36,7 @@ __all__ = [
 
 
 def __getattr__(name: str) -> Any:
-    """Import an optional simulator backend the first time it is accessed."""
+    """Import an optional simulator the first time it is accessed."""
     try:
         module_name, extra = _EXPORTS[name]
     except KeyError:
@@ -60,5 +51,5 @@ def __getattr__(name: str) -> Any:
 
 
 def __dir__() -> list[str]:
-    """Return module attributes, including backends that have not been imported yet."""
+    """Return module attributes, including simulators that have not been imported yet."""
     return sorted(set(globals()) | set(_EXPORTS))

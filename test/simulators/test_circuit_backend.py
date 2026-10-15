@@ -11,10 +11,10 @@ pytest.importorskip("scipy")
 
 from qiskit import QuantumCircuit
 
-import shadowsim.simulators.circuit_backend as circuit_backend_module
+import shadowsim.backends.circuit as circuit_backend_module
+from shadowsim.backends.circuit import QiskitCircuitBackend
 from shadowsim.core import LocalHamiltonian, State
 from shadowsim.simulators import SplitJMatrixSimulator, TrotterizationSimulator
-from shadowsim.simulators.circuit_backend import QiskitCircuitBackend
 
 Z = np.array([[1.0, 0.0], [0.0, -1.0]], dtype=np.complex128)
 _SIMULATORS = [SplitJMatrixSimulator, TrotterizationSimulator]

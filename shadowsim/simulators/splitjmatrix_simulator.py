@@ -8,12 +8,12 @@ import scipy
 from qiskit import QuantumCircuit, QuantumRegister
 from qiskit.circuit.library import UnitaryGate
 
+from shadowsim.backends.circuit import AerCircuitBackend, CircuitBackend
 from shadowsim.core.local_hamiltonian import LocalHamiltonian
 from shadowsim.core.local_operator import LocalOperator
 from shadowsim.core.operator import _Matrix
 from shadowsim.core.state import State
 from shadowsim.simulators._time_points import map_time_points
-from shadowsim.simulators.circuit_backend import AerCircuitBackend, CircuitBackend
 from shadowsim.simulators.reducers import cavity_population, population_one
 from shadowsim.simulators.result import SimulationResult
 from shadowsim.simulators.simulator import Simulator
