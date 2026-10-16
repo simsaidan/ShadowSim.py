@@ -2,22 +2,24 @@
 
 import math
 from collections.abc import Mapping
-from typing import TYPE_CHECKING, Literal
+from typing import TYPE_CHECKING, cast
 
+from shadowsim import models
 from shadowsim._optional import import_optional
+from shadowsim.core.operator import Operator
 from shadowsim.core.state import State
 from shadowsim.encoding.amplitude import AmplitudeEncoding
 from shadowsim.encoding.angle import AngleEncoding
 from shadowsim.encoding.computational_basis import ComputationalBasisEncoding
 from shadowsim.encoding.gray import GrayEncoding
-from shadowsim.models.ising import IsingModel, ising
-from shadowsim.models.tavis_cummings import TavisCummingsModel, tavis_cummings
+from shadowsim.models.catalog import listed_models
+from shadowsim.models.ising import IsingModel
+from shadowsim.models.tavis_cummings import TavisCummingsModel
 
 if TYPE_CHECKING:
     from shadowsim.simulators.qutip_simulator import QutipSimulator
 
 _STATES = frozenset({"basis", "gray", "angle", "amplitude"})
-_ISING: dict[str, Literal["classical", "transverse"]] = {"tfim": "transverse", "classical": "classical"}
 
 
 def build_simulator(selection: Mapping[str, object], *, time_steps: int = 101) -> "QutipSimulator":
@@ -25,7 +27,11 @@ def build_simulator(selection: Mapping[str, object], *, time_steps: int = 101) -
 
     Args:
         selection: Page ids and settings. ``then`` is ignored. ``backend`` must
-            be ``aer``. Tavis–Cummings ignores ``qubits``.
+            be ``aer``. ``measure`` must be ``x`` or ``z``.
+            ``model`` is a factory name from :func:`shadowsim.models.catalog.listed_models`.
+            Factories that require ``n_qubits`` read ``qubits``. The others ignore it.
+            A basis state reads ``basis``, a string of 0 and 1 whose length is the
+            qubit count, at most 15 characters.
         time_steps: Points on the solver grid. Defaults to the page preview.
 
     Returns:
@@ -49,13 +55,14 @@ def build_simulator(selection: Mapping[str, object], *, time_steps: int = 101) -
         raise ValueError("unknown initial state")
     total_time = _positive_number(selection.get("total"))
     model = _model(_choice(selection, "model"), selection.get("qubits"))
-    state = _initial_state(state_id, model.num_qubits)
+    state = _initial_state(state_id, model.num_qubits, selection.get("basis"))
+    observables = _observables(model.num_qubits, _choice(selection, "measure"))
     qutip_simulator = import_optional("shadowsim.simulators.qutip_simulator", extra="qutip")
     return qutip_simulator.QutipSimulator(
         model.full_hamiltonians,
         model.c_ops_full,
         state,
-        model.e_ops,
+        observables,
         num_qubits=model.num_qubits,
         total_time=total_time,
         time_steps=time_steps,
@@ -114,22 +121,44 @@ def _integer(value: object) -> int:
 
 
 def _model(model_id: str, qubits: object) -> IsingModel | TavisCummingsModel:
-    """Build the selected model. Tavis–Cummings does not read ``qubits``."""
-    if model_id == "tavis":
-        return tavis_cummings()
-    field = _ISING.get(model_id)
-    if field is None:
+    """Build the selected factory. Factories without ``n_qubits`` ignore ``qubits``."""
+    record = next((item for item in listed_models() if item["id"] == model_id), None)
+    if record is None:
         raise ValueError("unknown model")
-    count = _integer(qubits)
-    if count < 2:
-        raise ValueError("Ising needs at least 2 qubits")
-    return ising(n_qubits=count, J=1.0, h=0.5, field=field)
+    factory = getattr(models, record["id"])
+    if record["qubits"]:
+        built = factory(n_qubits=_integer(qubits))
+    else:
+        built = factory()
+    return cast(IsingModel | TavisCummingsModel, built)
 
 
-def _initial_state(state_id: str, num_qubits: int) -> State:
+def _observables(num_qubits: int, measure_id: str) -> list[Operator]:
+    """Return one Pauli per qubit for ``measure_id``."""
+    if measure_id not in ("x", "z"):
+        raise ValueError("unknown measurement")
+    letter = measure_id.upper()
+    observables: list[Operator] = []
+    for site in range(num_qubits):
+        label = ["I"] * num_qubits
+        label[site] = letter
+        observables.append(Operator("".join(label)))
+    return observables
+
+
+def _basis_bits(value: object) -> list[int]:
+    """Return ``value`` as bits when it is a string of 0 and 1, at most 15 characters."""
+    if not isinstance(value, str) or not value or len(value) > 15 or any(bit not in "01" for bit in value):
+        raise ValueError("basis bits must be a string of 0 and 1, at most 15 characters")
+    return [int(bit) for bit in value]
+
+
+def _initial_state(state_id: str, num_qubits: int, basis: object = None) -> State:
     """Prepare ``state_id`` on ``num_qubits`` qubits."""
     if state_id == "basis":
-        bits = [1, *([0] * (num_qubits - 1))]
+        bits = _basis_bits(basis)
+        if len(bits) != num_qubits:
+            raise ValueError(f"basis bit string length must equal the qubit count ({num_qubits})")
         return ComputationalBasisEncoding(num_qubits).encode(bits)
     if state_id == "gray":
         bits = [1, *([0] * (num_qubits - 1))]
