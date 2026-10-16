@@ -20,7 +20,7 @@ def test_index_serves_the_builder_page():
             body = response.read().decode("utf-8")
             assert response.status == 200
             assert response.headers["Content-Type"].startswith("text/html")
-            assert "Build a simulation" in body
+            assert "ShadowSim.py Simulation Builder" in body
             assert 'src="/builder.js"' in body
         with urllib.request.urlopen(f"http://127.0.0.1:{port}/styles.css") as response:
             assert response.status == 200
@@ -29,7 +29,7 @@ def test_index_serves_the_builder_page():
         with urllib.request.urlopen(f"http://127.0.0.1:{port}/builder.js") as response:
             assert response.status == 200
             assert "javascript" in response.headers["Content-Type"]
-            assert "Transverse-field Ising" in response.read().decode("utf-8")
+            assert "Pick a model" in response.read().decode("utf-8")
         with pytest.raises(urllib.error.HTTPError) as exc_info:
             urllib.request.urlopen(f"http://127.0.0.1:{port}/other")
         assert exc_info.value.code == 404
@@ -111,7 +111,7 @@ def test_serve_answers_then_stops(monkeypatch: pytest.MonkeyPatch):
     _host, port = server.server_address[:2]
     try:
         with urllib.request.urlopen(f"http://127.0.0.1:{port}/") as response:
-            assert b"Build a simulation" in response.read()
+            assert b"ShadowSim.py Simulation Builder" in response.read()
     finally:
         server.shutdown()
         thread.join(timeout=5)

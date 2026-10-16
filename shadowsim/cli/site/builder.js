@@ -1,4 +1,4 @@
-/* Builder page components. Placement is local to the page; Run does not call the package. */
+/* Builder page. Model, simulator, and backend cards come from the package. */
 
 const LANES = [
   {
@@ -11,7 +11,7 @@ const LANES = [
   {
     id: "model",
     title: "Model",
-    hint: "The physics to simulate",
+    hint: "Combine any of the blocks below",
     pick: "Pick a model",
     tone: "teal",
   },
@@ -30,6 +30,13 @@ const LANES = [
     tone: "violet",
   },
   {
+    id: "measure",
+    title: "Measure",
+    hint: "What to record",
+    pick: "Pick a measurement",
+    tone: "green",
+  },
+  {
     id: "then",
     title: "Then",
     hint: "What to do with the results",
@@ -40,29 +47,17 @@ const LANES = [
 
 const BLOCKS = {
   state: [
-    { id: "basis", title: "Basis state", detail: "Start in |10>", phrase: "Basis state" },
+    { id: "basis", title: "Basis state", detail: "Bit string of 0 and 1", phrase: "Basis state" },
     { id: "gray", title: "Gray code", detail: "Gray-coded bit string", phrase: "Gray code" },
     { id: "angle", title: "Angle", detail: "Rotation angles per qubit", phrase: "Angle" },
     { id: "amplitude", title: "Amplitude", detail: "Custom amplitudes, auto-padded", phrase: "Amplitude" },
   ],
-  model: [
-    {
-      id: "tfim",
-      title: "Transverse-field Ising",
-      detail: "Closed chain, 4 qubits",
-      phrase: "Transverse-field Ising",
-    },
-    { id: "classical", title: "Classical Ising", detail: "Closed chain, Z field", phrase: "Classical Ising" },
-    { id: "tavis", title: "Tavis-Cummings", detail: "Open cavity with emitters", phrase: "Tavis-Cummings" },
-  ],
-  simulator: [
-    { id: "qutip", title: "QuTiP", detail: "Classical reference. Open or closed", phrase: "QuTiP" },
-    { id: "splitj", title: "Split JMatrix", detail: "Quantum-inspired. Open or closed", phrase: "Split JMatrix" },
-    { id: "trotter", title: "Trotterization", detail: "Quantum-inspired. Closed only", phrase: "Trotterization" },
-  ],
-  backend: [
-    { id: "aer", title: "Aer", detail: "Local shot simulator. Default.", phrase: "Aer" },
-    { id: "qiskit", title: "Qiskit", detail: "Caller-supplied BackendV2.", phrase: "a Qiskit backend" },
+  model: [],
+  simulator: [],
+  backend: [],
+  measure: [
+    { id: "z", title: "Pauli Z", detail: "Z on every qubit", phrase: "Pauli Z on every qubit" },
+    { id: "x", title: "Pauli X", detail: "X on every qubit", phrase: "Pauli X on every qubit" },
   ],
   then: [
     { id: "plot", title: "Plot results", detail: "Curves for each observable", phrase: "plot results" },
@@ -95,17 +90,26 @@ const STATE_LINES = {
 };
 
 const selection = {
-  state: "basis",
-  model: "tfim",
-  simulator: "qutip",
-  backend: "aer",
-  then: "save",
+  state: null,
+  model: null,
+  simulator: null,
+  backend: null,
+  measure: null,
+  then: null,
 };
 
+const modelTerms = [];
+let modelTermKey = 0;
+let modelFactories = [];
+let preexistingId = null;
+let preexistingOpen = false;
+
 const settings = { qubits: "", total: "" };
+let basisBits = "";
 
 let dragging = null;
 let running = false;
+const laneNotes = { model: "", simulator: "", backend: "" };
 
 const CURVE_COLORS = ["#4c4cb8", "#1f7a6c", "#a67c1a", "#b66880", "#6a4ca8"];
 
@@ -128,8 +132,15 @@ function blockById(laneId, blockId) {
   return BLOCKS[laneId].find((block) => block.id === blockId) ?? null;
 }
 
+function chosenFactory() {
+  return modelFactories.find((item) => item.id === preexistingId) ?? null;
+}
+
 function isComplete() {
-  return LANES.every((lane) => blockById(lane.id, selection[lane.id]));
+  return LANES.every((lane) => {
+    if (lane.id === "model" && selection.model === "preexisting") return Boolean(chosenFactory());
+    return blockById(lane.id, selection[lane.id]);
+  });
 }
 
 function settingNumber(key) {
@@ -154,46 +165,70 @@ function pyFloat(value) {
   return Number.isInteger(value) ? `${value}.0` : String(value);
 }
 
+function needsBasisBits() {
+  return selection.state === "basis" && basisBits === "";
+}
+
 function settingsReady() {
-  return qubitPhrase() != null && settingNumber("total") != null;
+  return qubitPhrase() != null && settingNumber("total") != null && !needsBasisBits();
+}
+
+function stateLine() {
+  if (selection.state !== "basis") return STATE_LINES[selection.state];
+  const bits = [...basisBits].join(", ");
+  return `state = ComputationalBasisEncoding(${basisBits.length}).encode([${bits}])`;
+}
+
+function fillSetup(block, name) {
+  const qubits = settingNumber("qubits");
+  const total = settingNumber("total");
+  return block.setup
+    .replaceAll("{name}", name)
+    .replaceAll("{qubits}", qubits == null ? "" : String(Math.round(qubits)))
+    .replaceAll("{total}", total == null ? "" : pyFloat(total));
 }
 
 function modelLine() {
-  if (selection.model === "tavis") return "model = tavis_cummings()";
-  const qubits = Math.round(settingNumber("qubits"));
-  const field = selection.model === "classical" ? "classical" : "transverse";
-  return `model = ising(n_qubits=${qubits}, J=1.0, h=0.5, field="${field}")`;
+  const factory = chosenFactory();
+  return selection.model === "preexisting" && factory ? fillSetup(factory, "") : "";
+}
+
+function termLines() {
+  const seen = {};
+  return modelTerms.flatMap((term) => {
+    const block = blockById("model", term.id);
+    if (!block) return [];
+    seen[term.id] = (seen[term.id] || 0) + 1;
+    const suffix = seen[term.id] === 1 ? "" : `_${seen[term.id]}`;
+    return [fillSetup(block, `${block.stem}${suffix}`)];
+  });
+}
+
+function observableSetup() {
+  const letter = selection.measure.toUpperCase();
+  return `e_ops = [Operator("I" * i + "${letter}" + "I" * (model.num_qubits - i - 1))
+         for i in range(model.num_qubits)]`;
 }
 
 function qutipCall(name) {
   return `${name} = QutipSimulator(model.full_hamiltonians, model.c_ops_full, state,
-                    model.e_ops, num_qubits=model.num_qubits,
+                    e_ops, num_qubits=model.num_qubits,
                     total_time=${pyFloat(settingNumber("total"))}, time_steps=101)`;
 }
 
 function backendSetup(backendId) {
-  if (backendId === "aer") return "circuit_backend = AerCircuitBackend()";
-  return "circuit_backend = QiskitCircuitBackend(backend)";
+  const block = blockById("backend", backendId);
+  return block ? block.setup : "";
 }
 
 function circuitCall(simulatorId) {
-  if (simulatorId === "qutip") return qutipCall("sim");
-  const name = simulatorId === "splitj" ? "SplitJMatrixSimulator" : "TrotterizationSimulator";
-  return `sim = ${name}(
-    model.local_hamiltonians,
-    model.c_ops_local,
-    state,
-    num_qubits=model.num_qubits,
-    total_time=${pyFloat(settingNumber("total"))},
-    time_steps=101,
-    num_steps=20,
-    reducers=list(model.reducers),
-    circuit_backend=circuit_backend,
-)`;
+  const block = blockById("simulator", simulatorId);
+  return block ? fillSetup(block, "sim") : "";
 }
 
 function referenceCall() {
-  return qutipCall("reference");
+  const reference = BLOCKS.simulator.find((block) => block.observables);
+  return reference ? fillSetup(reference, "reference") : qutipCall("reference");
 }
 
 function previewText() {
@@ -201,14 +236,18 @@ function previewText() {
   const lines = [
     "import numpy as np",
     "from shadowsim.encoding import *",
-    "from shadowsim.models import ising, tavis_cummings",
+    `from shadowsim.models import ${selection.model === "preexisting" ? preexistingId : selection.model}`,
     "from shadowsim.simulators import *",
   ];
+  const symbols = [...new Set(modelTerms.map((term) => blockById("model", term.id)?.symbol).filter(Boolean))];
+  if (symbols.length) lines.push(`from shadowsim.core import ${symbols.join(", ")}`);
   if (selection.then === "compare" || selection.then === "export") {
     lines.push("from shadowsim.benchmarking import Benchmark");
   }
-  const beforeSimulator = ["", STATE_LINES[selection.state], "", modelLine(), ""];
-  if (selection.simulator !== "qutip") beforeSimulator.push(backendSetup(selection.backend), "");
+  const simulator = blockById("simulator", selection.simulator);
+  const beforeSimulator = ["", stateLine(), "", modelLine(), ...termLines(), ""];
+  if (simulator && !simulator.observables) beforeSimulator.push(backendSetup(selection.backend), "");
+  if (simulator && simulator.observables) beforeSimulator.push(observableSetup(), "");
   lines.push(...beforeSimulator, circuitCall(selection.simulator), "");
   if (selection.then === "plot") lines.push("sim.simulate()", "sim.plot_results()");
   else if (selection.then === "save") lines.push('sim.simulate().save("results/run1")');
@@ -262,8 +301,168 @@ function blockCard(lane, block, { inSlot, onPlace, onRemove }) {
   return card;
 }
 
-function slotComponent(lane) {
+function preexistingChip() {
+  const factory = chosenFactory();
+  const select = el(
+    "select",
+    {
+      "aria-label": "Model",
+      onchange: (event) => {
+        preexistingId = event.target.value;
+        const detail = event.target.closest(".chip")?.querySelector(".preexisting-detail");
+        const chosen = chosenFactory();
+        if (detail && chosen) detail.textContent = chosen.title;
+        refreshSummaryAndPreview();
+      },
+    },
+    ...modelFactories.map((item) =>
+      el("option", { value: item.id, selected: item.id === factory?.id }, item.title),
+    ),
+  );
+  return el(
+    "div",
+    { className: "chip tone-teal preexisting" },
+    el(
+      "div",
+      { className: "preexisting-head" },
+      el(
+        "div",
+        {
+          onclick: () => {
+            if (preexistingOpen) return;
+            preexistingOpen = true;
+            draw(document.querySelector(".board"));
+          },
+        },
+        el("strong", {}, "Preexisting model"),
+        el("span", { className: "preexisting-detail" }, factory?.title ?? ""),
+      ),
+      el(
+        "div",
+        { className: "preexisting-actions" },
+        preexistingOpen
+          ? el(
+              "button",
+              {
+                className: "done",
+                type: "button",
+                onclick: () => {
+                  preexistingOpen = false;
+                  draw(document.querySelector(".board"));
+                },
+              },
+              "Done",
+            )
+          : null,
+        el(
+          "button",
+          {
+            className: "remove",
+            type: "button",
+            "aria-label": "Remove Preexisting model",
+            onclick: (event) => {
+              event.stopPropagation();
+              clearLane("model");
+            },
+          },
+          "×",
+        ),
+      ),
+    ),
+    preexistingOpen ? el("label", { className: "preexisting-field" }, "Model", select) : null,
+  );
+}
+
+function applyBasisBits(raw) {
+  basisBits = raw.replace(/[^01]/g, "").slice(0, 15);
+  settings.qubits = basisBits ? String(basisBits.length) : "";
+  const qubitsInput = document.querySelector('input[aria-label="Qubits"]');
+  if (qubitsInput && qubitsInput.value !== settings.qubits) qubitsInput.value = settings.qubits;
+  const detail = document.querySelector(".basis-detail");
+  if (detail) detail.textContent = basisBits ? `Start in |${basisBits}>` : "0s and 1s, up to 15";
+  const alert = document.querySelector(".basis-alert");
+  if (alert) alert.hidden = Boolean(basisBits);
+  refreshSummaryAndPreview();
+}
+
+function basisChip() {
+  const input = el("input", {
+    type: "text",
+    inputmode: "numeric",
+    maxlength: "15",
+    "aria-label": "Basis bits",
+    value: basisBits,
+    spellcheck: "false",
+    autocomplete: "off",
+    oninput: (event) => {
+      const next = event.target.value.replace(/[^01]/g, "").slice(0, 15);
+      if (event.target.value !== next) event.target.value = next;
+      applyBasisBits(next);
+    },
+  });
+  return el(
+    "div",
+    { className: "chip tone-gold basis" },
+    el(
+      "div",
+      { className: "basis-head" },
+      el(
+        "div",
+        {},
+        el("strong", {}, "Basis state"),
+        el("span", { className: "basis-detail" }, basisBits ? `Start in |${basisBits}>` : "0s and 1s, up to 15"),
+      ),
+      el(
+        "div",
+        { className: "basis-actions" },
+        el(
+          "span",
+          {
+            className: "basis-alert",
+            role: "img",
+            "aria-label": "Enter a bit string",
+            title: "Enter a bit string",
+            hidden: Boolean(basisBits),
+          },
+          "!",
+        ),
+        el(
+          "button",
+          {
+            className: "remove",
+            type: "button",
+            "aria-label": "Remove Basis state",
+            onclick: (event) => {
+              event.stopPropagation();
+              clearLane("state");
+            },
+          },
+          "×",
+        ),
+      ),
+    ),
+    el("label", { className: "basis-field" }, "Bits", input),
+  );
+}
+
+function slotChips(lane) {
+  const chips = [];
   const chosen = blockById(lane.id, selection[lane.id]);
+  if (chosen && !chosen.adds) {
+    if (chosen.id === "preexisting") chips.push(preexistingChip());
+    else if (chosen.id === "basis") chips.push(basisChip());
+    else chips.push(blockCard(lane, chosen, { inSlot: true, onRemove: () => clearLane(lane.id) }));
+  }
+  if (lane.id !== "model") return chips;
+  for (const term of modelTerms) {
+    const block = blockById("model", term.id);
+    if (!block) continue;
+    chips.push(blockCard(lane, block, { inSlot: true, onRemove: () => removeTerm(term.key) }));
+  }
+  return chips;
+}
+
+function slotComponent(lane) {
   const slot = el(
     "section",
     {
@@ -283,16 +482,18 @@ function slotComponent(lane) {
     },
     el("h2", {}, lane.title),
     el("p", { className: "hint" }, lane.hint),
-    chosen ? blockCard(lane, chosen, { inSlot: true, onRemove: () => clearLane(lane.id) }) : null,
+    ...slotChips(lane),
   );
   return slot;
 }
 
 function paletteComponent(lane, onPlace) {
+  const note = laneNotes[lane.id] ? el("p", { className: "hint" }, laneNotes[lane.id]) : null;
   return el(
     "section",
     { className: "lane", "data-palette": lane.id },
     el("h2", {}, lane.pick),
+    note,
     el(
       "div",
       { className: "cards" },
@@ -308,9 +509,10 @@ function summaryComponent() {
     return el("p", { className: "summary" }, "Place a block in each slot, then run.");
   }
   const state = blockById("state", selection.state);
-  const model = blockById("model", selection.model);
+  const model = selection.model === "preexisting" ? chosenFactory() : blockById("model", selection.model);
   const simulator = blockById("simulator", selection.simulator);
   const backend = blockById("backend", selection.backend);
+  const measure = blockById("measure", selection.measure);
   const action = blockById("then", selection.then);
   const qubits = qubitPhrase();
   const total = formatSetting("total");
@@ -321,10 +523,14 @@ function summaryComponent() {
     el("strong", {}, state.title),
     ", evolve the ",
     el("strong", {}, model.title),
-    " model with ",
+    " model",
+    ...termSummary(),
+    " with ",
     el("strong", {}, simulator.title),
     " on ",
     el("strong", {}, backend.phrase),
+    ", measure ",
+    el("strong", {}, measure.phrase),
     ", then ",
     el("strong", {}, action.phrase),
     qubits ? ", on " : "",
@@ -346,7 +552,9 @@ function settingsComponent() {
         inputmode: inputMode,
         value: settings[key],
         "aria-label": label,
+        readonly: key === "qubits" && selection.state === "basis",
         oninput: (event) => {
+          if (key === "qubits" && selection.state === "basis") return;
           settings[key] = event.target.value.trim();
           refreshSummaryAndPreview();
         },
@@ -355,9 +563,14 @@ function settingsComponent() {
   return el(
     "div",
     { className: "settings" },
-    el("h2", {}, "Settings"),
-    field("qubits", "Qubits", "numeric"),
-    field("total", "Total time", "decimal"),
+    el(
+      "div",
+      { className: "settings-fields" },
+      el("h2", {}, "Settings"),
+      field("qubits", "Qubits", "numeric"),
+      field("total", "Total time", "decimal"),
+    ),
+    el("button", { className: "run", type: "button", onclick: () => void startRun() }, "Run simulation"),
   );
 }
 
@@ -375,6 +588,7 @@ function refreshSummaryAndPreview() {
 
 function statusMessage() {
   if (!isComplete()) return "Place a block in each slot.";
+  if (needsBasisBits()) return "Enter a basis bit string and total time.";
   if (!settingsReady()) return "Enter qubits and total time.";
   return "Ready to run.";
 }
@@ -391,9 +605,12 @@ function statusComponent() {
 function codeBody() {
   const code = previewText();
   if (code) return el("pre", {}, code);
-  const message = isComplete()
-    ? "Enter qubits and total time to preview the script."
-    : "Place a block in each slot to preview the script.";
+  let message = "Place a block in each slot to preview the script.";
+  if (isComplete()) {
+    message = needsBasisBits()
+      ? "Enter a basis bit string and total time to preview the script."
+      : "Enter qubits and total time to preview the script.";
+  }
   return el("p", { className: "placeholder" }, message);
 }
 
@@ -509,7 +726,13 @@ async function startRun() {
     const response = await fetch("/runs", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ ...selection, qubits: settings.qubits, total: settings.total }),
+      body: JSON.stringify({
+        ...selection,
+        model: selection.model === "preexisting" ? preexistingId : selection.model,
+        qubits: settings.qubits,
+        total: settings.total,
+        basis: basisBits,
+      }),
     });
     const payload = await response.json();
     if (!response.ok) {
@@ -557,25 +780,17 @@ function layoutComponent() {
     palette.style.gridColumn = column;
     palette.style.gridRow = "2";
     layout.append(slot, palette);
+    if (index === LANES.length - 1) return;
     const chevron = el("div", { className: "chevron", "aria-hidden": "true" }, ">");
     chevron.style.gridColumn = String(2 + index * 2);
     chevron.style.gridRow = "1";
     layout.append(chevron);
   });
-  const run = el("button", { className: "run", type: "button", onclick: () => void startRun() }, "Run simulation");
-  run.style.gridColumn = String(1 + LANES.length * 2);
-  run.style.gridRow = "1";
-  layout.append(run);
   return layout;
 }
 
 function draw(board) {
   board.replaceChildren(
-    el(
-      "p",
-      { className: "board-hint" },
-      "Drag a block up into its slot, or tap it to place it. Blocks flow left to right.",
-    ),
     layoutComponent(),
     settingsComponent(),
     summaryComponent(),
@@ -584,10 +799,35 @@ function draw(board) {
   );
 }
 
+function termSummary() {
+  const nodes = [];
+  modelTerms.forEach((term, index) => {
+    const block = blockById("model", term.id);
+    if (!block) return;
+    nodes.push(index === 0 ? ", plus " : ", ");
+    nodes.push(el("strong", {}, block.title));
+  });
+  return nodes;
+}
+
 function place(laneId, blockId) {
   if (running) return;
-  selection[laneId] = blockId;
+  const block = blockById(laneId, blockId);
+  if (laneId === "model" && block?.adds) modelTerms.push({ id: blockId, key: ++modelTermKey });
+  else if (laneId === "model" && blockId === "preexisting") {
+    selection.model = "preexisting";
+    if (!preexistingId) preexistingId = modelFactories[0]?.id ?? null;
+    preexistingOpen = true;
+  } else selection[laneId] = blockId;
+  if (selection.state === "basis") settings.qubits = basisBits ? String(basisBits.length) : "";
   dragging = null;
+  draw(document.querySelector(".board"));
+}
+
+function removeTerm(key) {
+  if (running) return;
+  const index = modelTerms.findIndex((term) => term.key === key);
+  if (index >= 0) modelTerms.splice(index, 1);
   draw(document.querySelector(".board"));
 }
 
@@ -603,5 +843,49 @@ function mount(root) {
   draw(board);
 }
 
+async function loadLane(path, lane, key) {
+  try {
+    const response = await fetch(path);
+    let payload = {};
+    try {
+      payload = await response.json();
+    } catch {
+      payload = {};
+    }
+    const items = payload[key];
+    if (!response.ok || !Array.isArray(items)) {
+      laneNotes[lane] = payload.error || `Could not load ${key}.`;
+      BLOCKS[lane] = [];
+      selection[lane] = null;
+      return;
+    }
+    if (lane === "model") {
+      modelFactories = items.filter((item) => !item.adds);
+      BLOCKS.model = [
+        {
+          id: "preexisting",
+          title: "Preexisting model",
+          detail: "Choose a built-in model",
+          phrase: "a preexisting model",
+        },
+        ...items.filter((item) => item.adds),
+      ];
+      if (preexistingId && !modelFactories.some((item) => item.id === preexistingId)) preexistingId = null;
+    } else BLOCKS[lane] = items;
+    laneNotes[lane] = "";
+    if (selection[lane] != null && !blockById(lane, selection[lane])) selection[lane] = null;
+  } catch {
+    laneNotes[lane] = `Could not load ${key}.`;
+    BLOCKS[lane] = [];
+    selection[lane] = null;
+  }
+}
+
 const builder = document.querySelector("#builder");
-if (builder) mount(builder);
+if (builder) {
+  Promise.all([
+    loadLane("/models", "model", "models"),
+    loadLane("/simulators", "simulator", "simulators"),
+    loadLane("/backends", "backend", "backends"),
+  ]).then(() => mount(builder));
+}

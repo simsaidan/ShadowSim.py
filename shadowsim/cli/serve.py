@@ -9,7 +9,16 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import urlsplit
 
+from shadowsim.backends import listed_backends
 from shadowsim.cli.run import build_simulator
+from shadowsim.models.catalog import listed_model_terms, listed_models
+from shadowsim.simulators.catalog import listed_simulators
+
+_CATALOGS = {
+    "/models": "models",
+    "/simulators": "simulators",
+    "/backends": "backends",
+}
 
 _SITE_DIR = Path(__file__).resolve().parent / "site"
 _CONTENT_TYPES = {
@@ -39,16 +48,26 @@ def _site_asset(url_path: str) -> tuple[Path, str] | None:
 
 
 class _Handler(BaseHTTPRequestHandler):
-    """Serve the builder page and run a selection posted to ``/runs``."""
+    """Serve the builder page, list package choices, and run a posted selection."""
 
     def do_GET(self) -> None:
-        """Return a site asset, or 404 for every other path."""
-        asset = _site_asset(urlsplit(self.path).path)
+        """Return a site asset or a package catalog, or 404 for every other path."""
+        path = urlsplit(self.path).path
+        key = _CATALOGS.get(path)
+        if key is not None:
+            try:
+                payload = {key: _load_catalog(key)}
+            except Exception as exc:
+                _send_json(self, 500, {"error": str(exc)})
+                return
+            _send_json(self, 200, payload)
+            return
+        asset = _site_asset(path)
         if asset is None:
             self.send_error(404)
             return
-        path, content_type = asset
-        body = path.read_bytes()
+        asset_path, content_type = asset
+        body = asset_path.read_bytes()
         self.send_response(200)
         self.send_header("Content-Type", content_type)
         self.send_header("Content-Length", str(len(body)))
@@ -100,6 +119,18 @@ class _Handler(BaseHTTPRequestHandler):
     def log_message(self, format: str, *args: object) -> None:
         """Keep request logs off the terminal."""
         return
+
+
+def _load_catalog(key: str) -> Any:
+    """Return the current catalog for ``key``.
+
+    The lookup stays in this function so tests can replace the loader.
+    """
+    if key == "models":
+        return [*listed_models(), *listed_model_terms()]
+    if key == "simulators":
+        return listed_simulators()
+    return listed_backends()
 
 
 def _json_object(body: bytes) -> dict[str, Any]:

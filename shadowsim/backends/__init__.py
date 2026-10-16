@@ -3,6 +3,8 @@
 from typing import TYPE_CHECKING, Any
 
 from shadowsim._optional import import_optional
+from shadowsim.backends.catalog import ListedBackend as ListedBackend
+from shadowsim.backends.catalog import listed_backends as listed_backends
 
 if TYPE_CHECKING:
     from shadowsim.backends.circuit import AerCircuitBackend as AerCircuitBackend
@@ -18,7 +20,9 @@ _EXPORTS: dict[str, tuple[str, str]] = {
 __all__ = [
     "AerCircuitBackend",
     "CircuitBackend",
+    "ListedBackend",
     "QiskitCircuitBackend",
+    "listed_backends",
 ]
 
 
