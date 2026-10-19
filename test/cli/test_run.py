@@ -298,7 +298,7 @@ def test_save_uses_the_default_path(tmp_path: Path, monkeypatch: pytest.MonkeyPa
     pytest.importorskip("qutip")
     monkeypatch.chdir(tmp_path)
     payload = run_page(_selection(then="save", time_steps=2))
-    assert payload["saved"] == ["results/run1"]
+    assert payload["saved"] == [str(Path("results") / "run1")]
     assert (tmp_path / "results" / "run1" / "meta.json").is_file()
 
 
@@ -369,7 +369,7 @@ def test_none_paths_use_the_defaults(tmp_path: Path, monkeypatch: pytest.MonkeyP
     pytest.importorskip("qutip")
     monkeypatch.chdir(tmp_path)
     payload = run_page(_selection(thens=["save", "export"], save_path=None, export_path=None, time_steps=2))
-    assert payload["saved"] == ["results/run1"]
+    assert payload["saved"] == [str(Path("results") / "run1")]
     written = list((tmp_path / "results").glob("resource_metrics_*.json"))
     assert payload["exported"] == str(written[0].relative_to(tmp_path))
 
