@@ -5,7 +5,7 @@ from typing import TYPE_CHECKING, Any
 
 from shadowsim._optional import import_optional
 from shadowsim.simulators.job import SimulationJob, SimulationStatus
-from shadowsim.simulators.reducers import cavity_population, population_one
+from shadowsim.simulators.reducers import cavity_population, expectation_x, expectation_z, population_one
 from shadowsim.simulators.result import SimulationResult
 from shadowsim.simulators.simulator import Simulator
 
@@ -31,6 +31,8 @@ __all__ = [
     "SplitJMatrixSimulator",
     "TrotterizationSimulator",
     "cavity_population",
+    "expectation_x",
+    "expectation_z",
     "population_one",
 ]
 

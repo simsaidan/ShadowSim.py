@@ -10,7 +10,7 @@ from typing import Any
 from urllib.parse import urlsplit
 
 from shadowsim.backends import listed_backends
-from shadowsim.cli.run import build_simulator
+from shadowsim.cli.run import run_page
 from shadowsim.models.catalog import listed_model_terms, listed_models
 from shadowsim.simulators.catalog import listed_simulators
 
@@ -85,23 +85,14 @@ class _Handler(BaseHTTPRequestHandler):
             _send_json(self, 400, {"error": str(exc)})
             return
         try:
-            result = build_simulator(selection).simulate()
+            payload = run_page(selection)
         except ValueError as exc:
             _send_json(self, 400, {"error": str(exc)})
             return
         except Exception as exc:
             _send_json(self, 500, {"error": str(exc)})
             return
-        _send_json(
-            self,
-            200,
-            {
-                "times": result.times.tolist(),
-                "observables": [curve.tolist() for curve in result.observables],
-                "runtime": result.runtime,
-                "algorithm": result.algorithm,
-            },
-        )
+        _send_json(self, 200, payload)
 
     def _body(self) -> bytes:
         """Return the request body, or raise if its length is missing."""

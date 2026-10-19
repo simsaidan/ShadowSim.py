@@ -206,6 +206,40 @@ def test_trotterization_simulator_verbose_prints(monkeypatch, capsys):
     assert "Working on time step 1.0" in out
 
 
+def test_trotter_circuit_rotates_x_qubits_before_measurement() -> None:
+    class Recording:
+        name = "recording"
+
+        def __init__(self) -> None:
+            self.circuit = None
+
+        def run_counts(self, circuit: object, *, shots: int, seed: int | None) -> dict[str, int]:
+            del shots, seed
+            self.circuit = circuit
+            return {"0": 1}
+
+    backend = Recording()
+    _trotter_circuit_counts(
+        [LocalHamiltonian(Z, [0])],
+        State(np.array([1.0, 0.0, 0.0, 0.0], dtype=np.complex128), 2),
+        2,
+        0.0,
+        1,
+        shots=1,
+        seed=0,
+        circuit_backend=backend,  # type: ignore[arg-type]
+        x_qubits=[1],
+    )
+    circuit = backend.circuit
+    assert circuit is not None
+    hadamards = [
+        circuit.find_bit(instruction.qubits[0]).index
+        for instruction in circuit.data
+        if instruction.operation.name == "h"
+    ]
+    assert hadamards == [1]
+
+
 def test_trotterization_simulator_grouped_measurement_groups(monkeypatch):
     def fake_counts(*args, **kwargs):
         return {"0": 7, "1": 3}

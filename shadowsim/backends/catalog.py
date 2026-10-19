@@ -20,8 +20,10 @@ class ListedBackend(TypedDict):
 def listed_backends() -> list[ListedBackend]:
     """Return the concrete circuit backends in definition order.
 
-    ``CircuitBackend`` is a protocol, so it is omitted. Each record uses the class
-    name, the first line of its docstring, and its required constructor arguments.
+    ``CircuitBackend`` is a protocol, so it is omitted. ``QiskitCircuitBackend``
+    needs a caller-supplied backend, so the page does not offer it. Each record
+    uses the class name, the first line of its docstring, and its required
+    constructor arguments.
 
     Returns:
         Backends the builder page can offer.
@@ -40,6 +42,8 @@ def _describe_backends(module: ModuleType) -> list[ListedBackend]:
         if not isinstance(value, type) or value.__module__ != module.__name__:
             continue
         if getattr(value, "_is_protocol", False) or not callable(getattr(value, "run_counts", None)):
+            continue
+        if value.__name__ == "QiskitCircuitBackend":
             continue
         title = value.__name__.removesuffix("CircuitBackend")
         document = inspect.getdoc(value)

@@ -159,6 +159,14 @@ body {
 
 .block:active { cursor: grabbing; }
 
+.block:disabled,
+.block:disabled:hover,
+.block:disabled:active {
+  cursor: not-allowed;
+  opacity: 0.45;
+  border-color: var(--tone);
+}
+
 .chip {
   background: var(--tone-soft);
   margin-top: 12px;
@@ -166,14 +174,33 @@ body {
 }
 
 .preexisting,
-.basis {
+.basis,
+.gray,
+.angle,
+.amplitude,
+.hamiltonian,
+.local-hamiltonian,
+.lindblad,
+.simulator,
+.save,
+.export,
+.measure,
+.backend {
   flex-direction: column;
   align-items: stretch;
+}
+
+.chip.is-editing {
   background: #fff;
 }
 
 .preexisting-head,
-.basis-head {
+.basis-head,
+.simulator-head,
+.save-head,
+.export-head,
+.measure-head,
+.backend-head {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
@@ -181,12 +208,22 @@ body {
 }
 
 .preexisting-head > div:first-child,
-.basis-head > div:first-child {
+.basis-head > div:first-child,
+.simulator-head > div:first-child,
+.save-head > div:first-child,
+.export-head > div:first-child,
+.measure-head > div:first-child,
+.backend-head > div:first-child {
   min-width: 0;
 }
 
 .preexisting-actions,
-.basis-actions {
+.basis-actions,
+.simulator-actions,
+.save-actions,
+.export-actions,
+.measure-actions,
+.backend-actions {
   display: flex;
   flex-shrink: 0;
   align-items: center;
@@ -223,7 +260,10 @@ body {
 }
 
 .preexisting-field,
-.basis-field {
+.basis-field,
+.save-field,
+.export-field,
+.backend-field {
   display: flex;
   flex-direction: column;
   gap: 6px;
@@ -234,8 +274,49 @@ body {
   font-size: 12.5px;
 }
 
+.sim-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--line);
+}
+
+.measure-fields {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--line);
+}
+
+.measure-fields label {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--muted);
+  font-size: 12.5px;
+}
+
+.sim-fields label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  color: var(--muted);
+  font-size: 12.5px;
+}
+
 .preexisting-field select,
-.basis-field input {
+.preexisting-field input,
+.basis-field input,
+.basis-field textarea,
+.save-field input,
+.export-field input,
+.backend-field input,
+.sim-fields input,
+.sim-fields select {
   width: 100%;
   font: inherit;
   font-size: 14.5px;
@@ -245,6 +326,14 @@ body {
   border-radius: 10px;
   border: 1.5px solid var(--tone);
   background: #fff;
+}
+
+.basis-field textarea {
+  min-height: 76px;
+  resize: vertical;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 13px;
+  line-height: 1.4;
 }
 
 .chip strong,

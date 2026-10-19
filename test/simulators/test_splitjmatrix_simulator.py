@@ -11,6 +11,7 @@ import shadowsim.backends.circuit as circuit_backend_module
 import shadowsim.simulators.splitjmatrix_simulator as splitjmatrix_module
 from shadowsim.core import LocalHamiltonian, Operator, State
 from shadowsim.simulators import SplitJMatrixSimulator
+from shadowsim.simulators.reducers import expectation_x, expectation_z
 from shadowsim.simulators.splitjmatrix_simulator import (
     _split_jmatrix,
     _trace_qubits,
@@ -135,9 +136,47 @@ def test_trace_qubits_accepts_single_int_index():
     assert _trace_qubits({"01": 3, "11": 2}, 1) == {"1": 5}
 
 
+def test_split_j_rotates_the_body_qubit_for_x() -> None:
+    class Recording:
+        name = "recording"
+
+        def __init__(self) -> None:
+            self.circuit = None
+
+        def run_counts(self, circuit: object, *, shots: int, seed: int | None) -> dict[str, int]:
+            del shots, seed
+            self.circuit = circuit
+            return {"00": 1}
+
+    backend = Recording()
+    _split_jmatrix(
+        [],
+        [],
+        State(np.array([1.0, 0.0]), 1),
+        num_qubits=1,
+        t=0.0,
+        num_steps=1,
+        shots=1,
+        seed=0,
+        circuit_backend=backend,  # type: ignore[arg-type]
+        x_qubits=[0],
+    )
+    circuit = backend.circuit
+    assert circuit is not None
+    hadamards = [
+        circuit.find_bit(instruction.qubits[0]).index
+        for instruction in circuit.data
+        if instruction.operation.name == "h"
+    ]
+    assert hadamards == [1]
+
+
 def test_population_one_and_cavity_population_empty_counts():
     assert population_one({}) == 0.0
     assert cavity_population({}) == 0.0
+    assert expectation_z({}) == 0.0
+    assert expectation_z({"0": 3, "1": 1}) == 0.5
+    assert expectation_x({"0": 3, "1": 1}) == 0.5
 
 
 def test_split_jmatrix_rejects_nonpositive_shots():
