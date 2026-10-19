@@ -63,6 +63,25 @@ def _trace_qubits(
     return groups
 
 
+def _checked_x_qubits(x_qubits: list[int] | None, num_qubits: int) -> list[int]:
+    """Return the qubits to rotate into the X basis, without duplicates."""
+    if not x_qubits:
+        return []
+    chosen: list[int] = []
+    for qubit in x_qubits:
+        if isinstance(qubit, bool) or not isinstance(qubit, int) or qubit < 0 or qubit >= num_qubits:
+            raise ValueError(f"x_qubits must be indexes from 0 to {num_qubits - 1}")
+        if qubit not in chosen:
+            chosen.append(qubit)
+    return chosen
+
+
+def _hadamards(circuit: QuantumCircuit, register: QuantumRegister, x_qubits: list[int] | None, num_qubits: int) -> None:
+    """Rotate ``x_qubits`` into the X basis before measurement."""
+    for qubit in _checked_x_qubits(x_qubits, num_qubits):
+        circuit.h(register[qubit])
+
+
 def _make_H_gate(H: _Matrix, t: float, N: int, tdepth: int = 1) -> UnitaryGate:
     """Create the unitary gates for Split JMatrix method.
 
@@ -108,6 +127,7 @@ def _split_jmatrix(
     shots: int = 10000,
     seed: int | None = None,
     circuit_backend: CircuitBackend | None = None,
+    x_qubits: list[int] | None = None,
 ) -> dict[str, Any]:
     if shots <= 0:
         raise ValueError("shots must be a positive integer")
@@ -136,7 +156,7 @@ def _split_jmatrix(
             circ.append(gate, reversed([body[j] for j in H_i.sites]))
 
     circ.barrier()
-
+    _hadamards(circ, body, x_qubits, num_qubits)
     circ.measure_all()
     counts_backend = circuit_backend if circuit_backend is not None else AerCircuitBackend()
     return counts_backend.run_counts(circ, shots=shots, seed=seed)
@@ -175,6 +195,7 @@ class SplitJMatrixSimulator(Simulator):
         progress: ProgressCallback | None = None,
         workers: int = 1,
         circuit_backend: CircuitBackend | None = None,
+        x_qubits: list[int] | None = None,
     ) -> None:
         """Initialize a Split JMatrix simulator for the given model."""
         super().__init__(
@@ -206,6 +227,7 @@ class SplitJMatrixSimulator(Simulator):
         self.shots = shots
         self.seed = seed
         self.circuit_backend = circuit_backend if circuit_backend is not None else AerCircuitBackend()
+        self.x_qubits = _checked_x_qubits(x_qubits, num_qubits)
         self.progress = progress
         self.workers = workers
         if measurement_groups is None:
@@ -261,6 +283,7 @@ class SplitJMatrixSimulator(Simulator):
                 shots=self.shots,
                 seed=self.seed,
                 circuit_backend=self.circuit_backend,
+                x_qubits=self.x_qubits,
             )
             for j, sample in enumerate(self._reduce_counts(counts)):
                 results[j].append(sample)
@@ -290,6 +313,7 @@ class SplitJMatrixSimulator(Simulator):
                     # Same seed the serial loop passes for this circuit.
                     "seed": self.seed,
                     "circuit_backend": self.circuit_backend,
+                    "x_qubits": self.x_qubits,
                 },
             )
             for t in self.tlist
