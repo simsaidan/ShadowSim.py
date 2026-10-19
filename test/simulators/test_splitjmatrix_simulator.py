@@ -171,6 +171,47 @@ def test_split_j_rotates_the_body_qubit_for_x() -> None:
     assert hadamards == [1]
 
 
+def test_split_j_rejects_a_bad_x_qubit() -> None:
+    state = State(np.array([1.0, 0.0]), 1)
+    with pytest.raises(ValueError, match="x_qubits must be indexes from 0 to 0"):
+        _split_jmatrix([], [], state, num_qubits=1, t=0.0, num_steps=1, shots=1, seed=0, x_qubits=[True])
+
+
+def test_split_j_rotates_a_repeated_x_qubit_once() -> None:
+    class Recording:
+        name = "recording"
+
+        def __init__(self) -> None:
+            self.circuit = None
+
+        def run_counts(self, circuit: object, *, shots: int, seed: int | None) -> dict[str, int]:
+            del shots, seed
+            self.circuit = circuit
+            return {"00": 1}
+
+    backend = Recording()
+    _split_jmatrix(
+        [],
+        [],
+        State(np.array([1.0, 0.0]), 1),
+        num_qubits=1,
+        t=0.0,
+        num_steps=1,
+        shots=1,
+        seed=0,
+        circuit_backend=backend,  # type: ignore[arg-type]
+        x_qubits=[0, 0],
+    )
+    circuit = backend.circuit
+    assert circuit is not None
+    hadamards = [
+        circuit.find_bit(instruction.qubits[0]).index
+        for instruction in circuit.data
+        if instruction.operation.name == "h"
+    ]
+    assert hadamards == [1]
+
+
 def test_population_one_and_cavity_population_empty_counts():
     assert population_one({}) == 0.0
     assert cavity_population({}) == 0.0

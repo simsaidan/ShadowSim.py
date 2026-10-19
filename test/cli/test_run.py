@@ -365,6 +365,16 @@ def test_export_uses_the_results_directory(tmp_path: Path, monkeypatch: pytest.M
 
 
 @pytest.mark.qutip
+def test_none_paths_use_the_defaults(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    pytest.importorskip("qutip")
+    monkeypatch.chdir(tmp_path)
+    payload = run_page(_selection(thens=["save", "export"], save_path=None, export_path=None, time_steps=2))
+    assert payload["saved"] == ["results/run1"]
+    written = list((tmp_path / "results").glob("resource_metrics_*.json"))
+    assert payload["exported"] == str(written[0].relative_to(tmp_path))
+
+
+@pytest.mark.qutip
 def test_export_writes_benchmark_metrics(tmp_path: Path) -> None:
     pytest.importorskip("qutip")
     destination = tmp_path / "bench-metrics"
@@ -384,6 +394,66 @@ def test_export_writes_benchmark_metrics(tmp_path: Path) -> None:
     body = json.loads(written[0].read_text())
     assert body["errors"]
     assert len(body["resources"]) == 2
+
+
+@pytest.mark.qutip
+def test_export_writes_benchmark_metrics_to_a_json_file(tmp_path: Path) -> None:
+    pytest.importorskip("qutip")
+    destination = tmp_path / "bench.json"
+    payload = run_page(
+        _selection(
+            then="export",
+            export_path=str(destination),
+            simulators=[
+                {"simulator": "qutip", "time_steps": 2},
+                {"simulator": "qutip", "time_steps": 2},
+            ],
+        )
+    )
+    assert payload["exported"] == str(destination)
+    assert json.loads(destination.read_text())["errors"]
+
+
+@pytest.mark.qutip
+def test_benchmark_requires_a_recorded_result(monkeypatch: pytest.MonkeyPatch) -> None:
+    pytest.importorskip("qutip")
+    monkeypatch.setattr("shadowsim.cli.run.Benchmark.run", lambda self: None)
+    with pytest.raises(ValueError, match="did not record a result"):
+        run_page(
+            _selection(
+                simulators=[
+                    {"simulator": "qutip", "time_steps": 2},
+                    {"simulator": "qutip", "time_steps": 2},
+                ]
+            )
+        )
+
+
+@pytest.mark.qutip
+def test_duplicate_measure_sites_are_kept_once() -> None:
+    pytest.importorskip("qutip")
+    simulator = build_simulator(_selection(sites=[0, 0]), time_steps=2)
+    assert len(simulator.observables) == 1
+
+
+@pytest.mark.qiskit
+def test_export_counts_shots_for_a_circuit_simulator(tmp_path: Path) -> None:
+    pytest.importorskip("qiskit_aer")
+    destination = tmp_path / "metrics.json"
+    run_page(
+        _selection(
+            simulator="trotterization",
+            then="export",
+            export_path=str(destination),
+            time_steps=2,
+            num_steps=1,
+            shots=4,
+        )
+    )
+    record = json.loads(destination.read_text())["resources"][0]
+    assert record["shots_per_job"] == 4
+    assert record["num_jobs"] == 2
+    assert record["total_shots"] == 8
 
 
 def test_thens_overrides_a_single_then() -> None:
@@ -1027,6 +1097,76 @@ def test_added_terms_fail_before_optional_imports(forbid_qutip: None) -> None:
                 terms=[{"id": "local_hamiltonian", "matrix": _Z_MATRIX, "sites": [0, 1]}],
             )
         )
+
+
+def test_ignored_actions_and_bad_numbers_fail_before_import(forbid_qutip: None) -> None:
+    with pytest.raises(ValueError, match="unknown simulator"):
+        run_page(_selection(simulator="nope", thens=1))
+    with pytest.raises(ValueError, match="unknown measurement"):
+        build_simulator(_selection(simulator="trotterization", measure="y"))
+    with pytest.raises(ValueError, match="time steps must be an integer"):
+        build_simulator(_selection(time_steps=True))
+    with pytest.raises(ValueError, match="time steps must be an integer"):
+        build_simulator(_selection(simulator="trotterization", time_steps=2.5))
+    with pytest.raises(ValueError, match="time steps must be an integer"):
+        build_simulator(_selection(simulator="trotterization", time_steps=float("nan")))
+    with pytest.raises(ValueError, match="time steps must be an integer"):
+        build_simulator(_selection(simulator="trotterization", time_steps="  "))
+    with pytest.raises(ValueError, match="time steps must be an integer"):
+        build_simulator(_selection(simulator="trotterization", time_steps="2.5"))
+    with pytest.raises(ValueError, match="time steps must be an integer"):
+        build_simulator(_selection(simulator="trotterization", time_steps="nan"))
+    with pytest.raises(ValueError, match="time steps must be an integer"):
+        build_simulator(_selection(simulator="trotterization", time_steps=None))
+    with pytest.raises(ValueError, match="shots must be a positive integer"):
+        build_simulator(_selection(simulator="trotterization", time_steps=2.0, shots=0))
+
+
+def test_added_operator_details_fail_before_import(forbid_qutip: None) -> None:
+    bare = [[1, 2], [0, 1]]
+    with pytest.raises(ValueError, match="from 1 to 8"):
+        build_simulator(_added(qubits="0"))
+    with pytest.raises(ValueError, match="from 1 to 8"):
+        build_simulator(_added(qubits="9"))
+    with pytest.raises(ValueError, match="operator objects"):
+        build_simulator(_added(terms=["nope"]))
+    with pytest.raises(ValueError, match="must be 4×4"):
+        build_simulator(_added(qubits="2", basis="00", terms=[{"id": "hamiltonian", "matrix": _Z_MATRIX}]))
+    with pytest.raises(ValueError, match="local Hamiltonian matrix must be Hermitian"):
+        build_simulator(_added(terms=[{"id": "local_hamiltonian", "matrix": _JUMP, "sites": [0]}]))
+    with pytest.raises(ValueError, match="unknown operator"):
+        build_simulator(_added(terms=[{"id": "nope", "matrix": _Z_MATRIX}]))
+    with pytest.raises(ValueError, match="square"):
+        build_simulator(_added(terms=[{"id": "hamiltonian", "matrix": [[[1, 0], [0, 0]], [[0, 0]]]}]))
+    with pytest.raises(ValueError, match="power of two"):
+        build_simulator(_added(terms=[{"id": "hamiltonian", "matrix": [[[1, 0]]]}]))
+    with pytest.raises(ValueError, match="Hermitian"):
+        build_simulator(_added(terms=[{"id": "hamiltonian", "matrix": bare}]))
+    with pytest.raises(ValueError, match="finite numbers"):
+        build_simulator(_added(terms=[{"id": "hamiltonian", "matrix": [[True, 0], [0, 1]]}]))
+    with pytest.raises(ValueError, match="finite numbers"):
+        text_matrix = [[["nope", 0], [0, 0]], [[0, 0], [1, 0]]]
+        build_simulator(_added(terms=[{"id": "hamiltonian", "matrix": text_matrix}]))
+    with pytest.raises(ValueError, match="finite numbers"):
+        nan_matrix = [[[float("nan"), 0], [0, 0]], [[0, 0], [1, 0]]]
+        build_simulator(_added(terms=[{"id": "hamiltonian", "matrix": nan_matrix}]))
+    with pytest.raises(ValueError, match="non-empty list"):
+        build_simulator(_added(terms=[{"id": "local_hamiltonian", "matrix": _Z_MATRIX, "sites": []}]))
+    with pytest.raises(ValueError, match="indexes from 0 to 0"):
+        build_simulator(_added(terms=[{"id": "local_hamiltonian", "matrix": _Z_MATRIX, "sites": [1]}]))
+    with pytest.raises(ValueError, match="indexes from 0 to 0"):
+        build_simulator(_added(terms=[{"id": "local_hamiltonian", "matrix": _Z_MATRIX, "sites": [True]}]))
+    with pytest.raises(ValueError, match="unique"):
+        build_simulator(_added(terms=[{"id": "local_hamiltonian", "matrix": _Z_MATRIX, "sites": [0, 0]}]))
+
+
+def test_angle_list_rejects_non_finite_numbers(forbid_qutip: None) -> None:
+    with pytest.raises(ValueError, match="finite real numbers"):
+        build_simulator(_selection(state="angle", angles=[True, 0.0]))
+    with pytest.raises(ValueError, match="finite real numbers"):
+        build_simulator(_selection(state="angle", angles=["0", 0.0]))
+    with pytest.raises(ValueError, match="finite real numbers"):
+        build_simulator(_selection(state="angle", angles=[float("nan"), 0.0]))
 
 
 def test_trotterization_rejects_an_added_lindblad() -> None:

@@ -287,8 +287,7 @@ def _run_benchmark(
             }
         )
     reference = simulators[0].last_result
-    if reference is None:
-        raise ValueError("benchmark did not record a result")
+    assert reference is not None
     wall_times = [item["wall_time_s"] for item in benchmark.resource_metrics()]
     payload: dict[str, object] = {
         "times": reference.times.tolist(),
