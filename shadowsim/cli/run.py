@@ -79,9 +79,8 @@ def build_simulator(selection: Mapping[str, object], *, time_steps: int = 101) -
             every qubit.
             ``time_steps`` in ``selection`` overrides the ``time_steps`` argument.
             Shot-based simulators also read ``num_steps``, ``trotter_depth``,
-            ``shots``, and ``seed``. ``shots`` is shared by those simulators; the
-            page collects it on the backend. Trotterization reads ``order``, which
-            is 1 or 2.
+            ``order`` (1 or 2), ``shots``, and ``seed``. ``shots`` is shared by
+            those simulators; the page collects it on the backend.
             Missing shot-based values use the page budget.
         time_steps: Points on the QuTiP solver grid when ``selection`` omits
             ``time_steps``. Defaults to the page preview.
@@ -375,13 +374,13 @@ def _circuit_simulator(
         time_steps=steps,
         num_steps=num_steps,
         trotter_depth=depth,
+        order=order,
         shots=shots,
         seed=seed,
         measurement_groups=groups,
         reducers=reducers,
         circuit_backend=circuit.AerCircuitBackend(),
         **({"x_qubits": sites} if measure_id == "x" else {}),
-        **({"order": order} if simulator_id == "trotterization" else {}),
     )
 
 
