@@ -1,7 +1,7 @@
 """Split JMatrix quantum-inspired simulator."""
 
 from time import perf_counter
-from typing import Any, Callable, List, cast
+from typing import Any, Callable, List, Literal, cast
 
 import numpy as np
 import scipy
@@ -17,6 +17,7 @@ from shadowsim.simulators._time_points import map_time_points
 from shadowsim.simulators.reducers import cavity_population, population_one
 from shadowsim.simulators.result import SimulationResult
 from shadowsim.simulators.simulator import Simulator
+from shadowsim.simulators.trotterization_simulator import _check_order, _trotter_slice_unitaries
 from shadowsim.utils.flip_dict import flip_dict
 
 __all__ = [
@@ -82,31 +83,6 @@ def _hadamards(circuit: QuantumCircuit, register: QuantumRegister, x_qubits: lis
         circuit.h(register[qubit])
 
 
-def _make_H_gate(H: _Matrix, t: float, N: int, tdepth: int = 1) -> UnitaryGate:
-    """Create the unitary gates for Split JMatrix method.
-
-    Parameter argl: the indicator for which gate to make.
-    Precondition: argl is either 'j' or 'H'
-
-    Parameter t: the simulation time.
-    Precondition: t is a positive float.
-
-    Parameter N: the number of steps in the algorithm.
-    Precondition: N is a positive int.
-
-    Parameter type_gate: the type of gate to make. 0 signifies cavity, anything
-    else is an emitter.
-    Precondition: type_gate is a positive int.
-
-    Parameter emitter: the emitter index when applicable. Starts from 0.
-    Precondition: emitter is an int between 0 and emitters-1 inclusive.
-
-    Parameter tdepth: the Trotterization depth.
-    Precondition: tdepth is a positive int.
-    """
-    return UnitaryGate(scipy.linalg.expm(-1j * H * t / (N * tdepth)))
-
-
 def _make_J_gate(L: _Matrix, t: float, N: int) -> UnitaryGate:
     """Create the J gate for Split JMatrix method."""
     matrix = np.asarray(L)
@@ -123,17 +99,32 @@ def _split_jmatrix(
     t: float,
     num_steps: int,
     trotter_depth: int = 1,
+    order: Literal[1, 2] = 1,
     verbose: bool = False,
     shots: int = 10000,
     seed: int | None = None,
     circuit_backend: CircuitBackend | None = None,
     x_qubits: list[int] | None = None,
 ) -> dict[str, Any]:
+    """Run one Split JMatrix circuit and return counts.
+
+    Each step applies every Lindblad jump once, then ``trotter_depth`` Hamiltonian
+    slices. ``order=1`` applies each local term for time
+    ``t / (num_steps * trotter_depth)``. ``order=2`` is one Strang step per slice.
+    Either order covers coherent time ``t``.
+    """
     if shots <= 0:
         raise ValueError("shots must be a positive integer")
     if seed is not None and not isinstance(seed, int):
         raise TypeError("seed must be an int or None")
-    Hgates = [_make_H_gate(H_i.matrix, t, num_steps, trotter_depth) for H_i in H]
+    if trotter_depth <= 0:
+        raise ValueError("trotter_depth must be a positive integer")
+    _check_order(order)
+    if H:
+        delta = t / (num_steps * trotter_depth)
+        h_gates = [(UnitaryGate(matrix), sites) for matrix, sites in _trotter_slice_unitaries(H, delta, order)]
+    else:
+        h_gates = []
     Jgates = [_make_J_gate(L_i.matrix, t, num_steps) for L_i in Lindblads]
     ancilla = QuantumRegister(1)
     body = QuantumRegister(num_qubits)
@@ -144,7 +135,7 @@ def _split_jmatrix(
     circ.initialize(psi0, list(reversed(body)))
     circ.barrier()
     for i in range(num_steps):
-        # Notebook split-J step: (1) all J (one per Lindblad), (2) all H in list order
+        # Split-J step: every Lindblad jump once, then ``trotter_depth`` Hamiltonian slices.
         circ.reset(ancilla[0])
         if verbose and i % 10 == 0:
             print(f"Working on iteration {i} out of {num_steps}")
@@ -152,8 +143,9 @@ def _split_jmatrix(
             circ.append(gate, reversed([ancilla[0]] + [body[j] for j in L_i.sites]))
             circ.reset(ancilla[0])
         circ.barrier()
-        for gate, H_i in zip(Hgates, H):
-            circ.append(gate, reversed([body[j] for j in H_i.sites]))
+        for _ in range(trotter_depth):
+            for gate, sites in h_gates:
+                circ.append(gate, reversed([body[j] for j in sites]))
 
     circ.barrier()
     _hadamards(circ, body, x_qubits, num_qubits)
@@ -164,6 +156,13 @@ def _split_jmatrix(
 
 class SplitJMatrixSimulator(Simulator):
     """Simulate open-system dynamics with the Split JMatrix method.
+
+    Each of the ``num_steps`` applies every Lindblad jump once, then
+    ``trotter_depth`` Hamiltonian slices. ``order=1`` (the default) applies each
+    local term once per slice of width ``t / (num_steps * trotter_depth)``, in
+    list order. ``order=2`` uses one Strang step per slice: half-steps forward,
+    a full step on the last term, then half-steps in reverse. Either order
+    covers coherent time ``t``.
 
     Counts come from ``circuit_backend``. Omitting it uses :class:`AerCircuitBackend`.
     With ``workers`` greater than 1, that backend is pickled into each worker process.
@@ -187,6 +186,7 @@ class SplitJMatrixSimulator(Simulator):
         time_steps: int,
         num_steps: int,
         trotter_depth: int = 1,
+        order: Literal[1, 2] = 1,
         measurement_groups: list[int | list[int]] | None = None,
         reducers: list[Callable[[dict[str, int]], float]] | None = None,
         verbose: bool = False,
@@ -221,8 +221,12 @@ class SplitJMatrixSimulator(Simulator):
             raise TypeError("workers must be an int")
         if workers < 1:
             raise ValueError("workers must be a positive integer")
+        if trotter_depth <= 0:
+            raise ValueError("trotter_depth must be a positive integer")
+        _check_order(order)
         self.num_steps = num_steps
         self.trotter_depth = trotter_depth
+        self.order = order
         self.verbose = verbose
         self.shots = shots
         self.seed = seed
@@ -279,6 +283,7 @@ class SplitJMatrixSimulator(Simulator):
                 t,
                 self.num_steps,
                 self.trotter_depth,
+                order=self.order,
                 verbose=self.verbose,
                 shots=self.shots,
                 seed=self.seed,
@@ -308,6 +313,7 @@ class SplitJMatrixSimulator(Simulator):
                     self.trotter_depth,
                 ),
                 {
+                    "order": self.order,
                     "verbose": self.verbose,
                     "shots": self.shots,
                     # Same seed the serial loop passes for this circuit.
@@ -346,6 +352,7 @@ class SplitJMatrixSimulator(Simulator):
             shots=self.shots,
             num_steps=self.num_steps,
             trotter_depth=self.trotter_depth,
+            order=self.order,
             measurement_group_count=len(self.measurement_groups),
             lindblad_count=len(self.lindblads),
             circuit_backend=self.circuit_backend.name,
@@ -358,6 +365,7 @@ class SplitJMatrixSimulator(Simulator):
             f"num_qubits={self.num_qubits}, "
             f"num_steps={self.num_steps}, "
             f"trotter_depth={self.trotter_depth}, "
+            f"order={self.order}, "
             f"time_steps={self.time_steps}, "
             f"shots={self.shots}, "
             f"seed={self.seed}"
@@ -376,6 +384,7 @@ class SplitJMatrixSimulator(Simulator):
             f"time_steps={self.time_steps}, "
             f"num_steps={self.num_steps}, "
             f"trotter_depth={self.trotter_depth}, "
+            f"order={self.order}, "
             f"measurement_groups={self.measurement_groups!r}, "
             f"verbose={self.verbose!r}, "
             f"shots={self.shots}, "

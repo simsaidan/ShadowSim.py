@@ -306,8 +306,7 @@ function positiveIntText(value) {
 
 function freshParams(id) {
   if (id === "qutip") return { timeSteps: "101" };
-  const params = { timeSteps: "11", numSteps: "4", trotterDepth: "1", seed: "0" };
-  if (id === "trotterization") params.order = "1";
+  const params = { timeSteps: "11", numSteps: "4", trotterDepth: "1", seed: "0", order: "1" };
   return params;
 }
 
@@ -317,7 +316,7 @@ function entryParamsReady(entry) {
   if (entry.id === "qutip") return true;
   if (!positiveIntText(params.numSteps) || !positiveIntText(params.trotterDepth)) return false;
   if (!/^-?\d+$/.test(params.seed)) return false;
-  return entry.id !== "trotterization" || params.order === "1" || params.order === "2";
+  return params.order === "1" || params.order === "2";
 }
 
 function simParamsReady() {
@@ -548,7 +547,7 @@ function entryBody(entry) {
   body.num_steps = params.numSteps;
   body.trotter_depth = params.trotterDepth;
   body.seed = params.seed;
-  if (entry.id === "trotterization") body.order = params.order;
+  body.order = params.order;
   return body;
 }
 
@@ -560,7 +559,7 @@ function simulatorCall(entry, name) {
   const className = entry.id === "trotterization" ? "TrotterizationSimulator" : "SplitJMatrixSimulator";
   const offset = entry.id === "splitjmatrix" ? 1 : 0;
   const groups = selectedSites(qubitCount()).map((site) => `[${site + offset}]`);
-  const orderLine = entry.id === "trotterization" ? `,\n    order=${params.order}` : "";
+  const orderLine = `,\n    order=${params.order}`;
   const expectation = selection.measure === "x" ? "expectation_x" : "expectation_z";
   const sites = selectedSites(qubitCount());
   const xLine = selection.measure === "x" ? `,\n    x_qubits=[${sites.join(", ")}]` : "";
@@ -1021,10 +1020,6 @@ function simulatorChip(entry) {
       simField(params, "numSteps", "Product steps", false),
       simField(params, "trotterDepth", "Trotter depth", false),
       simField(params, "seed", "Seed", true),
-    );
-  }
-  if (entry.id === "trotterization") {
-    fields.push(
       el(
         "label",
         {},

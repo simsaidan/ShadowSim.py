@@ -563,11 +563,12 @@ def test_split_j_shifts_z_expectation_past_the_ancilla() -> None:
 
 
 @pytest.mark.qiskit
-def test_circuit_parameters_come_from_the_selection() -> None:
+@pytest.mark.parametrize("simulator_id", ["trotterization", "splitjmatrix"])
+def test_circuit_parameters_come_from_the_selection(simulator_id: str) -> None:
     pytest.importorskip("qiskit_aer")
     simulator = build_simulator(
         _selection(
-            simulator="trotterization",
+            simulator=simulator_id,
             time_steps=2,
             num_steps=2,
             trotter_depth=2,

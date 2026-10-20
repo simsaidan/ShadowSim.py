@@ -7,9 +7,11 @@ pytest.importorskip("qiskit")
 pytest.importorskip("qiskit_aer")
 pytest.importorskip("scipy")
 
+import scipy.linalg
+
 import shadowsim.backends.circuit as circuit_backend_module
 import shadowsim.simulators.splitjmatrix_simulator as splitjmatrix_module
-from shadowsim.core import LocalHamiltonian, Operator, State
+from shadowsim.core import LocalHamiltonian, LocalOperator, Operator, State
 from shadowsim.simulators import SplitJMatrixSimulator
 from shadowsim.simulators.reducers import expectation_x, expectation_z
 from shadowsim.simulators.splitjmatrix_simulator import (
@@ -18,6 +20,7 @@ from shadowsim.simulators.splitjmatrix_simulator import (
     cavity_population,
     population_one,
 )
+from shadowsim.simulators.trotterization_simulator import _trotter_slice_unitaries
 
 Z = np.array([[1, 0], [0, -1]], dtype=np.complex128)
 
@@ -113,6 +116,36 @@ def test_splitjmatrix_simulator_progress_callback(monkeypatch):
 def test_splitjmatrix_simulator_rejects_nonpositive_shots():
     with pytest.raises(ValueError, match="shots must be a positive integer"):
         _simulator(shots=0)
+
+
+@pytest.mark.parametrize("trotter_depth", [0, -1])
+def test_splitjmatrix_simulator_rejects_nonpositive_trotter_depth(trotter_depth):
+    with pytest.raises(ValueError, match="trotter_depth must be a positive integer"):
+        _simulator(trotter_depth=trotter_depth)
+
+
+def test_splitjmatrix_simulator_default_order_is_one():
+    assert _simulator().order == 1
+
+
+def test_splitjmatrix_simulator_rejects_unsupported_order():
+    with pytest.raises(ValueError, match="order must be 1 or 2"):
+        _simulator(order=3)  # type: ignore[arg-type]
+
+
+def test_splitjmatrix_simulator_records_order(monkeypatch):
+    seen = []
+
+    def fake_split_jmatrix(*args, **kwargs):
+        seen.append(kwargs["order"])
+        return {"0": 10}
+
+    monkeypatch.setattr(splitjmatrix_module, "_split_jmatrix", fake_split_jmatrix)
+
+    result = _simulator(order=2).simulate()
+
+    assert seen == [2, 2]
+    assert result.metadata["order"] == 2
 
 
 def test_splitjmatrix_simulator_rejects_non_int_seed():
@@ -231,6 +264,94 @@ def test_split_jmatrix_rejects_nonpositive_shots():
             num_steps=1,
             shots=0,
         )
+
+
+def test_split_jmatrix_rejects_unsupported_order():
+    with pytest.raises(ValueError, match="order must be 1 or 2"):
+        _split_jmatrix(
+            [LocalHamiltonian(Z, [0])],
+            [],
+            State(np.array([1.0, 0.0]), 1),
+            num_qubits=1,
+            t=0.0,
+            num_steps=1,
+            order=3,  # type: ignore[arg-type]
+            shots=1,
+        )
+
+
+@pytest.mark.parametrize("trotter_depth", [0, -1])
+def test_split_jmatrix_rejects_nonpositive_trotter_depth(trotter_depth):
+    with pytest.raises(ValueError, match="trotter_depth must be a positive integer"):
+        _split_jmatrix(
+            [LocalHamiltonian(Z, [0])],
+            [],
+            State(np.array([1.0, 0.0]), 1),
+            num_qubits=1,
+            t=1.0,
+            num_steps=1,
+            trotter_depth=trotter_depth,
+            shots=1,
+        )
+
+
+@pytest.mark.parametrize("order", [1, 2])
+def test_split_jmatrix_repeats_hamiltonian_slice_to_cover_time_t(order: int) -> None:
+    """Each step keeps one jump and repeats the Hamiltonian slice ``trotter_depth`` times."""
+
+    class Recording:
+        name = "recording"
+
+        def __init__(self) -> None:
+            self.circuit = None
+
+        def run_counts(self, circuit: object, *, shots: int, seed: int | None) -> dict[str, int]:
+            del shots, seed
+            self.circuit = circuit
+            return {"00": 1}
+
+    X = np.array([[0.0, 1.0], [1.0, 0.0]], dtype=np.complex128)
+    lowering = np.array([[0.0, 1.0], [0.0, 0.0]], dtype=np.complex128)
+    backend = Recording()
+    t = 1.0
+    num_steps = 2
+    trotter_depth = 2
+    hamiltonians = [LocalHamiltonian(Z, [0]), LocalHamiltonian(X, [0])]
+    _split_jmatrix(
+        hamiltonians,
+        [LocalOperator(lowering, [0])],
+        State(np.array([1.0, 0.0]), 1),
+        num_qubits=1,
+        t=t,
+        num_steps=num_steps,
+        trotter_depth=trotter_depth,
+        order=order,  # type: ignore[arg-type]
+        shots=1,
+        seed=0,
+        circuit_backend=backend,  # type: ignore[arg-type]
+    )
+    circuit = backend.circuit
+    assert circuit is not None
+    unitaries = [
+        np.asarray(instruction.operation.params[0], dtype=np.complex128)
+        for instruction in circuit.data
+        if instruction.operation.name == "unitary"
+    ]
+    delta = t / (num_steps * trotter_depth)
+    expected_h = [matrix for matrix, _sites in _trotter_slice_unitaries(hamiltonians, delta, order)]
+    expected_h = expected_h * (num_steps * trotter_depth)
+    size = lowering.shape[0]
+    jump = np.block([[np.zeros((size, size)), lowering.conjugate().T], [lowering, np.zeros((size, size))]])
+    expected_j = scipy.linalg.expm(-1j * jump * np.sqrt(t / num_steps))
+    got_h = [matrix for matrix in unitaries if matrix.shape == (2, 2)]
+    got_j = [matrix for matrix in unitaries if matrix.shape == (4, 4)]
+
+    assert len(got_j) == num_steps
+    for matrix in got_j:
+        assert np.allclose(matrix, expected_j)
+    assert len(got_h) == len(expected_h)
+    for matrix, want in zip(got_h, expected_h, strict=True):
+        assert np.allclose(matrix, want)
 
 
 def test_split_jmatrix_rejects_non_int_seed():
@@ -369,6 +490,7 @@ def test_splitjmatrix_simulator_str_and_repr():
     assert "SplitJMatrixSimulator(" in text
     assert "shots=42" in text
     assert "seed=7" in text
+    assert "order=1" in text
     assert "SplitJMatrixSimulator(" in rep
     assert "shots=42" in rep
     assert "seed=7" in rep
