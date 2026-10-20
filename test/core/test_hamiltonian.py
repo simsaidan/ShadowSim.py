@@ -22,6 +22,12 @@ def test_hamiltonian_str_repr_equality_and_conversions():
     assert h != "not a hamiltonian"
     assert not (h == "not a hamiltonian")
 
+    larger = Hamiltonian(np.eye(3, dtype=np.complex128))
+    assert h != larger
+    assert not (h == larger)
+    assert larger != h
+    assert not (larger == h)
+
     h_set = h.to_hamiltonian_set()
     assert isinstance(h_set, HamiltonianSet)
     assert len(h_set) == 1

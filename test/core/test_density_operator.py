@@ -24,6 +24,12 @@ def test_density_operator_equality():
     assert a != "not a density operator"
     assert not (a == "not a density operator")
 
+    qutrit = DensityOperator(np.diag([1.0, 0.0, 0.0]).astype(np.complex128))
+    assert a != qutrit
+    assert not (a == qutrit)
+    assert qutrit != a
+    assert not (qutrit == a)
+
 
 def test_density_operator_from_state():
     psi = State(np.array([0.0, 1.0], dtype=np.complex128), 1)

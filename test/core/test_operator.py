@@ -2,7 +2,7 @@ import numpy as np
 import pytest
 
 from shadowsim.core import LocalOperator, Operator, OperatorSet, PauliString, PauliSum
-from shadowsim.core.operator import _coerce_pauli_sum
+from shadowsim.core.operator import _coerce_pauli_sum, _matrices_close
 
 
 def test_operator_init_sets_basic_fields_and_flags():
@@ -46,6 +46,23 @@ def test_operator_equality_and_inequality():
     assert a != c
     assert a != "not an operator"
     assert not (a == "not an operator")
+
+
+def test_operator_equality_different_shapes():
+    a = Operator(np.eye(2, dtype=complex))
+    b = Operator(np.eye(3, dtype=complex))
+    assert a != b
+    assert not (a == b)
+    assert b != a
+    assert not (b == a)
+
+
+def test_matrices_close_rejects_broadcastable_shapes():
+    left = np.ones((2, 2))
+    right = np.ones((1, 2))
+    assert np.allclose(left, right)
+    assert _matrices_close(left, right) is False
+    assert _matrices_close(left, left.copy()) is True
 
 
 def test_operator_str_and_repr():

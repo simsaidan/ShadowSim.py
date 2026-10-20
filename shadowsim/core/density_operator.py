@@ -5,7 +5,7 @@ from typing import Self
 import numpy as np
 import numpy.typing as npt
 
-from shadowsim.core.operator import Operator
+from shadowsim.core.operator import Operator, _matrices_close
 from shadowsim.core.state import State
 from shadowsim.utils.hermitian import hermitian
 from shadowsim.utils.positive_semidefinite import positive_semidefinite
@@ -72,15 +72,21 @@ class DensityOperator(Operator):
         return f"DensityOperator(matrix={self.matrix!r})"
 
     def __eq__(self, other: object) -> bool:
-        """Return whether the density operator equals another."""
+        """Return whether the density operator equals another.
+
+        Density operators whose matrices have different shapes compare unequal.
+        """
         if not isinstance(other, DensityOperator):
             return NotImplemented
-        return bool(np.allclose(self.matrix, other.matrix))
+        return _matrices_close(self.matrix, other.matrix)
 
     __hash__ = None  # matrix equality uses allclose; instances are not hashable
 
     def __ne__(self, other: object) -> bool:
-        """Return whether the density operator differs from another."""
+        """Return whether the density operator differs from another.
+
+        Density operators whose matrices have different shapes compare unequal.
+        """
         if not isinstance(other, DensityOperator):
             return NotImplemented
-        return not bool(np.allclose(self.matrix, other.matrix))
+        return not _matrices_close(self.matrix, other.matrix)
