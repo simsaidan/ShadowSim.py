@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING
 
 import numpy as np
 
-from shadowsim.core.operator import Operator, _coerce_pauli_sum, _OperatorInput
+from shadowsim.core.operator import Operator, _coerce_pauli_sum, _matrices_close, _OperatorInput
 from shadowsim.core.pauli_string import PauliString
 from shadowsim.core.pauli_sum import PauliSum
 from shadowsim.utils.hermitian import hermitian
@@ -61,18 +61,24 @@ class Hamiltonian(Operator):
         return f"Hamiltonian(matrix={self.matrix})"
 
     def __eq__(self, other: object) -> bool:
-        """Return whether the Hamiltonian is equal to another Hamiltonian."""
+        """Return whether the Hamiltonian is equal to another Hamiltonian.
+
+        Hamiltonians whose matrices have different shapes compare unequal.
+        """
         if not isinstance(other, Hamiltonian):
             return NotImplemented
-        return bool(np.allclose(self.matrix, other.matrix))
+        return _matrices_close(self.matrix, other.matrix)
 
     __hash__ = None  # matrix equality uses allclose; instances are not hashable
 
     def __ne__(self, other: object) -> bool:
-        """Return whether the Hamiltonian is not equal to another Hamiltonian."""
+        """Return whether the Hamiltonian is not equal to another Hamiltonian.
+
+        Hamiltonians whose matrices have different shapes compare unequal.
+        """
         if not isinstance(other, Hamiltonian):
             return NotImplemented
-        return not bool(np.allclose(self.matrix, other.matrix))
+        return not _matrices_close(self.matrix, other.matrix)
 
     def to_hamiltonian_set(self) -> HamiltonianSet:
         """Return a HamiltonianSet containing the Hamiltonian."""

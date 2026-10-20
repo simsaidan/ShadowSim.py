@@ -18,6 +18,7 @@ def test_hamiltonian_set_protocols_and_repr():
     assert h_set[0] == h1
     assert h1 in h_set
     assert Hamiltonian(np.eye(2, dtype=np.complex128)) not in h_set
+    assert Hamiltonian(np.eye(3, dtype=np.complex128)) not in h_set
     assert "HamiltonianSet(hamiltonian_count=2)" == str(h_set)
     assert "HamiltonianSet(hamiltonians=" in repr(h_set)
 

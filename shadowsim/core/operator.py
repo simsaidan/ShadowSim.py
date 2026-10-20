@@ -34,6 +34,17 @@ def _coerce_pauli_sum(value: str | PauliString | PauliSum) -> PauliSum:
     raise TypeError(f"unsupported operator input type: {type(value)!r}")
 
 
+def _matrices_close(left: _Matrix, right: _Matrix) -> bool:
+    """Return whether two matrices agree within tolerance.
+
+    Shapes must match. ``np.allclose`` raises ``ValueError`` when the shapes do
+    not broadcast, and it can report a match for unequal shapes that do.
+    """
+    if left.shape != right.shape:
+        return False
+    return bool(np.allclose(left, right))
+
+
 class Operator:
     """Represent a quantum operator.
 
@@ -153,18 +164,24 @@ class Operator:
         return f"Operator(matrix={self.matrix})"
 
     def __eq__(self, other: object) -> bool:
-        """Return whether the operator is equal to another operator."""
+        """Return whether the operator is equal to another operator.
+
+        Operators whose matrices have different shapes compare unequal.
+        """
         if not isinstance(other, Operator):
             return NotImplemented
-        return bool(np.allclose(self.matrix, other.matrix))
+        return _matrices_close(self.matrix, other.matrix)
 
     __hash__ = None  # type: ignore[assignment]  # matrix equality uses allclose; instances are not hashable
 
     def __ne__(self, other: object) -> bool:
-        """Return whether the operator is not equal to another operator."""
+        """Return whether the operator is not equal to another operator.
+
+        Operators whose matrices have different shapes compare unequal.
+        """
         if not isinstance(other, Operator):
             return NotImplemented
-        return not bool(np.allclose(self.matrix, other.matrix))
+        return not _matrices_close(self.matrix, other.matrix)
 
     def to_operator_set(self) -> OperatorSet:
         """Return an OperatorSet containing the operator."""
