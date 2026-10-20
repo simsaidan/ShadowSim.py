@@ -3,7 +3,6 @@ import pytest
 
 from shadowsim.core import Operator, OperatorSet, State
 from shadowsim.shadow import ShadowState
-from shadowsim.shadow import shadow_state as module
 
 X = np.array([[0, 1], [1, 0]], dtype=np.complex128)
 Y = np.array([[0, -1j], [1j, 0]], dtype=np.complex128)
@@ -30,7 +29,7 @@ def test_shadow_state_single_expectation_is_unit_and_pads_nothing():
     assert np.allclose(shadow.to_numpy(), np.array([1.0 + 0.0j]))
 
 
-def test_shadow_state_normalizes_by_a_and_pads_to_next_power_of_two():
+def test_shadow_state_unit_weight_pads_to_next_power_of_two():
     """|+⟩ with {X, Y, Z}: only ⟨X⟩≠0, A=1, three components pad to length 4."""
     shadow = ShadowState(
         _plus(),
@@ -84,18 +83,39 @@ def test_shadow_state_str_and_repr():
     assert "num_qubits=1" in rep
 
 
-def test_shadow_state_skips_normalization_when_a_is_zero(monkeypatch):
-    """Cover A==0 branch; parent State rejects unnormalized zeros, so stub it."""
-    captured = {}
+def test_shadow_state_normalizes_by_sqrt_a():
+    """|0⟩ with {Z, I}: ⟨Z⟩=⟨I⟩=1 so A=2, and [1, 1]/2 is not a unit vector."""
+    identity = np.eye(2, dtype=np.complex128)
+    shadow = ShadowState(_zero(), OperatorSet([Operator(Z), Operator(identity)]))
 
-    def fake_init(self, state, num_qubits, local_dim=2):
-        captured["state"] = np.asarray(state)
-        captured["num_qubits"] = num_qubits
-        self.state = captured["state"]
-        self._num_qubits = num_qubits
-        self._local_dim = local_dim
+    assert shadow.A == pytest.approx(2.0)
+    expected = np.array([1.0, 1.0], dtype=np.complex128) / np.sqrt(2.0)
+    assert np.allclose(shadow.to_numpy(), expected)
 
-    monkeypatch.setattr(module.State, "__init__", fake_init)
-    shadow = ShadowState(_zero(), OperatorSet([Operator(X)]))
-    assert shadow.A == 0
-    assert np.allclose(captured["state"], np.array([0.0 + 0.0j]))
+
+def test_shadow_state_preserves_relative_signs_when_normalizing():
+    """|1⟩ with {Z, I}: ⟨Z⟩=-1, ⟨I⟩=1, A=2, shadow = [-1, 1]/√2."""
+    identity = np.eye(2, dtype=np.complex128)
+    one = State(np.array([0.0, 1.0], dtype=np.complex128), 1)
+    shadow = ShadowState(one, OperatorSet([Operator(Z), Operator(identity)]))
+
+    assert shadow.A == pytest.approx(2.0)
+    expected = np.array([-1.0, 1.0], dtype=np.complex128) / np.sqrt(2.0)
+    assert np.allclose(shadow.to_numpy(), expected)
+
+
+def test_shadow_state_normalizes_partial_expectation():
+    """⟨Y⟩=0 and ⟨Z⟩=1/2 give A=1/4, so the shadow vector is [0, 1]."""
+    theta = np.pi / 3
+    ket = np.array([np.cos(theta / 2), np.sin(theta / 2)], dtype=np.complex128)
+    shadow = ShadowState(State(ket, 1), OperatorSet([Operator(Y), Operator(Z)]))
+
+    assert shadow.A == pytest.approx(0.25)
+    expected = np.array([0.0, 1.0], dtype=np.complex128)
+    assert np.allclose(shadow.to_numpy(), expected)
+
+
+def test_shadow_state_rejects_zero_amplitude_weight():
+    """|0⟩ with {X}: ⟨X⟩=0 so A=0 and no unit shadow vector exists."""
+    with pytest.raises(ValueError, match=r"A = Σ\|⟨O⟩\|² is zero"):
+        ShadowState(_zero(), OperatorSet([Operator(X)]))

@@ -44,8 +44,9 @@ def shadow_dynamics_applicable(
 ) -> bool:
     """Return whether ``run_shadow_simulation`` can run for ``|0…0⟩`` on this system.
 
-    Requires closure size ≥ 2 (padded shadow space has ≥ 1 qubit) and shadow
-    amplitude weight ``A = Σ|⟨O⟩|² == 1`` so :class:`ShadowState` is normalized.
+    Requires closure size ≥ 2 (padded shadow space has ≥ 1 qubit) and unit
+    shadow weight ``A = Σ|⟨O⟩|² == 1`` on ``|0…0⟩``, where the normalized
+    shadow vector equals the raw expectation vector.
     """
     shadow = ShadowHamiltonian(operator_set, hamiltonians, num_qubits=n_qubits, tol=tol)
     if len(shadow.basis) < 2:

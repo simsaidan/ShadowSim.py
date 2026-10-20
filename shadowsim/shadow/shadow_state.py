@@ -8,7 +8,13 @@ from shadowsim.utils.next_power_of_two import next_power_of_two
 
 
 class ShadowState(State):
-    """Represent a shadow state built from operator expectation values."""
+    """Shadow state whose amplitudes are normalized operator expectations.
+
+    For a state ``|ψ⟩`` and operators ``O_m``, the amplitude weight is
+    ``A = Σ_m |⟨O_m⟩|²``. The shadow vector is ``⟨O_m⟩ / √A``, which has
+    Euclidean norm 1 whenever ``A > 0``, then zero-padded to the next power
+    of two or to ``2**num_qubits``.
+    """
 
     def __init__(
         self,
@@ -17,19 +23,27 @@ class ShadowState(State):
         *,
         num_qubits: int | None = None,
     ) -> None:
-        """Initialize a ShadowState from a state and operator set."""
-        self.A = 0
+        """Initialize a ShadowState from a state and operator set.
+
+        Raises:
+            ValueError: If ``A = Σ|⟨O⟩|²`` is zero, so no unit shadow vector
+                exists, or if ``num_qubits`` cannot hold the components.
+        """
+        self.A = 0.0
         exp_vals: list[complex] = []
 
         psi = state.get_state()
         for op in operator_set.operators:
             exp_Om = np.vdot(psi, op.matrix @ psi)
-            self.A += np.abs(exp_Om) ** 2
+            self.A += float(np.abs(exp_Om) ** 2)
             exp_vals.append(exp_Om)
 
         shadow_state = np.asarray(exp_vals, dtype=np.complex128)
-        if self.A != 0:
-            shadow_state = shadow_state / self.A
+        if self.A == 0:
+            raise ValueError(
+                "cannot build a shadow state when A = Σ|⟨O⟩|² is zero; every operator expectation vanished"
+            )
+        shadow_state = shadow_state / np.sqrt(self.A)
 
         n = int(shadow_state.shape[0])
         if num_qubits is not None:
