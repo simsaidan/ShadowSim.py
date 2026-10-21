@@ -10,3 +10,9 @@ def test_indefinite_true_for_mixed_sign_spectrum():
 def test_indefinite_false_for_semidefinite_matrices():
     assert not indefinite(np.diag([0.0, 1.0, 2.0]))
     assert not indefinite(np.diag([-2.0, -1.0, 0.0]))
+
+
+def test_indefinite_false_for_non_hermitian_matrix():
+    # Eigenvalues are +1 and -1, but the matrix is not Hermitian.
+    matrix = np.array([[1.0, 100.0], [0.0, -1.0]])
+    assert not indefinite(matrix)
