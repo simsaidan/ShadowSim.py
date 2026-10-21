@@ -297,6 +297,26 @@ def test_error_metrics_rejects_mismatched_observable_counts():
         benchmark.error_metrics()
 
 
+def test_shared_simulator_id_keeps_each_wall_time(monkeypatch):
+    clock = iter((10.0, 10.3, 10.3, 10.35))
+    monkeypatch.setattr("shadowsim.benchmarking.benchmark.time.perf_counter", lambda: next(clock))
+    shared = "qutip_simulator"
+    ref = StubSimulator(id=shared, curves=[np.zeros(3)])
+    challenger = StubSimulator(id=shared, curves=[np.ones(3)])
+    benchmark = Benchmark(ref, challenger)
+    benchmark.run()
+
+    resources = benchmark.resource_metrics()
+    assert [row["simulator_id"] for row in resources] == [f"{shared}#1", f"{shared}#2"]
+    assert resources[0]["wall_time_s"] == pytest.approx(0.3)
+    assert resources[1]["wall_time_s"] == pytest.approx(0.05)
+
+    metrics = benchmark.error_metrics()
+    assert len(metrics) == 1
+    assert metrics[0]["challenger_id"] == f"{shared}#2"
+    assert metrics[0]["observables"][0]["linf"] == 1.0
+
+
 def test_resource_metrics_records_wall_time():
     a, b = _pair()
     benchmark = Benchmark(a, b)

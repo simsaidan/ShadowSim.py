@@ -16,7 +16,7 @@ from typing import Protocol
 import pytest
 
 from shadowsim.backends import listed_backends
-from shadowsim.cli.run import _initial_state, build_simulator, run_page
+from shadowsim.cli.run import _initial_state, _series_name, build_simulator, run_page
 from shadowsim.cli.serve import _Handler
 from shadowsim.models.catalog import _describe_models, listed_model_terms, listed_models
 from shadowsim.simulators.catalog import _describe_simulator, listed_simulators
@@ -585,6 +585,11 @@ def test_circuit_parameters_come_from_the_selection(simulator_id: str) -> None:
     assert simulator.order == 2
 
 
+def test_series_name_drops_the_simulator_suffix() -> None:
+    assert _series_name("qutip_simulator") == "qutip"
+    assert _series_name("split_jmatrix_simulator#2") == "split_jmatrix#2"
+
+
 @pytest.mark.qutip
 def test_two_simulators_form_a_benchmark() -> None:
     pytest.importorskip("qutip")
@@ -597,8 +602,12 @@ def test_two_simulators_form_a_benchmark() -> None:
         )
     )
     assert payload["algorithm"] == "benchmark"
+    series = payload["series"]
+    assert isinstance(series, list)
+    assert [item["name"] for item in series] == ["qutip#1", "qutip#2"]
     errors = payload["errors"]
     assert isinstance(errors, list)
+    assert errors[0]["challenger_id"] == "qutip_simulator#2"
     assert errors[0]["observables"][0]["linf"] == pytest.approx(0)
 
 

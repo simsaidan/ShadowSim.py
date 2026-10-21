@@ -258,6 +258,15 @@ def _write_results(directory: Path | None, results: list[SimulationResult]) -> l
     return [str(result.save(directory / f"sim_{index + 1}")) for index, result in enumerate(results)]
 
 
+def _series_name(report_id: str) -> str:
+    """Return a chart name, with ``_simulator`` removed before any ``#n`` suffix."""
+    base, separator, number = report_id.partition("#")
+    short = base.removesuffix("_simulator")
+    if separator:
+        return f"{short}#{number}"
+    return short
+
+
 def _run_benchmark(
     selection: Mapping[str, object],
     entries: list[object],
@@ -274,20 +283,24 @@ def _run_benchmark(
         simulators.append(build_simulator(merged))
     benchmark = Benchmark(simulators[0], *simulators[1:])
     benchmark.run()
-    series: list[dict[str, object]] = []
+    recorded: list[SimulationResult] = []
     for simulator in simulators:
         result = simulator.last_result
         if result is None:
             raise ValueError("benchmark did not record a result")
+        recorded.append(result)
+    resources = benchmark.resource_metrics()
+    series: list[dict[str, object]] = []
+    for result, resource in zip(recorded, resources, strict=True):
         series.append(
             {
-                "name": simulator.id.removesuffix("_simulator"),
+                "name": _series_name(str(resource["simulator_id"])),
                 "observables": [curve.tolist() for curve in result.observables],
             }
         )
     reference = simulators[0].last_result
     assert reference is not None
-    wall_times = [item["wall_time_s"] for item in benchmark.resource_metrics()]
+    wall_times = [item["wall_time_s"] for item in resources]
     payload: dict[str, object] = {
         "times": reference.times.tolist(),
         "observables": [curve.tolist() for curve in reference.observables],
