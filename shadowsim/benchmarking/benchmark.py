@@ -13,6 +13,26 @@ from shadowsim._optional import import_optional
 from shadowsim.simulators.simulator import Simulator, _Trace, _Traces
 
 
+def _report_ids(simulators: list[Simulator]) -> list[str]:
+    """Return one id per simulator, suffixing duplicates in list order.
+
+    An id used once is unchanged. An id used more than once is reported as
+    ``id#1``, ``id#2``, and so on, counting from the start of ``simulators``.
+    """
+    counts: dict[str, int] = {}
+    for simulator in simulators:
+        counts[simulator.id] = counts.get(simulator.id, 0) + 1
+    seen: dict[str, int] = {}
+    labels: list[str] = []
+    for simulator in simulators:
+        if counts[simulator.id] == 1:
+            labels.append(simulator.id)
+            continue
+        seen[simulator.id] = seen.get(simulator.id, 0) + 1
+        labels.append(f"{simulator.id}#{seen[simulator.id]}")
+    return labels
+
+
 class Benchmark:
     """Compare expectation traces from a reference and challenger simulators."""
 
@@ -25,7 +45,7 @@ class Benchmark:
                 raise ValueError("simulators must use the same time grid (tlist)")
         self.reference = reference
         self.challengers = list(challengers)
-        self._wall_times: dict[str, float] = {}
+        self._wall_times: list[float] = []
 
     @property
     def simulators(self) -> list[Simulator]:
@@ -38,10 +58,12 @@ class Benchmark:
 
     def run(self) -> None:
         """Run the reference and all challenger simulators."""
+        times: list[float] = []
         for simulator in self.simulators:
             start = time.perf_counter()
             simulator.run()
-            self._wall_times[simulator.id] = time.perf_counter() - start
+            times.append(time.perf_counter() - start)
+        self._wall_times = times
 
     def get_results(self, index: int | None = None) -> list[_Traces | _Trace]:
         """Return matching result traces from the reference and each challenger."""
@@ -56,9 +78,14 @@ class Benchmark:
         - ``l2``: Euclidean norm ``||e||_2``
         - ``mae``: ``mean(|e|)``
         - ``rmse``: ``sqrt(mean(e²))``
+
+        ``challenger_id`` is that simulator's id. When the same id appears more
+        than once in the benchmark, it is reported as ``id#1``, ``id#2``, and so
+        on, counting the reference and challengers in order.
         """
         metrics: list[dict[str, Any]] = []
-        for challenger in self.challengers:
+        labels = _report_ids(self.simulators)
+        for challenger, label in zip(self.challengers, labels[1:], strict=True):
             ra, rb = self._matching_results(challenger)
             selected = list(range(len(ra))) if indices is None else indices
             observables = []
@@ -73,7 +100,7 @@ class Benchmark:
                         "rmse": float(np.sqrt(np.mean(err**2))),
                     }
                 )
-            metrics.append({"challenger_id": challenger.id, "observables": observables})
+            metrics.append({"challenger_id": label, "observables": observables})
         return metrics
 
     def resource_metrics(self) -> list[dict[str, Any]]:
@@ -82,11 +109,16 @@ class Benchmark:
         Requires ``run()`` first. Shot fields are ``None`` when a simulator has no
         ``shots`` attribute (e.g. QuTiP); otherwise ``num_jobs`` is ``len(tlist)``
         and ``total_shots`` is ``shots_per_job * num_jobs``.
+
+        ``simulator_id`` is that simulator's id. When the same id appears more
+        than once, it is reported as ``id#1``, ``id#2``, and so on, in benchmark
+        order. Each row keeps the wall time of that run.
         """
-        if not self._wall_times:
+        if len(self._wall_times) != len(self.simulators):
             raise ValueError("Results are not available. Call run() (or simulate all) before save().")
         metrics: list[dict[str, Any]] = []
-        for simulator in self.simulators:
+        labels = _report_ids(self.simulators)
+        for simulator, wall_time, label in zip(self.simulators, self._wall_times, labels, strict=True):
             shots_per_job = getattr(simulator, "shots", None)
             if shots_per_job is None:
                 num_jobs = None
@@ -96,8 +128,8 @@ class Benchmark:
                 total_shots = shots_per_job * num_jobs
             metrics.append(
                 {
-                    "simulator_id": simulator.id,
-                    "wall_time_s": self._wall_times[simulator.id],
+                    "simulator_id": label,
+                    "wall_time_s": wall_time,
                     "shots_per_job": shots_per_job,
                     "num_jobs": num_jobs,
                     "total_shots": total_shots,
