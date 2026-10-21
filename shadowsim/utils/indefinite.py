@@ -3,20 +3,21 @@
 import numpy as np
 
 from shadowsim.utils._real_parts_of_eigenvalues import _real_parts_of_eigenvalues
+from shadowsim.utils.hermitian import hermitian
 
 
 def indefinite(matrix: np.ndarray) -> bool:
     r"""Return whether a matrix is indefinite.
 
-    A matrix is indefinite when it has at least one eigenvalue with positive real
-    part and at least one with negative real part.
+    A matrix is indefinite when it is Hermitian and it has at least one positive
+    eigenvalue and at least one negative eigenvalue.
 
     Args:
         matrix: Square matrix to check.
 
     Returns:
-        ``True`` if the matrix has both positive and negative eigenvalue real
-        parts, else ``False``.
+        ``True`` if the matrix is Hermitian and its eigenvalues include both a
+        positive and a negative value, else ``False``.
 
     Examples:
         Pauli \(Z\) is indefinite:
@@ -30,5 +31,7 @@ def indefinite(matrix: np.ndarray) -> bool:
         ```
 
     """
+    if not hermitian(matrix):
+        return False
     eigvals = _real_parts_of_eigenvalues(matrix)
     return bool(np.any(eigvals > 0) and np.any(eigvals < 0))

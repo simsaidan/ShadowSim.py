@@ -24,6 +24,27 @@ def test_operator_sign_flags_for_indefinite_matrix():
     assert bool(op.is_indefinite)
 
 
+def test_operator_non_hermitian_is_not_positive_semidefinite():
+    matrix = np.array([[1.0, 100.0], [0.0, 1.0]], dtype=np.complex128)
+    op = Operator(matrix)
+    assert op.is_hermitian is False
+    assert op.is_positive_semidefinite is False
+
+
+def test_operator_non_hermitian_is_not_negative_semidefinite():
+    matrix = np.array([[-1.0, 100.0], [0.0, -1.0]], dtype=np.complex128)
+    op = Operator(matrix)
+    assert op.is_hermitian is False
+    assert op.is_negative_semidefinite is False
+
+
+def test_operator_non_hermitian_is_not_indefinite():
+    matrix = np.array([[1.0, 100.0], [0.0, -1.0]], dtype=np.complex128)
+    op = Operator(matrix)
+    assert op.is_hermitian is False
+    assert op.is_indefinite is False
+
+
 def test_operator_flags_are_non_callable_attributes():
     op = Operator(np.eye(2, dtype=np.complex128))
     flags = (
