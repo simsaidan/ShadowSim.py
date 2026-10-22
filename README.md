@@ -90,7 +90,8 @@ Each backend’s `simulate()` / `run()` returns a `SimulationResult` with:
 - `seed`, `algorithm`, `runtime`, and `metadata` (software version, grid params, backend params)
 
 Serialize and reload with `result.save(path)` / `SimulationResult.load(path)` (directory of
-`.npy` arrays plus `meta.json`). Low-level expectation curves remain on `simulator.results`
+`times.npy`, numeric `.npz` archives, and `meta.json`). Loading does not unpickle array
+files. Low-level expectation curves remain on `simulator.results`
 for plotting and benchmarking.
 
 `start()` runs that same `simulate()` call on a worker thread and returns a `SimulationJob`
