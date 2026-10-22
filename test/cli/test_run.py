@@ -289,7 +289,7 @@ def test_save_writes_the_result(tmp_path: Path) -> None:
     payload = run_page(_selection(then="save", save_path=str(destination), time_steps=2))
     assert payload["saved"] == [str(destination)]
     assert (destination / "times.npy").is_file()
-    assert (destination / "observables.npy").is_file()
+    assert (destination / "observables.npz").is_file()
     assert (destination / "meta.json").is_file()
 
 
