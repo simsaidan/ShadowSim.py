@@ -1,6 +1,7 @@
 """Serve the local ShadowSim builder page."""
 
 import argparse
+import ipaddress
 import json
 import sys
 import webbrowser
@@ -112,6 +113,23 @@ class _Handler(BaseHTTPRequestHandler):
         return
 
 
+def _is_loopback_host(host: str) -> bool:
+    """Return whether ``host`` is localhost or a loopback IP address.
+
+    Unspecified addresses such as ``0.0.0.0`` and ``::``, every other IP, and
+    every other name are not loopback.
+    """
+    if host.lower().rstrip(".") == "localhost":
+        return True
+    candidate = host[1:-1] if host.startswith("[") and host.endswith("]") else host
+    candidate = candidate.split("%", 1)[0]
+    try:
+        address = ipaddress.ip_address(candidate)
+    except ValueError:
+        return False
+    return address.is_loopback
+
+
 def _load_catalog(key: str) -> Any:
     """Return the current catalog for ``key``.
 
@@ -154,26 +172,45 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="shadowsim", description="ShadowSim commands.")
     subparsers = parser.add_subparsers(dest="command", required=True)
     serve_parser = subparsers.add_parser("serve", help="Open the local builder page.")
-    serve_parser.add_argument("--host", default="127.0.0.1", help="Address to bind (default: 127.0.0.1).")
+    serve_parser.add_argument(
+        "--host",
+        default="127.0.0.1",
+        help="Address to bind (default: 127.0.0.1). A non-loopback address requires --allow-remote.",
+    )
     serve_parser.add_argument("--port", type=int, default=8000, help="Port to bind (default: 8000).")
+    serve_parser.add_argument(
+        "--allow-remote",
+        action="store_true",
+        help="Bind a non-loopback address. The builder does not authenticate requests.",
+    )
     serve_parser.add_argument("--no-browser", action="store_true", help="Do not open a browser window.")
     return parser
 
 
-def serve(host: str, port: int, *, open_browser: bool) -> int:
-    """Bind a local server and serve the builder page until interrupted.
+def serve(host: str, port: int, *, open_browser: bool, allow_remote: bool = False) -> int:
+    """Bind a server and serve the builder page until interrupted.
 
     Args:
         host: Address to bind.
         port: TCP port to bind.
         open_browser: Open the page in the default browser after the server starts.
+        allow_remote: Permit a non-loopback ``host``. Without this, such an address
+            is refused because requests, including ``POST /runs``, are not authenticated.
 
     Returns:
-        Process exit code. ``0`` after a clean interrupt, ``1`` if the port is invalid
-        or the address cannot be bound.
+        Process exit code. ``0`` after a clean interrupt, ``1`` if the port is invalid,
+        the address is not loopback and ``allow_remote`` is false, or the address
+        cannot be bound.
     """
     if port < 0 or port > 65535:
         print(f"error: port must be between 0 and 65535, got {port}", file=sys.stderr)
+        return 1
+    if not allow_remote and not _is_loopback_host(host):
+        print(
+            f"error: refusing to bind {host}: the builder does not authenticate requests. "
+            "Pass --allow-remote to listen on a non-loopback address.",
+            file=sys.stderr,
+        )
         return 1
     try:
         server = HTTPServer((host, port), _Handler)
@@ -185,6 +222,12 @@ def serve(host: str, port: int, *, open_browser: bool) -> int:
     bound_host = raw_host.decode() if isinstance(raw_host, bytes) else raw_host
     display_host = f"[{bound_host}]" if ":" in bound_host else bound_host
     url = f"http://{display_host}:{bound_port}/"
+    if not _is_loopback_host(host):
+        print(
+            f"warning: {host} is not a loopback address. Requests are not authenticated.",
+            file=sys.stderr,
+            flush=True,
+        )
     print(f"Serving ShadowSim at {url}", flush=True)
     if open_browser:
         webbrowser.open(url)
@@ -200,7 +243,12 @@ def serve(host: str, port: int, *, open_browser: bool) -> int:
 def main(argv: list[str] | None = None) -> int:
     """Run the ``shadowsim`` command-line interface."""
     args = build_parser().parse_args(argv)
-    return serve(args.host, args.port, open_browser=not args.no_browser)
+    return serve(
+        args.host,
+        args.port,
+        open_browser=not args.no_browser,
+        allow_remote=args.allow_remote,
+    )
 
 
 if __name__ == "__main__":  # pragma: no cover

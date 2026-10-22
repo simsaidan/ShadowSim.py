@@ -45,21 +45,25 @@ def test_index_serves_the_builder_page():
 def test_main_serve_uses_the_requested_bind(monkeypatch: pytest.MonkeyPatch):
     seen: dict[str, object] = {}
 
-    def fake_serve(host: str, port: int, *, open_browser: bool) -> int:
+    def fake_serve(host: str, port: int, *, open_browser: bool, allow_remote: bool) -> int:
         seen["host"] = host
         seen["port"] = port
         seen["open_browser"] = open_browser
+        seen["allow_remote"] = allow_remote
         return 0
 
     monkeypatch.setattr("shadowsim.cli.serve.serve", fake_serve)
     assert main(["serve", "--host", "127.0.0.1", "--port", "8765", "--no-browser"]) == 0
-    assert seen == {"host": "127.0.0.1", "port": 8765, "open_browser": False}
+    assert seen == {"host": "127.0.0.1", "port": 8765, "open_browser": False, "allow_remote": False}
+    assert main(["serve", "--host", "0.0.0.0", "--allow-remote", "--no-browser"]) == 0
+    assert seen["host"] == "0.0.0.0"
+    assert seen["allow_remote"] is True
 
 
 def test_main_opens_the_browser_by_default(monkeypatch: pytest.MonkeyPatch):
     seen: dict[str, object] = {}
 
-    def fake_serve(host: str, port: int, *, open_browser: bool) -> int:
+    def fake_serve(host: str, port: int, *, open_browser: bool, allow_remote: bool) -> int:
         seen["open_browser"] = open_browser
         return 0
 
@@ -72,6 +76,59 @@ def test_serve_rejects_an_invalid_port(capsys: pytest.CaptureFixture[str]):
     assert serve("127.0.0.1", 70000, open_browser=False) == 1
     assert serve("127.0.0.1", -1, open_browser=False) == 1
     assert "port must be between 0 and 65535" in capsys.readouterr().err
+
+
+class _QuietServer(HTTPServer):
+    """Stand in for ``HTTPServer`` without opening a socket."""
+
+    def __init__(self, server_address: tuple[str, int], request_handler_class: type[_Handler]) -> None:
+        self.server_address = server_address
+
+    def serve_forever(self, poll_interval: float = 0.5) -> None:
+        raise KeyboardInterrupt
+
+    def server_close(self) -> None:
+        return None
+
+
+@pytest.mark.parametrize("host", ["127.0.0.1", "127.0.0.2", "::1", "localhost", "[::1]"])
+def test_serve_accepts_loopback_without_allow_remote(
+    host: str, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+):
+    monkeypatch.setattr("shadowsim.cli.serve.HTTPServer", _QuietServer)
+    assert serve(host, 8000, open_browser=False) == 0
+    captured = capsys.readouterr()
+    assert "refusing to bind" not in captured.err
+    assert "warning:" not in captured.err
+    assert "Serving ShadowSim at" in captured.out
+
+
+@pytest.mark.parametrize("host", ["0.0.0.0", "::", "192.168.1.10", "example.com", ""])
+def test_serve_refuses_a_non_loopback_host(
+    host: str, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+):
+    opened: list[str] = []
+
+    def fail(*_args: object, **_kwargs: object) -> None:
+        raise AssertionError("should not bind")
+
+    monkeypatch.setattr("shadowsim.cli.serve.HTTPServer", fail)
+    monkeypatch.setattr("shadowsim.cli.serve.webbrowser.open", lambda url: opened.append(url) or True)
+    assert serve(host, 8000, open_browser=True) == 1
+    error = capsys.readouterr().err
+    assert "refusing to bind" in error
+    assert "--allow-remote" in error
+    assert opened == []
+
+
+def test_serve_warns_when_remote_bind_is_allowed(monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]):
+    monkeypatch.setattr("shadowsim.cli.serve.HTTPServer", _QuietServer)
+    assert serve("0.0.0.0", 8000, open_browser=False, allow_remote=True) == 0
+    captured = capsys.readouterr()
+    assert "warning:" in captured.err
+    assert "0.0.0.0" in captured.err
+    assert "not authenticated" in captured.err
+    assert "Serving ShadowSim at http://0.0.0.0:8000/" in captured.out
 
 
 def test_serve_reports_a_busy_port(capsys: pytest.CaptureFixture[str]):
