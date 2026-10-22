@@ -1,9 +1,11 @@
 """Structured simulation result with metadata and serialize/reload."""
 
 import json
+import zipfile
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 from importlib.metadata import PackageNotFoundError, version
+from io import BytesIO
 from pathlib import Path
 from typing import Any
 
@@ -39,11 +41,16 @@ def _numeric_array(values: np.ndarray, label: str) -> np.ndarray:
 def _write_archive(path: Path, arrays: Sequence[np.ndarray]) -> None:
     """Write numeric arrays to ``path`` as ``arr0``, ``arr1``, ...
 
-    One entry per array keeps jagged shapes. ``allow_pickle=False`` makes NumPy
-    reject an object array instead of pickling it.
+    One entry per array keeps jagged shapes. Each entry is saved with
+    ``allow_pickle=False``. ``np.savez`` is not given that keyword: NumPy 2.0
+    stores it as an array named ``allow_pickle``.
     """
-    payload = {f"arr{index}": _numeric_array(array, f"{path.name} entry {index}") for index, array in enumerate(arrays)}
-    np.savez(path, allow_pickle=False, **payload)
+    with zipfile.ZipFile(path, mode="w", compression=zipfile.ZIP_STORED) as archive:
+        for index, array in enumerate(arrays):
+            numeric = _numeric_array(array, f"{path.name} entry {index}")
+            buffer = BytesIO()
+            np.save(buffer, numeric, allow_pickle=False)
+            archive.writestr(f"arr{index}.npy", buffer.getvalue())
 
 
 def _is_pickle_refusal(exc: BaseException) -> bool:

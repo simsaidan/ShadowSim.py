@@ -357,7 +357,7 @@ def test_save_rejects_non_numeric_state(tmp_path: Path):
 
 def test_load_rejects_non_numeric_state(tmp_path: Path):
     out = _saved(tmp_path / "run", states=True)
-    np.savez(out / "states.npz", allow_pickle=False, arr0=np.array(["nope"]))
+    np.savez(out / "states.npz", arr0=np.array(["nope"]))
     with pytest.raises(ValueError, match="numeric"):
         SimulationResult.load(out)
 
@@ -417,12 +417,7 @@ def test_load_reports_a_truncated_archive_member(tmp_path: Path):
 
 def test_load_rejects_archive_with_a_gap(tmp_path: Path):
     out = _saved(tmp_path / "run")
-    np.savez(
-        out / "observables.npz",
-        allow_pickle=False,
-        arr0=np.array([1.0]),
-        arr2=np.array([2.0, 3.0]),
-    )
+    np.savez(out / "observables.npz", arr0=np.array([1.0]), arr2=np.array([2.0, 3.0]))
     with pytest.raises(ValueError, match="missing an array"):
         SimulationResult.load(out)
 
@@ -439,7 +434,7 @@ def test_load_rejects_npy_bytes_named_as_npz(tmp_path: Path):
 def test_load_rejects_archive_bytes_named_as_times_npy(tmp_path: Path):
     out = _saved(tmp_path / "run")
     archive_path = tmp_path / "times.npz"
-    np.savez(archive_path, allow_pickle=False, arr0=np.array([0.0, 1.0]))
+    np.savez(archive_path, arr0=np.array([0.0, 1.0]))
     (out / "times.npy").write_bytes(archive_path.read_bytes())
     with pytest.raises(ValueError, match="expected an array"):
         SimulationResult.load(out)
