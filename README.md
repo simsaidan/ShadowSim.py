@@ -260,12 +260,13 @@ We run the benchmark, which runs the underlying simulations. Numeric L∞ / L2 /
 MAE / RMSE error metrics vs the reference are available via `error_metrics`.
 Wall-clock time and shot budget (when a simulator exposes `shots`) are available
 via `resource_metrics`. Both are exported together by `save_error_metrics` as
-`{"errors": ..., "resources": ...}`. We can also visualize the result by calling
-`save_result_plot`, which saves a plot per simulator and an absolute-difference
-plot vs the reference for each challenger.
+`{"errors": ..., "resources": ...}`. `save_result_plot` saves a plot per
+simulator and an absolute-difference plot vs the reference for each challenger.
+The third figure below shows L∞, MAE, and RMSE from `error_metrics`. Those
+three share a per-time-point scale.
 
 QuTiP is deterministic. Split JMatrix estimates populations from a finite
-`shots` budget, so absolute-difference plots move run to run unless you set
+`shots` budget, so the comparison moves run to run unless you set
 `seed` (wired into Aer’s `seed_simulator`). Residual disagreement also includes
 systematic split-J / Trotter bias that does not vanish with more shots. Use a
 lower `shots` for smoke checks and a higher budget for publication figures; pass
@@ -295,9 +296,9 @@ for path in [metrics_path, *paths]:
 
 ![Split JMatrix expectations](./images/example2_split_jmatrix.png)
 
-*Absolute difference between the two:*
+*L∞, MAE, and RMSE vs QuTiP:*
 
-![Absolute difference between the two simulators](./images/example2_abs_diff.png)
+![L∞, MAE, and RMSE versus QuTiP](./images/example2_error_metrics.png)
 
 ### Example 3: Classical and transverse-field Ising models
 
