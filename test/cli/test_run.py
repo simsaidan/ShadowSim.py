@@ -659,7 +659,9 @@ def test_post_elsewhere_is_not_found() -> None:
     assert status == 404
 
 
-def test_post_runs_reports_a_simulator_failure(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_post_runs_reports_a_simulator_failure(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     def explode(selection: Mapping[str, object]) -> object:
         raise RuntimeError("boom")
 
@@ -667,7 +669,9 @@ def test_post_runs_reports_a_simulator_failure(monkeypatch: pytest.MonkeyPatch) 
     status, body = _post(json.dumps(_selection()).encode())
     payload = json.loads(body)
     assert status == 500
-    assert payload["error"] == "boom"
+    assert payload == {"error": "internal error"}
+    assert "boom" in capsys.readouterr().err
+    assert b"boom" not in body
 
 
 def test_listed_backends_reads_concrete_classes(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -968,7 +972,9 @@ def test_get_models_returns_the_package_factories() -> None:
     ]
 
 
-def test_get_simulators_reports_an_import_error(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_get_simulators_reports_an_import_error(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     def explode() -> list[object]:
         raise ImportError("no simulators could be imported")
 
@@ -976,7 +982,9 @@ def test_get_simulators_reports_an_import_error(monkeypatch: pytest.MonkeyPatch)
     status, body = _request("GET", "/simulators")
     payload = json.loads(body)
     assert status == 500
-    assert "no simulators" in payload["error"]
+    assert payload == {"error": "internal error"}
+    assert "no simulators could be imported" in capsys.readouterr().err
+    assert b"no simulators" not in body
 
 
 def test_get_backends_returns_the_package_list(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -995,15 +1003,19 @@ def test_get_backends_returns_the_package_list(monkeypatch: pytest.MonkeyPatch) 
     assert json.loads(body) == {"backends": sample}
 
 
-def test_get_backends_reports_an_import_error(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_get_backends_reports_an_import_error(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     def explode() -> list[object]:
-        raise ImportError("shadowsim.backends.circuit requires the qiskit extra")
+        raise ImportError("/home/builder/shadowsim/backends/circuit.py requires the qiskit extra")
 
     monkeypatch.setattr("shadowsim.cli.serve.listed_backends", explode)
     status, body = _request("GET", "/backends")
     payload = json.loads(body)
     assert status == 500
-    assert "qiskit extra" in payload["error"]
+    assert payload == {"error": "internal error"}
+    assert "/home/builder/shadowsim/backends/circuit.py" in capsys.readouterr().err
+    assert b"/home/builder" not in body
 
 
 @pytest.mark.qutip

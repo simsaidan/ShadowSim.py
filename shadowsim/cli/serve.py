@@ -4,6 +4,7 @@ import argparse
 import ipaddress
 import json
 import sys
+import traceback
 import webbrowser
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
@@ -59,7 +60,7 @@ class _Handler(BaseHTTPRequestHandler):
             try:
                 payload = {key: _load_catalog(key)}
             except Exception as exc:
-                _send_json(self, 500, {"error": str(exc)})
+                _send_internal_error(self, exc)
                 return
             _send_json(self, 200, payload)
             return
@@ -91,7 +92,7 @@ class _Handler(BaseHTTPRequestHandler):
             _send_json(self, 400, {"error": str(exc)})
             return
         except Exception as exc:
-            _send_json(self, 500, {"error": str(exc)})
+            _send_internal_error(self, exc)
             return
         _send_json(self, 200, payload)
 
@@ -165,6 +166,21 @@ def _send_json(handler: BaseHTTPRequestHandler, status: int, payload: dict[str, 
     handler.send_header("Content-Length", str(len(body)))
     handler.end_headers()
     handler.wfile.write(body)
+
+
+def _send_internal_error(handler: BaseHTTPRequestHandler, exc: BaseException) -> None:
+    """Send a fixed 500 and print ``exc`` on stderr.
+
+    The response omits ``exc`` so a client does not receive local paths or
+    importer details from an unexpected failure.
+
+    Args:
+        handler: Request that failed.
+        exc: Unexpected failure. Its traceback is written to stderr.
+    """
+    traceback.print_exception(exc, file=sys.stderr)
+    sys.stderr.flush()
+    _send_json(handler, 500, {"error": "internal error"})
 
 
 def build_parser() -> argparse.ArgumentParser:
