@@ -10,11 +10,15 @@ if TYPE_CHECKING:
     from shadowsim.backends.circuit import AerCircuitBackend as AerCircuitBackend
     from shadowsim.backends.circuit import CircuitBackend as CircuitBackend
     from shadowsim.backends.circuit import QiskitCircuitBackend as QiskitCircuitBackend
+    from shadowsim.backends.circuit import from_qiskit as from_qiskit
+    from shadowsim.backends.circuit import to_qiskit as to_qiskit
 
 _EXPORTS: dict[str, tuple[str, str]] = {
     "AerCircuitBackend": ("shadowsim.backends.circuit", "qiskit"),
     "CircuitBackend": ("shadowsim.backends.circuit", "qiskit"),
     "QiskitCircuitBackend": ("shadowsim.backends.circuit", "qiskit"),
+    "from_qiskit": ("shadowsim.backends.circuit", "qiskit"),
+    "to_qiskit": ("shadowsim.backends.circuit", "qiskit"),
 }
 
 __all__ = [
@@ -22,7 +26,9 @@ __all__ = [
     "CircuitBackend",
     "ListedBackend",
     "QiskitCircuitBackend",
+    "from_qiskit",
     "listed_backends",
+    "to_qiskit",
 ]
 
 
