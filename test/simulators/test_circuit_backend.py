@@ -9,10 +9,14 @@ pytest.importorskip("qiskit")
 pytest.importorskip("qiskit_aer")
 pytest.importorskip("scipy")
 
-from qiskit import QuantumCircuit
+from qiskit import QuantumCircuit, QuantumRegister, transpile
+from qiskit.circuit import Gate
+from qiskit.circuit.library import CXGate, RXGate, UnitaryGate
+from qiskit_aer import AerSimulator
 
 import shadowsim.backends.circuit as circuit_backend_module
-from shadowsim.backends.circuit import QiskitCircuitBackend
+from shadowsim.backends.circuit import AerCircuitBackend, QiskitCircuitBackend, from_qiskit, to_qiskit
+from shadowsim.backends.program import Barrier, Hadamard, Measure, Prepare, Program, Reset, Unitary
 from shadowsim.core import LocalHamiltonian, State
 from shadowsim.simulators import SplitJMatrixSimulator, TrotterizationSimulator
 
@@ -151,3 +155,148 @@ def test_qiskit_circuit_backend_requires_get_counts(monkeypatch):
     circuit.measure_all()
     with pytest.raises(TypeError, match="get_counts"):
         QiskitCircuitBackend(_Backend()).run_counts(circuit, shots=1, seed=1)
+
+
+def _permutation_matrix() -> np.ndarray:
+    return np.array(
+        [
+            [0, 0, 0, 1],
+            [0, 0, 1, 0],
+            [0, 1, 0, 0],
+            [1, 0, 0, 0],
+        ],
+        dtype=np.complex128,
+    )
+
+
+def _two_register_circuit() -> tuple[QuantumCircuit, np.ndarray]:
+    ancilla = QuantumRegister(1, "anc")
+    body = QuantumRegister(1, "q")
+    circuit = QuantumCircuit(ancilla, body)
+    matrix = _permutation_matrix()
+    circuit.initialize([1, 0], [body[0]])
+    circuit.append(UnitaryGate(matrix), [ancilla[0], body[0]])
+    circuit.reset(ancilla[0])
+    circuit.h(body[0])
+    circuit.barrier()
+    circuit.measure_all()
+    return circuit, matrix
+
+
+def test_qiskit_round_trip_preserves_operations():
+    circuit, matrix = _two_register_circuit()
+    expected = Program(
+        2,
+        2,
+        [
+            Prepare([1, 0], [1]),
+            Unitary(matrix, [0, 1]),
+            Reset(0),
+            Hadamard(1),
+            Barrier([0, 1]),
+            Barrier([0, 1]),
+            Measure(0, 0),
+            Measure(1, 1),
+        ],
+    )
+
+    program = from_qiskit(circuit)
+
+    assert program == expected
+    assert from_qiskit(to_qiskit(program)) == program
+
+
+def test_from_qiskit_records_gates_as_their_matrices():
+    circuit = QuantumCircuit(2)
+    circuit.rx(0.3, 0)
+    circuit.cx(0, 1)
+
+    program = from_qiskit(circuit)
+
+    assert program.operations == (
+        Unitary(RXGate(0.3).to_matrix(), [0]),
+        Unitary(CXGate().to_matrix(), [0, 1]),
+    )
+    assert from_qiskit(to_qiskit(program)) == program
+
+
+def test_from_qiskit_rejects_a_gate_without_a_matrix():
+    circuit = QuantumCircuit(1)
+    circuit.append(Gate("black_box", 1, []), [0])
+
+    with pytest.raises(ValueError, match="'black_box'"):
+        from_qiskit(circuit)
+
+
+def _aer_counts(circuit: QuantumCircuit) -> dict[str, int]:
+    backend = AerSimulator(seed_simulator=3)
+    return backend.run(transpile(circuit, backend), shots=64).result().get_counts()
+
+
+def test_round_trip_preserves_aer_counts():
+    circuit, _matrix = _two_register_circuit()
+
+    assert _aer_counts(to_qiskit(from_qiskit(circuit))) == _aer_counts(circuit)
+
+
+def test_backends_transpile_the_rebuilt_circuit(monkeypatch):
+    seen = []
+
+    def fake_transpile(circ, backend):
+        del backend
+        seen.append(circ)
+        return circ
+
+    class _CountingBackend:
+        def __init__(self, **kwargs):
+            del kwargs
+
+        def run(self, compiled, shots):
+            del compiled, shots
+
+            class _Job:
+                def result(self):
+                    class _Result:
+                        def get_counts(self):
+                            return {"0": 1}
+
+                    return _Result()
+
+            return _Job()
+
+    monkeypatch.setattr(circuit_backend_module, "transpile", fake_transpile)
+    monkeypatch.setattr(circuit_backend_module, "AerSimulator", _CountingBackend)
+    circuit, _matrix = _two_register_circuit()
+    expected = from_qiskit(circuit)
+
+    AerCircuitBackend().run_counts(circuit, shots=1, seed=1)
+    QiskitCircuitBackend(_CountingBackend()).run_counts(circuit, shots=1, seed=None)
+
+    assert seen[0] is not circuit
+    assert seen[1] is not circuit
+    assert [from_qiskit(circ) for circ in seen] == [expected, expected]
+
+
+def test_backends_reject_a_gate_without_a_matrix_before_running(monkeypatch):
+    monkeypatch.setattr(circuit_backend_module, "AerSimulator", _forbid_aer)
+    circuit = QuantumCircuit(1)
+    circuit.append(Gate("black_box", 1, []), [0])
+
+    with pytest.raises(ValueError, match="'black_box'"):
+        AerCircuitBackend().run_counts(circuit, shots=1, seed=1)
+    with pytest.raises(ValueError, match="'black_box'"):
+        QiskitCircuitBackend(_WrappedBackend()).run_counts(circuit, shots=1, seed=1)
+
+
+def test_aer_backend_runs_rx():
+    circuit = QuantumCircuit(1)
+    circuit.rx(0.3, 0)
+    circuit.measure_all()
+
+    assert AerCircuitBackend().run_counts(circuit, shots=64, seed=3) == _aer_counts(circuit)
+
+
+def test_aer_backend_matches_direct_counts():
+    circuit, _matrix = _two_register_circuit()
+
+    assert AerCircuitBackend().run_counts(circuit, shots=64, seed=3) == _aer_counts(circuit)

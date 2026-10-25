@@ -142,6 +142,7 @@ module = [
     "shadowsim.models.tavis_cummings",
     "shadowsim.backends",
     "shadowsim.backends.circuit",
+    "shadowsim.backends.program",
     "shadowsim.benchmarking",
     "shadowsim.benchmarking.benchmark",
 ]
