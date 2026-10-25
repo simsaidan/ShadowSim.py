@@ -10,7 +10,7 @@ pytest.importorskip("qiskit_aer")
 pytest.importorskip("scipy")
 
 from qiskit import QuantumCircuit, QuantumRegister, transpile
-from qiskit.circuit import Gate
+from qiskit.circuit import Gate, Instruction
 from qiskit.circuit.library import CXGate, RXGate, UnitaryGate
 from qiskit_aer import AerSimulator
 
@@ -226,6 +226,40 @@ def test_from_qiskit_rejects_a_gate_without_a_matrix():
 
     with pytest.raises(ValueError, match="'black_box'"):
         from_qiskit(circuit)
+
+
+def test_from_qiskit_rejects_an_instruction_without_to_matrix():
+    circuit = QuantumCircuit(1)
+    circuit.append(Instruction("plain", 1, 0, []), [0])
+
+    with pytest.raises(ValueError, match="'plain'"):
+        from_qiskit(circuit)
+
+
+class _VectorGate(Gate):
+    """Gate whose matrix is a vector, so it cannot be recorded as a unitary."""
+
+    def __init__(self) -> None:
+        super().__init__("vector", 1, [])
+
+    def to_matrix(self) -> np.ndarray:
+        return np.ones(2)
+
+
+def test_from_qiskit_rejects_a_matrix_that_is_not_square():
+    circuit = QuantumCircuit(1)
+    circuit.append(_VectorGate(), [0])
+
+    with pytest.raises(ValueError, match="'vector'"):
+        from_qiskit(circuit)
+
+
+def test_to_qiskit_rejects_an_unknown_operation():
+    program = Program(1, 0, [])
+    program.operations = ("not-an-operation",)
+
+    with pytest.raises(TypeError, match="got str"):
+        to_qiskit(program)
 
 
 def _aer_counts(circuit: QuantumCircuit) -> dict[str, int]:
