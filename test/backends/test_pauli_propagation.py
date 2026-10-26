@@ -295,6 +295,73 @@ def test_propagation_reports_weight_and_julia_failures():
         _one_expectation(BlankModule(), 1, [], [], "Z", 1, max_weight=None, min_abs_coeff=1e-8)
 
 
+def test_expectations_reuse_the_julia_module(monkeypatch):
+    from pathlib import Path
+
+    reads = []
+    created = []
+
+    class Interface:
+        def readqasm(self, path):
+            reads.append(Path(path).read_text(encoding="utf-8"))
+            return 2, ["gate"], [0.4, 0.2]
+
+    class Propagation:
+        OpenQASMInterface = Interface()
+
+        def PauliString(self, nqubits, symbol, qubit):
+            return (symbol, qubit)
+
+        def propagate(self, gates, observable, thetas, **options):
+            assert gates == ["gate"]
+            assert thetas == [0.4, 0.2]
+            assert options["min_abs_coeff"] == 1e-10
+            return observable
+
+        def overlapwithzero(self, propagated):
+            symbol, qubit = propagated
+            if symbol == "Z" and qubit == 2:
+                return -0.25
+            if symbol == "Z" and qubit == 1:
+                return 0.5
+            if symbol == "X" and qubit == 1:
+                return 0.3
+            raise AssertionError(propagated)
+
+    class JuliaModule:
+        def __init__(self):
+            created.append(self)
+            self.PauliPropagation = Propagation()
+
+        def seval(self, expr):
+            if "isdefined" in expr:
+                return True
+            if expr.startswith("import"):
+                return None
+            return lambda name: name
+
+    class JuliaCall:
+        def newmodule(self, name):
+            assert name == "ShadowSimPauliPropagation"
+            return JuliaModule()
+
+    monkeypatch.setattr("shadowsim.backends.pauli_propagation._julia_modules", [])
+    monkeypatch.setattr(
+        "shadowsim.backends.pauli_propagation.import_optional",
+        lambda module, *, extra: JuliaCall(),
+    )
+    circuit = QuantumCircuit(2)
+    circuit.ry(0.4, 0)
+    circuit.ry(0.2, 1)
+    backend = PauliPropagationBackend()
+
+    assert backend.z_expectations(circuit, [1, 0], shots=4, seed=1) == [-0.25, 0.5]
+    assert backend.x_expectations(circuit, [0], shots=4, seed=1) == [0.3]
+    assert len(created) == 1
+    assert len(reads) == 2
+    assert "OPENQASM" in reads[0]
+
+
 def test_expectations_of_no_qubits_are_empty(monkeypatch):
     def forbidden(module: str, *, extra: str) -> object:
         raise AssertionError(f"imported {module} from the {extra} extra")
