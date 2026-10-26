@@ -49,3 +49,9 @@ def test_import_optional_unknown_extra_matches_its_own_name():
     with patch("shadowsim._optional.importlib.import_module", side_effect=_missing("customlib")):
         with pytest.raises(ImportError, match=r"shadowsim\[customlib\]"):
             import_optional("customlib", extra="customlib")
+
+
+def test_import_optional_names_the_pauli_propagation_extra():
+    with patch("shadowsim._optional.importlib.import_module", side_effect=_missing("juliacall")):
+        with pytest.raises(ImportError, match=r"pip install 'shadowsim\[pauli_propagation\]'"):
+            import_optional("juliacall", extra="pauli_propagation")

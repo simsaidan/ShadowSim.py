@@ -8,12 +8,13 @@ import scipy
 from qiskit import QuantumCircuit, QuantumRegister
 from qiskit.circuit.library import UnitaryGate
 
-from shadowsim.backends.circuit import AerCircuitBackend, CircuitBackend
+from shadowsim.backends.aer import AerCircuitBackend
+from shadowsim.backends.circuit import CircuitBackend, backend_samples, backend_shots
 from shadowsim.core.local_hamiltonian import LocalHamiltonian
 from shadowsim.core.operator import Operator, _Matrix
 from shadowsim.core.state import State
 from shadowsim.simulators._time_points import map_time_points
-from shadowsim.simulators.reducers import population_one
+from shadowsim.simulators.reducers import expectation_x, expectation_z, population_one
 from shadowsim.simulators.result import SimulationResult
 from shadowsim.simulators.simulator import Simulator
 from shadowsim.utils.flip_dict import flip_dict
@@ -80,6 +81,17 @@ def _checked_x_qubits(x_qubits: list[int] | None, num_qubits: int) -> list[int]:
     return chosen
 
 
+def _one_measured_qubit(group: int | list[int]) -> int:
+    """Return the single circuit qubit in a measurement group."""
+    if isinstance(group, bool):
+        raise ValueError("PauliPropagation measures one qubit at a time")
+    if isinstance(group, int):
+        return group
+    if isinstance(group, list) and len(group) == 1 and isinstance(group[0], int) and not isinstance(group[0], bool):
+        return group[0]
+    raise ValueError("PauliPropagation measures one qubit at a time")
+
+
 def _hadamards(circuit: QuantumCircuit, register: QuantumRegister, x_qubits: list[int] | None, num_qubits: int) -> None:
     """Rotate ``x_qubits`` into the X basis before measurement."""
     for qubit in _checked_x_qubits(x_qubits, num_qubits):
@@ -106,7 +118,7 @@ def _trotter_slice_unitaries(
     return [*forward, full, *reversed(forward)]
 
 
-def _trotter_circuit_counts(
+def _trotter_circuit(
     hamiltonians: List[LocalHamiltonian],
     initial_state: State,
     num_qubits: int,
@@ -115,21 +127,14 @@ def _trotter_circuit_counts(
     trotter_depth: int = 1,
     order: Literal[1, 2] = 1,
     verbose: bool = False,
-    shots: int = 10000,
-    seed: int | None = None,
-    circuit_backend: CircuitBackend | None = None,
     x_qubits: list[int] | None = None,
-) -> dict[str, Any]:
-    """Run a closed-system product formula and return counts.
+) -> QuantumCircuit:
+    """Return one closed-system product-formula circuit, without measurement.
 
-    ``circuit_backend`` executes the circuit. Omitting it uses :class:`AerCircuitBackend`.
     ``order=1`` is the first-order product. ``order=2`` is one Strang step per slice.
     ``trotter_depth`` is the number of slices in this time sample, for both orders.
+    Qubits in ``x_qubits`` get a Hadamard so a following Z measurement reads X.
     """
-    if shots <= 0:
-        raise ValueError("shots must be a positive integer")
-    if seed is not None and not isinstance(seed, int):
-        raise TypeError("seed must be an int or None")
     if num_steps <= 0:
         raise ValueError("num_steps must be a positive integer")
     if trotter_depth <= 0:
@@ -156,6 +161,44 @@ def _trotter_circuit_counts(
 
     circ.barrier()
     _hadamards(circ, body, x_qubits, num_qubits)
+    return circ
+
+
+def _trotter_circuit_counts(
+    hamiltonians: List[LocalHamiltonian],
+    initial_state: State,
+    num_qubits: int,
+    t: float,
+    num_steps: int,
+    trotter_depth: int = 1,
+    order: Literal[1, 2] = 1,
+    verbose: bool = False,
+    shots: int = 10000,
+    seed: int | None = None,
+    circuit_backend: CircuitBackend | None = None,
+    x_qubits: list[int] | None = None,
+) -> dict[str, Any]:
+    """Run a closed-system product formula and return counts.
+
+    ``circuit_backend`` executes the circuit. Omitting it uses :class:`AerCircuitBackend`.
+    ``order=1`` is the first-order product. ``order=2`` is one Strang step per slice.
+    ``trotter_depth`` is the number of slices in this time sample, for both orders.
+    """
+    if shots <= 0:
+        raise ValueError("shots must be a positive integer")
+    if seed is not None and not isinstance(seed, int):
+        raise TypeError("seed must be an int or None")
+    circ = _trotter_circuit(
+        hamiltonians,
+        initial_state,
+        num_qubits,
+        t,
+        num_steps,
+        trotter_depth,
+        order=order,
+        verbose=verbose,
+        x_qubits=x_qubits,
+    )
     circ.measure_all()
     counts_backend = circuit_backend if circuit_backend is not None else AerCircuitBackend()
     return counts_backend.run_counts(circ, shots=shots, seed=seed)
@@ -164,7 +207,11 @@ def _trotter_circuit_counts(
 class TrotterizationSimulator(Simulator):
     """Simulate closed-system dynamics with a Trotter product formula.
 
-    Counts come from ``circuit_backend``. Omitting it uses :class:`AerCircuitBackend`.
+    Counts come from ``circuit_backend`` when that backend stores ``shots``.
+    Omitting it uses :class:`AerCircuitBackend`. A backend without a shot budget,
+    such as PauliPropagation, returns one Z expectation per measurement group
+    from the same circuit with the measurement removed. The shot count is that
+    backend's ``shots`` attribute when it has one.
     With ``workers`` greater than 1, that backend is pickled into each worker process.
 
     ``order=1`` (the default) applies each local term once per slice of width
@@ -196,7 +243,6 @@ class TrotterizationSimulator(Simulator):
         measurement_groups: list[int | list[int]] | None = None,
         reducers: list[Callable[[dict[str, int]], float]] | None = None,
         verbose: bool = False,
-        shots: int = 10000,
         seed: int | None = None,
         progress: ProgressCallback | None = None,
         workers: int = 1,
@@ -226,8 +272,6 @@ class TrotterizationSimulator(Simulator):
         if trotter_depth <= 0:
             raise ValueError("trotter_depth must be a positive integer")
         _check_order(order)
-        if shots <= 0:
-            raise ValueError("shots must be a positive integer")
         if seed is not None and not isinstance(seed, int):
             raise TypeError("seed must be an int or None")
         if isinstance(workers, bool) or not isinstance(workers, int):
@@ -239,9 +283,12 @@ class TrotterizationSimulator(Simulator):
         self.trotter_depth = trotter_depth
         self.order = order
         self.verbose = verbose
-        self.shots = shots
         self.seed = seed
         self.circuit_backend = circuit_backend if circuit_backend is not None else AerCircuitBackend()
+        if backend_samples(self.circuit_backend):
+            backend_shots(self.circuit_backend)
+        elif workers != 1:
+            raise ValueError("a backend without a shot budget runs in the calling process")
         self.x_qubits = _checked_x_qubits(x_qubits, num_qubits)
         self.progress = progress
         self.workers = workers
@@ -263,6 +310,49 @@ class TrotterizationSimulator(Simulator):
         else:
             groups = traced
         return [float(reducer(groups[j])) for j, reducer in enumerate(self.reducers)]
+
+    def _samples_at(self, t: float) -> list[float]:
+        """Return one sample per measurement group at time ``t``."""
+        if backend_samples(self.circuit_backend):
+            counts = _trotter_circuit_counts(
+                cast(list[LocalHamiltonian], self.hamiltonians),
+                self.initial_state,
+                self.num_qubits,
+                t,
+                self.num_steps,
+                self.trotter_depth,
+                order=self.order,
+                verbose=self.verbose,
+                shots=backend_shots(self.circuit_backend),
+                seed=self.seed,
+                circuit_backend=self.circuit_backend,
+                x_qubits=self.x_qubits,
+            )
+            return self._reduce_counts(counts)
+        return self._expectation_samples(t)
+
+    def _expectation_samples(self, t: float) -> list[float]:
+        """Return Pauli expectations for one time point from a backend without shots."""
+        for reducer in self.reducers:
+            if reducer not in (population_one, expectation_z, expectation_x):
+                raise ValueError("PauliPropagation can return Z and X expectations")
+        qubits = [_one_measured_qubit(group) for group in self.measurement_groups]
+        circuit = _trotter_circuit(
+            cast(list[LocalHamiltonian], self.hamiltonians),
+            self.initial_state,
+            self.num_qubits,
+            t,
+            self.num_steps,
+            self.trotter_depth,
+            order=self.order,
+            verbose=self.verbose,
+            x_qubits=self.x_qubits,
+        )
+        values = self.circuit_backend.z_expectations(circuit, qubits, shots=1, seed=self.seed)
+        return [
+            (1.0 - float(value)) / 2.0 if reducer is population_one else float(value)
+            for reducer, value in zip(self.reducers, values, strict=True)
+        ]
 
     def _on_parallel_result(self, index: int, counts: dict[str, Any]) -> list[float]:
         """Reduce a finished time point. Runs in the parent process."""
@@ -286,21 +376,8 @@ class TrotterizationSimulator(Simulator):
                 self.progress(i, total)
             if self.verbose:
                 print(f"Working on time step {round(t, 3)}")
-            counts = _trotter_circuit_counts(
-                cast(list[LocalHamiltonian], self.hamiltonians),
-                self.initial_state,
-                self.num_qubits,
-                t,
-                self.num_steps,
-                self.trotter_depth,
-                order=self.order,
-                verbose=self.verbose,
-                shots=self.shots,
-                seed=self.seed,
-                circuit_backend=self.circuit_backend,
-                x_qubits=self.x_qubits,
-            )
-            for j, sample in enumerate(self._reduce_counts(counts)):
+            samples = self._samples_at(t)
+            for j, sample in enumerate(samples):
                 results[j].append(sample)
             self._report_completed_step(total)
         return results
@@ -323,7 +400,7 @@ class TrotterizationSimulator(Simulator):
                 {
                     "order": self.order,
                     "verbose": self.verbose,
-                    "shots": self.shots,
+                    "shots": backend_shots(self.circuit_backend),
                     # Same seed the serial loop passes for this circuit.
                     "seed": self.seed,
                     "circuit_backend": self.circuit_backend,
@@ -353,17 +430,22 @@ class TrotterizationSimulator(Simulator):
             results = self._simulate_parallel()
         runtime = perf_counter() - started
         self.results = results
-        return self._make_result(
-            results,
-            runtime=runtime,
-            seed=self.seed,
-            shots=self.shots,
-            num_steps=self.num_steps,
-            trotter_depth=self.trotter_depth,
-            order=self.order,
-            measurement_group_count=len(self.measurement_groups),
-            circuit_backend=self.circuit_backend.name,
-        )
+        metadata: dict[str, Any] = {
+            "num_steps": self.num_steps,
+            "trotter_depth": self.trotter_depth,
+            "order": self.order,
+            "measurement_group_count": len(self.measurement_groups),
+            "circuit_backend": self.circuit_backend.name,
+        }
+        if backend_samples(self.circuit_backend):
+            metadata["shots"] = backend_shots(self.circuit_backend)
+        return self._make_result(results, runtime=runtime, seed=self.seed, **metadata)
+
+    def _shots_field(self) -> str:
+        """Return the shot budget for ``str`` and ``repr``, or an empty string."""
+        if not backend_samples(self.circuit_backend):
+            return ""
+        return f"shots={backend_shots(self.circuit_backend)}, "
 
     def __str__(self) -> str:
         """Return a short string representation of the simulator."""
@@ -374,7 +456,7 @@ class TrotterizationSimulator(Simulator):
             f"trotter_depth={self.trotter_depth}, "
             f"order={self.order}, "
             f"time_steps={self.time_steps}, "
-            f"shots={self.shots}, "
+            f"{self._shots_field()}"
             f"seed={self.seed}"
             ")"
         )
@@ -394,7 +476,7 @@ class TrotterizationSimulator(Simulator):
             f"order={self.order}, "
             f"measurement_groups={self.measurement_groups!r}, "
             f"verbose={self.verbose!r}, "
-            f"shots={self.shots}, "
+            f"{self._shots_field()}"
             f"seed={self.seed!r}, "
             f"workers={self.workers}, "
             f"progress={self.progress!r}"

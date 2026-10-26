@@ -1,3 +1,4 @@
+from shadowsim.backends import AerCircuitBackend
 from shadowsim.benchmarking import Benchmark
 from shadowsim.models import tavis_cummings
 from shadowsim.simulators import QutipSimulator, SplitJMatrixSimulator
@@ -23,8 +24,8 @@ splitjmatrix_simulator = SplitJMatrixSimulator(
     num_steps=40,
     measurement_groups=model.measurement_groups,
     reducers=list(model.reducers),
-    shots=10000,
     seed=0,
+    circuit_backend=AerCircuitBackend(shots=10000),
 )
 
 benchmark = Benchmark(qutip_simulator, splitjmatrix_simulator)

@@ -8,6 +8,7 @@ pytest.importorskip("qutip")
 pytest.importorskip("qiskit")
 pytest.importorskip("qiskit_aer")
 
+from shadowsim.backends import AerCircuitBackend
 from shadowsim.benchmarking import Benchmark
 from shadowsim.models import tavis_cummings
 from shadowsim.simulators import QutipSimulator, SplitJMatrixSimulator
@@ -49,7 +50,7 @@ def test_example2_qutip_splitjmatrix_agreement():
         num_steps=NUM_STEPS,
         measurement_groups=model.measurement_groups,
         reducers=list(model.reducers),
-        shots=SHOTS,
+        circuit_backend=AerCircuitBackend(shots=SHOTS),
     )
 
     benchmark = Benchmark(qutip_simulator, splitjmatrix_simulator)

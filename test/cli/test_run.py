@@ -511,13 +511,36 @@ def test_post_runs_rejects_a_selection() -> None:
 
 
 @pytest.mark.qiskit
+def test_pauli_propagation_builds_a_trotter_run() -> None:
+    pytest.importorskip("qiskit")
+    simulator = build_simulator(
+        _selection(
+            simulator="trotterization",
+            backend="paulipropagation",
+            time_steps=2,
+            num_steps=1,
+            shots=0,
+        )
+    )
+    assert simulator.circuit_backend.name == "pauli_propagation"
+    assert not hasattr(simulator.circuit_backend, "shots")
+
+
+@pytest.mark.qiskit
+def test_pauli_propagation_rejects_split_j() -> None:
+    pytest.importorskip("qiskit")
+    with pytest.raises(ValueError, match="shot budget"):
+        build_simulator(_selection(simulator="splitjmatrix", backend="paulipropagation", time_steps=2))
+
+
+@pytest.mark.qiskit
 @pytest.mark.parametrize("simulator_id", ["trotterization", "splitjmatrix"])
 def test_circuit_simulator_runs_ising_on_aer(simulator_id: str) -> None:
     pytest.importorskip("qiskit_aer")
     simulator = build_simulator(_selection(simulator=simulator_id))
     assert simulator.time_steps == 11
     assert simulator.num_steps == 4
-    assert simulator.shots == 256
+    assert simulator.circuit_backend.shots == 256
     assert simulator.seed == 0
     result = simulator.simulate()
     assert len(result.times) == 11
@@ -580,7 +603,7 @@ def test_circuit_parameters_come_from_the_selection(simulator_id: str) -> None:
     assert simulator.time_steps == 2
     assert simulator.num_steps == 2
     assert simulator.trotter_depth == 2
-    assert simulator.shots == 32
+    assert simulator.circuit_backend.shots == 32
     assert simulator.seed == -3
     assert simulator.order == 2
 
@@ -675,7 +698,7 @@ def test_post_runs_reports_a_simulator_failure(
 
 
 def test_listed_backends_reads_concrete_classes(monkeypatch: pytest.MonkeyPatch) -> None:
-    module = types.ModuleType("shadowsim.backends.circuit")
+    module = types.ModuleType("shadowsim.backends.aer")
 
     class CircuitBackend(Protocol):
         def run_counts(self) -> None: ...
@@ -685,18 +708,6 @@ def test_listed_backends_reads_concrete_classes(monkeypatch: pytest.MonkeyPatch)
 
         def __init__(self) -> None:
             return None
-
-        def run_counts(self) -> None:
-            return None
-
-    class QiskitCircuitBackend:
-        """Run a circuit on a caller-supplied Qiskit ``BackendV2``.
-
-        The wrapped backend receives ``run``.
-        """
-
-        def __init__(self, backend: object, *, name: str = "qiskit") -> None:
-            del backend, name
 
         def run_counts(self) -> None:
             return None
@@ -715,7 +726,7 @@ def test_listed_backends_reads_concrete_classes(monkeypatch: pytest.MonkeyPatch)
             return None
 
     BareCircuitBackend.__doc__ = None
-    for cls in (CircuitBackend, AerCircuitBackend, QiskitCircuitBackend, BareCircuitBackend, NoteCircuitBackend):
+    for cls in (CircuitBackend, AerCircuitBackend, BareCircuitBackend, NoteCircuitBackend):
         cls.__module__ = module.__name__
         setattr(module, cls.__name__, cls)
 
@@ -734,7 +745,8 @@ def test_listed_backends_reads_concrete_classes(monkeypatch: pytest.MonkeyPatch)
     module.Foreign = Foreign  # type: ignore[attr-defined]
 
     def fake_import(name: str, *, extra: str) -> types.ModuleType:
-        assert name == "shadowsim.backends.circuit"
+        if name != "shadowsim.backends.aer":
+            raise ImportError(name)
         assert extra == "qiskit"
         return module
 
@@ -746,6 +758,7 @@ def test_listed_backends_reads_concrete_classes(monkeypatch: pytest.MonkeyPatch)
             "detail": "Run a circuit on Qiskit Aer and return shot counts.",
             "phrase": "Aer",
             "setup": "circuit_backend = AerCircuitBackend()",
+            "shots": False,
         },
         {
             "id": "bare",
@@ -753,8 +766,29 @@ def test_listed_backends_reads_concrete_classes(monkeypatch: pytest.MonkeyPatch)
             "detail": "Bare",
             "phrase": "Bare",
             "setup": "circuit_backend = BareCircuitBackend()",
+            "shots": False,
         },
     ]
+
+
+def test_listed_backends_reraises_the_first_import_error(monkeypatch: pytest.MonkeyPatch) -> None:
+    def fake_import(name: str, *, extra: str) -> types.ModuleType:
+        raise ImportError(f"missing {name}")
+
+    monkeypatch.setattr("shadowsim.backends.catalog.import_optional", fake_import)
+
+    with pytest.raises(ImportError, match="missing shadowsim.backends.aer"):
+        listed_backends()
+
+
+def test_listed_backends_rejects_an_empty_catalog(monkeypatch: pytest.MonkeyPatch) -> None:
+    def fake_import(name: str, *, extra: str) -> types.ModuleType:
+        return types.ModuleType(name)
+
+    monkeypatch.setattr("shadowsim.backends.catalog.import_optional", fake_import)
+
+    with pytest.raises(ImportError, match="no circuit backends"):
+        listed_backends()
 
 
 @pytest.mark.qiskit
@@ -762,9 +796,13 @@ def test_listed_backends_matches_the_circuit_module() -> None:
     pytest.importorskip("qiskit")
     pytest.importorskip("qiskit_aer")
     listed = listed_backends()
-    assert [item["id"] for item in listed] == ["aer"]
-    assert listed[0]["setup"] == "circuit_backend = AerCircuitBackend()"
+    assert [item["id"] for item in listed] == ["aer", "paulipropagation"]
+    assert listed[0]["setup"] == "circuit_backend = AerCircuitBackend(shots={shots})"
+    assert listed[0]["shots"] is True
     assert "Aer" in listed[0]["detail"]
+    assert listed[1]["setup"] == "circuit_backend = PauliPropagationBackend()"
+    assert listed[1]["shots"] is False
+    assert "Pauli" in listed[1]["detail"]
 
 
 def test_describe_models_reads_factories() -> None:

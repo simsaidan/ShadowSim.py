@@ -347,6 +347,19 @@ def test_resource_metrics_shot_budget():
     assert resources[1]["total_shots"] == 30
 
 
+def test_resource_metrics_reads_shots_from_the_circuit_backend():
+    sampled = StubSimulator(id="a", time_steps=3)
+    sampled.circuit_backend = type("Backend", (), {"shots": 4})()
+    benchmark = Benchmark(sampled, StubSimulator(id="b", time_steps=3))
+    benchmark.run()
+
+    resources = benchmark.resource_metrics()
+    assert resources[0]["shots_per_job"] == 4
+    assert resources[0]["num_jobs"] == 3
+    assert resources[0]["total_shots"] == 12
+    assert resources[1]["shots_per_job"] is None
+
+
 def test_resource_metrics_requires_run():
     a, b = _pair()
     benchmark = Benchmark(a, b)
