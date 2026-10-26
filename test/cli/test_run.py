@@ -771,6 +771,26 @@ def test_listed_backends_reads_concrete_classes(monkeypatch: pytest.MonkeyPatch)
     ]
 
 
+def test_listed_backends_reraises_the_first_import_error(monkeypatch: pytest.MonkeyPatch) -> None:
+    def fake_import(name: str, *, extra: str) -> types.ModuleType:
+        raise ImportError(f"missing {name}")
+
+    monkeypatch.setattr("shadowsim.backends.catalog.import_optional", fake_import)
+
+    with pytest.raises(ImportError, match="missing shadowsim.backends.aer"):
+        listed_backends()
+
+
+def test_listed_backends_rejects_an_empty_catalog(monkeypatch: pytest.MonkeyPatch) -> None:
+    def fake_import(name: str, *, extra: str) -> types.ModuleType:
+        return types.ModuleType(name)
+
+    monkeypatch.setattr("shadowsim.backends.catalog.import_optional", fake_import)
+
+    with pytest.raises(ImportError, match="no circuit backends"):
+        listed_backends()
+
+
 @pytest.mark.qiskit
 def test_listed_backends_matches_the_circuit_module() -> None:
     pytest.importorskip("qiskit")

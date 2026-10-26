@@ -128,6 +128,173 @@ def test_importable_trotter_circuit_matches_the_unitary_state():
         _importable_circuit(entangled)
 
 
+def test_a_python_failure_inside_julia_is_reraised(monkeypatch):
+    class JuliaModule:
+        def seval(self, expr):
+            raise RuntimeError("python blew up")
+
+    class JuliaCall:
+        def newmodule(self, name):
+            return JuliaModule()
+
+    monkeypatch.setattr("shadowsim.backends.pauli_propagation._julia_modules", [])
+    monkeypatch.setattr(
+        "shadowsim.backends.pauli_propagation.import_optional",
+        lambda module, *, extra: JuliaCall(),
+    )
+    circuit = QuantumCircuit(1)
+    circuit.x(0)
+
+    with pytest.raises(RuntimeError, match="python blew up"):
+        PauliPropagationBackend().z_expectations(circuit, [0], shots=1, seed=None)
+
+
+def test_missing_openqasm_interface_names_the_revision(monkeypatch):
+    class JuliaModule:
+        def seval(self, expr):
+            return False
+
+    class JuliaCall:
+        def newmodule(self, name):
+            return JuliaModule()
+
+    monkeypatch.setattr("shadowsim.backends.pauli_propagation._julia_modules", [])
+    monkeypatch.setattr(
+        "shadowsim.backends.pauli_propagation.import_optional",
+        lambda module, *, extra: JuliaCall(),
+    )
+    circuit = QuantumCircuit(1)
+    circuit.h(0)
+
+    with pytest.raises(ValueError, match="OpenQASMInterface") as caught:
+        PauliPropagationBackend().z_expectations(circuit, [0], shots=1, seed=None)
+    assert "Pkg.add" in str(caught.value)
+
+
+def test_a_julia_read_error_is_reported(monkeypatch):
+    class JuliaError(Exception):
+        pass
+
+    JuliaError.__module__ = "juliacall"
+
+    class Interface:
+        def readqasm(self, path):
+            raise JuliaError("ParseError: unknown gate")
+
+    class Module:
+        class PauliPropagation:
+            OpenQASMInterface = Interface()
+
+    monkeypatch.setattr("shadowsim.backends.pauli_propagation._julia_module", Module)
+    circuit = QuantumCircuit(1)
+    circuit.h(0)
+
+    with pytest.raises(ValueError, match="unknown gate"):
+        PauliPropagationBackend().x_expectations(circuit, [0], shots=1, seed=None)
+
+
+def test_an_unreadable_gate_is_rejected(monkeypatch):
+    from qiskit.circuit import Gate
+
+    def leave_unknown(circuit, *, basis_gates, optimization_level):
+        mystery = QuantumCircuit(circuit.num_qubits)
+        mystery.append(Gate("mystery", 1, []), [0])
+        return mystery
+
+    monkeypatch.setattr("shadowsim.backends.pauli_propagation.transpile", leave_unknown)
+    circuit = QuantumCircuit(1)
+    circuit.h(0)
+
+    with pytest.raises(ValueError, match="mystery"):
+        PauliPropagationBackend().z_expectations(circuit, [0], shots=1, seed=None)
+
+
+def test_product_initialize_skips_an_identity_and_prepares_one():
+    import numpy as np
+
+    from shadowsim.backends.pauli_propagation import _importable_circuit, _product_kets
+
+    zero = QuantumCircuit(1)
+    zero.initialize([1, 0], [0])
+    assert _importable_circuit(zero).data == []
+
+    one = QuantumCircuit(1)
+    one.initialize([0, 1], [0])
+    assert [item.operation.name for item in _importable_circuit(one).data] == ["u"]
+    assert _product_kets(np.array([1.0, 2.0, 3.0])) is None
+    assert _product_kets(np.zeros(2)) is None
+    assert _product_kets(np.array([])) is None
+
+
+def test_a_reconstruction_that_misses_the_state_is_rejected(monkeypatch):
+    import numpy as np
+
+    from shadowsim.backends.pauli_propagation import _product_kets
+
+    monkeypatch.setattr("shadowsim.backends.pauli_propagation.np.vdot", lambda left, right: 0.0)
+
+    assert _product_kets(np.array([1.0, 0.0])) is None
+
+
+def test_propagation_reports_weight_and_julia_failures():
+    from shadowsim.backends.pauli_propagation import _one_expectation
+
+    class JuliaError(Exception):
+        pass
+
+    JuliaError.__module__ = "juliacall"
+
+    class Propagation:
+        def __init__(self):
+            self.options = None
+
+        def PauliString(self, nqubits, symbol, qubit):
+            return (nqubits, symbol, qubit)
+
+        def propagate(self, gates, observable, thetas, **options):
+            self.options = options
+            if options.get("max_weight") == 1:
+                raise JuliaError("\n\nweight exceeded\n")
+            return 1
+
+        def overlapwithzero(self, propagated):
+            return 0.25
+
+    class Module:
+        def __init__(self):
+            self.PauliPropagation = Propagation()
+
+        def seval(self, expr):
+            return lambda name: name
+
+    module = Module()
+    value = _one_expectation(module, 1, [], [], "Z", 1, max_weight=2.0, min_abs_coeff=1e-8)
+
+    assert value == 0.25
+    assert module.PauliPropagation.options == {"min_abs_coeff": 1e-8, "max_weight": 2.0}
+    with pytest.raises(ValueError, match="weight exceeded"):
+        _one_expectation(module, 1, [], [], "Z", 1, max_weight=1.0, min_abs_coeff=1e-8)
+
+    class BlankPropagation:
+        def PauliString(self, nqubits, symbol, qubit):
+            return (nqubits, symbol, qubit)
+
+        def propagate(self, gates, observable, thetas, **options):
+            raise JuliaError(" \n ")
+
+        def overlapwithzero(self, propagated):
+            return 0.0
+
+    class BlankModule:
+        PauliPropagation = BlankPropagation()
+
+        def seval(self, expr):
+            return lambda name: name
+
+    with pytest.raises(ValueError, match="PauliPropagation failed"):
+        _one_expectation(BlankModule(), 1, [], [], "Z", 1, max_weight=None, min_abs_coeff=1e-8)
+
+
 def test_expectations_of_no_qubits_are_empty(monkeypatch):
     def forbidden(module: str, *, extra: str) -> object:
         raise AssertionError(f"imported {module} from the {extra} extra")

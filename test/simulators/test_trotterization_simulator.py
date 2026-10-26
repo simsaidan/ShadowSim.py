@@ -157,6 +157,47 @@ def test_trotterization_simulator_reads_pauli_expectations():
     assert "shots=" not in str(simulator)
 
 
+def test_trotterization_simulator_rejects_a_boolean_pauli_group():
+    class Expectations:
+        name = "expectations"
+
+    with pytest.raises(ValueError, match="one qubit"):
+        TrotterizationSimulator(
+            [LocalHamiltonian(Z, [0])],
+            [],
+            State(np.array([1.0, 0.0], dtype=np.complex128), 1),
+            num_qubits=1,
+            total_time=0.1,
+            time_steps=1,
+            num_steps=1,
+            measurement_groups=[True],  # type: ignore[list-item]
+            reducers=[population_one],
+            circuit_backend=Expectations(),  # type: ignore[arg-type]
+        ).simulate()
+
+
+def test_trotterization_simulator_rejects_an_unsupported_pauli_reducer():
+    class Expectations:
+        name = "expectations"
+
+        def z_expectations(self, circuit, qubits, *, shots, seed):
+            raise AssertionError("expectations")
+
+    with pytest.raises(ValueError, match="Z and X"):
+        TrotterizationSimulator(
+            [LocalHamiltonian(Z, [0])],
+            [],
+            State(np.array([1.0, 0.0], dtype=np.complex128), 1),
+            num_qubits=1,
+            total_time=0.1,
+            time_steps=1,
+            num_steps=1,
+            measurement_groups=[0],
+            reducers=[lambda counts: 0.0],
+            circuit_backend=Expectations(),  # type: ignore[arg-type]
+        ).simulate()
+
+
 def test_trotterization_simulator_rejects_a_joint_pauli_group():
     class Expectations:
         name = "expectations"
