@@ -153,6 +153,10 @@ def _load_backend(name: str) -> tuple[ModuleType, str, Callable[..., Simulator]]
 
 
 def _aer_settings(**kwargs: object) -> dict[str, object]:
+    from shadowsim.backends.aer import AerCircuitBackend
+
+    shots = kwargs.pop("shots", 16)
+    backend = kwargs.get("circuit_backend")
     settings: dict[str, object] = {
         "hamiltonians": [LocalHamiltonian(X, [0])],
         "lindblads": [],
@@ -161,9 +165,12 @@ def _aer_settings(**kwargs: object) -> dict[str, object]:
         "total_time": 1.0,
         "time_steps": 2,
         "num_steps": 1,
-        "shots": 16,
         "seed": 5,
     }
+    if backend is None:
+        settings["circuit_backend"] = AerCircuitBackend(shots=shots)  # type: ignore[arg-type]
+    else:
+        backend.shots = shots  # type: ignore[attr-defined]
     settings.update(kwargs)
     return settings
 

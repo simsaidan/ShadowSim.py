@@ -28,6 +28,9 @@ qutip = ["qutip"]
 # SciPy floor matches Qiskit 2.x (scipy>=1.14). QuTiP excludes 1.16.0/1.17.0 on its own.
 qiskit = ["qiskit", "qiskit-aer", "scipy>=1.14"]
 viz = ["matplotlib"]
+# 0.9.37 requires CondaPkg 0.2.38, which needs JSON 1.2. The PauliPropagation
+# revision allows only JSON 0.21, so this extra stays on the previous release.
+pauli_propagation = ["juliacall==0.9.36"]
 all = ["shadowsim[qutip]", "shadowsim[qiskit]", "shadowsim[viz]"]
 
 [project.urls]
@@ -96,6 +99,8 @@ module = [
     "matplotlib.*",
     "scipy",
     "scipy.*",
+    "juliacall",
+    "juliacall.*",
 ]
 ignore_missing_imports = true
 
@@ -141,7 +146,9 @@ module = [
     "shadowsim.models.jaynes_cummings",
     "shadowsim.models.tavis_cummings",
     "shadowsim.backends",
+    "shadowsim.backends.aer",
     "shadowsim.backends.circuit",
+    "shadowsim.backends.pauli_propagation",
     "shadowsim.backends.program",
     "shadowsim.benchmarking",
     "shadowsim.benchmarking.benchmark",
@@ -159,6 +166,7 @@ markers = [
     "qutip: tests that require the qutip extra",
     "qiskit: tests that require the qiskit extra",
     "viz: tests that require the viz extra",
+    "pauli_propagation: tests that require the pauli_propagation extra",
     "cross_extra: tests that require more than one optional extra",
 ]
 

@@ -16,13 +16,14 @@ ShadowSim.py is an open-source Python library with two main purposes:
 
 ## Installation
 
-The core package depends only on NumPy. QuTiP, Qiskit, and Matplotlib are optional extras:
+The core package depends only on NumPy. QuTiP, Qiskit, Matplotlib, and Julia's PauliPropagation are optional:
 
 ```bash
 python -m pip install git+https://github.com/simsaidan/ShadowSim.py.git
 python -m pip install "shadowsim[qutip] @ git+https://github.com/simsaidan/ShadowSim.py.git"
 python -m pip install "shadowsim[qiskit] @ git+https://github.com/simsaidan/ShadowSim.py.git"
 python -m pip install "shadowsim[viz] @ git+https://github.com/simsaidan/ShadowSim.py.git"
+python -m pip install "shadowsim[pauli_propagation] @ git+https://github.com/simsaidan/ShadowSim.py.git"
 python -m pip install "shadowsim[all] @ git+https://github.com/simsaidan/ShadowSim.py.git"
 ```
 
@@ -31,6 +32,7 @@ python -m pip install "shadowsim[all] @ git+https://github.com/simsaidan/ShadowS
 | `qutip` | `QutipSimulator`, `run_shadow_simulation`, and QuTiP interop (`from_qutip` / `to_qutip`) |
 | `qiskit` | Split JMatrix and Trotterization (`qiskit`, `qiskit-aer`, and `scipy`) |
 | `viz` | Matplotlib plots (`plot_results` and benchmark figures) |
+| `pauli_propagation` | `PauliPropagationBackend` (`juliacall` 0.9.36). Julia 1.10+ and the Julia package are a separate install; see [PauliPropagation](#paulipropagation) |
 | `all` | `qutip`, `qiskit`, and `viz` |
 
 The package can then be imported as `shadowsim`. Importing a backend or plot helper without its extra raises an `ImportError` that names the extra to install.
@@ -82,6 +84,36 @@ qobj = to_qutip(H)
 
 Override with `kind=` when needed (e.g. `kind="hamiltonian"` for a unit-trace projector).
 
+### PauliPropagation
+
+`PauliPropagationBackend` returns ⟨Z⟩ and ⟨X⟩ for selected qubits of one Qiskit circuit. Install the `qiskit` extra as well, because the circuit is a `QuantumCircuit`. The `pauli_propagation` extra installs `juliacall` 0.9.36. Julia 1.10 or newer has to be available already. That juliacall release is the one that resolves next to the PauliPropagation revision below.
+
+In the Julia project juliacall uses for this Python environment, install the OpenQASM reader:
+
+```python
+import juliacall
+from juliacall import Main as jl
+
+jl.seval("using Pkg")
+jl.seval('Pkg.add(url="https://github.com/SparqleSim/PauliPropagation.jl", rev="6e8c1ae")')
+```
+
+`readqasm` on that revision accepts OpenQASM 2 / `qelib1` gates, skips `barrier` and `id`, and rejects `measure`, `reset`, and unknown gates. Qubit indexes are 0-based, and each method returns one float per index in that order. `shots` and `seed` are accepted and ignored. `max_weight` truncates Pauli weight when set, and `min_abs_coeff` defaults to `1e-10`.
+
+```python
+from qiskit import QuantumCircuit
+
+from shadowsim.backends import PauliPropagationBackend
+
+circuit = QuantumCircuit(1)
+circuit.rx(0.4, 0)
+backend = PauliPropagationBackend()
+backend.z_expectations(circuit, [0], shots=1, seed=None)  # [cos(0.4)]
+backend.x_expectations(circuit, [0], shots=1, seed=None)  # [0.0]
+```
+
+`RX(0.4)` applied to `|0⟩` stays in the YZ plane, so ⟨X⟩ is 0. `run_counts` raises `NotImplementedError`. The builder can run a closed Trotter circuit on this backend: product states are prepared with single-qubit gates, the circuit is transpiled into gates the reader accepts, and each requested qubit returns a Z or X expectation. Split JMatrix samples an ancilla and stays on Aer.
+
 ### Simulation results
 
 Each backend’s `simulate()` / `run()` returns a `SimulationResult` with:
@@ -109,7 +141,10 @@ The following simulators are supported by the package:
 | Split JMatrix | quantum-inspired | true |
 | Trotterization | quantum-inspired | false |
 | Wave matrix Lindbladization (coming soon) | — | — |
-| Pauli propagation (coming soon) | — | — |
+| Pauli propagation time evolution (coming soon) | — | — |
+
+Single-qubit ⟨Z⟩ and ⟨X⟩ for one circuit are available now from
+[`PauliPropagationBackend`](#paulipropagation).
 
 ### Sparse / Pauli-label shadow construction
 
@@ -218,6 +253,7 @@ factory. Defaults match the historical Example 2 parameters; pass
 operator embeddings.
 
 ```python
+from shadowsim.backends import AerCircuitBackend
 from shadowsim.benchmarking import Benchmark
 from shadowsim.models import tavis_cummings
 from shadowsim.simulators import QutipSimulator, SplitJMatrixSimulator
@@ -250,7 +286,7 @@ splitjmatrix_simulator = SplitJMatrixSimulator(
     num_steps=40,
     measurement_groups=model.measurement_groups,
     reducers=list(model.reducers),
-    shots=10000,
+    circuit_backend=AerCircuitBackend(shots=10000),
 )
 ```
 
@@ -258,18 +294,19 @@ To easily compare results, we initialize a benchmark with a reference simulator
 and one or more challengers. All simulators must share the same time grid.
 We run the benchmark, which runs the underlying simulations. Numeric L∞ / L2 /
 MAE / RMSE error metrics vs the reference are available via `error_metrics`.
-Wall-clock time and shot budget (when a simulator exposes `shots`) are available
+Wall-clock time and shot budget (when the circuit backend stores `shots`) are available
 via `resource_metrics`. Both are exported together by `save_error_metrics` as
 `{"errors": ..., "resources": ...}`. `save_result_plot` saves a plot per
 simulator and an absolute-difference plot vs the reference for each challenger.
 The third figure below shows L∞, MAE, and RMSE from `error_metrics`. Those
 three share a per-time-point scale.
 
-QuTiP is deterministic. Split JMatrix estimates populations from a finite
-`shots` budget, so the comparison moves run to run unless you set
-`seed` (wired into Aer’s `seed_simulator`). Residual disagreement also includes
-systematic split-J / Trotter bias that does not vanish with more shots. Use a
-lower `shots` for smoke checks and a higher budget for publication figures; pass
+QuTiP is deterministic. Split JMatrix estimates populations from the finite
+`shots` budget on `AerCircuitBackend`, so the comparison moves run to run unless
+you set `seed` (wired into Aer’s `seed_simulator`). Residual disagreement also
+includes systematic split-J / Trotter bias that does not vanish with more shots.
+Use a lower `shots` value on that backend for smoke checks and a higher budget
+for publication figures; pass
 `verbose=True` or a `progress(step, total)` callback for long-run feedback.
 `workers=1` (the default) runs each time point serially. A larger `workers`
 value runs those independent points on a process pool; traces stay in `tlist`

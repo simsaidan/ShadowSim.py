@@ -3,29 +3,31 @@
 from typing import TYPE_CHECKING, Any
 
 from shadowsim._optional import import_optional
-from shadowsim.backends.catalog import ListedBackend as ListedBackend
-from shadowsim.backends.catalog import listed_backends as listed_backends
 
 if TYPE_CHECKING:
-    from shadowsim.backends.circuit import AerCircuitBackend as AerCircuitBackend
+    from shadowsim.backends.aer import AerCircuitBackend as AerCircuitBackend
     from shadowsim.backends.circuit import CircuitBackend as CircuitBackend
-    from shadowsim.backends.circuit import QiskitCircuitBackend as QiskitCircuitBackend
     from shadowsim.backends.circuit import from_qiskit as from_qiskit
     from shadowsim.backends.circuit import to_qiskit as to_qiskit
+    from shadowsim.backends.pauli_propagation import PauliPropagationBackend as PauliPropagationBackend
 
 _EXPORTS: dict[str, tuple[str, str]] = {
-    "AerCircuitBackend": ("shadowsim.backends.circuit", "qiskit"),
+    "AerCircuitBackend": ("shadowsim.backends.aer", "qiskit"),
     "CircuitBackend": ("shadowsim.backends.circuit", "qiskit"),
-    "QiskitCircuitBackend": ("shadowsim.backends.circuit", "qiskit"),
+    "PauliPropagationBackend": ("shadowsim.backends.pauli_propagation", "pauli_propagation"),
     "from_qiskit": ("shadowsim.backends.circuit", "qiskit"),
     "to_qiskit": ("shadowsim.backends.circuit", "qiskit"),
 }
+
+# Imported after ``_EXPORTS`` so the catalog can read that map while this module loads.
+from shadowsim.backends.catalog import ListedBackend as ListedBackend
+from shadowsim.backends.catalog import listed_backends as listed_backends
 
 __all__ = [
     "AerCircuitBackend",
     "CircuitBackend",
     "ListedBackend",
-    "QiskitCircuitBackend",
+    "PauliPropagationBackend",
     "from_qiskit",
     "listed_backends",
     "to_qiskit",

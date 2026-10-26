@@ -9,7 +9,7 @@ pytest.importorskip("scipy")
 
 import scipy.linalg
 
-import shadowsim.backends.circuit as circuit_backend_module
+import shadowsim.backends.aer as aer_backend_module
 import shadowsim.simulators.splitjmatrix_simulator as splitjmatrix_module
 from shadowsim.core import LocalHamiltonian, LocalOperator, Operator, State
 from shadowsim.simulators import SplitJMatrixSimulator
@@ -26,6 +26,11 @@ Z = np.array([[1, 0], [0, -1]], dtype=np.complex128)
 
 
 def _simulator(*, verbose=False, shots=10000, **kwargs):
+    backend = kwargs.get("circuit_backend")
+    if backend is None:
+        kwargs["circuit_backend"] = aer_backend_module.AerCircuitBackend(shots=shots)
+    else:
+        backend.shots = shots
     return SplitJMatrixSimulator(
         [LocalHamiltonian(Z, [0])],
         [],
@@ -35,7 +40,6 @@ def _simulator(*, verbose=False, shots=10000, **kwargs):
         time_steps=2,
         num_steps=1,
         verbose=verbose,
-        shots=shots,
         **kwargs,
     )
 
@@ -111,6 +115,23 @@ def test_splitjmatrix_simulator_progress_callback(monkeypatch):
     _simulator(progress=lambda step, total: seen.append((step, total))).simulate()
 
     assert seen == [(0, 2), (1, 2)]
+
+
+def test_splitjmatrix_simulator_requires_a_shot_budget():
+    class Expectations:
+        name = "expectations"
+
+    with pytest.raises(ValueError, match="shot budget"):
+        SplitJMatrixSimulator(
+            [LocalHamiltonian(Z, [0])],
+            [],
+            State(np.array([1.0, 0.0]), 1),
+            num_qubits=1,
+            total_time=1.0,
+            time_steps=2,
+            num_steps=1,
+            circuit_backend=Expectations(),  # type: ignore[arg-type]
+        )
 
 
 def test_splitjmatrix_simulator_rejects_nonpositive_shots():
@@ -385,8 +406,8 @@ def _fake_aer_backend(monkeypatch, ctor_kwargs_log=None):
         def run(self, compiled, shots):
             return FakeJob()
 
-    monkeypatch.setattr(circuit_backend_module, "AerSimulator", FakeBackend)
-    monkeypatch.setattr(circuit_backend_module, "transpile", lambda circ, backend: circ)
+    monkeypatch.setattr(aer_backend_module, "AerSimulator", FakeBackend)
+    monkeypatch.setattr(aer_backend_module, "transpile", lambda circ, backend: circ)
 
 
 def test_split_jmatrix_verbose_prints_iterations(monkeypatch, capsys):

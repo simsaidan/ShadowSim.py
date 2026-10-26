@@ -14,8 +14,9 @@ from qiskit.circuit import Gate, Instruction
 from qiskit.circuit.library import CXGate, RXGate, UnitaryGate
 from qiskit_aer import AerSimulator
 
-import shadowsim.backends.circuit as circuit_backend_module
-from shadowsim.backends.circuit import AerCircuitBackend, QiskitCircuitBackend, from_qiskit, to_qiskit
+import shadowsim.backends.aer as aer_backend_module
+from shadowsim.backends.aer import AerCircuitBackend
+from shadowsim.backends.circuit import from_qiskit, to_qiskit
 from shadowsim.backends.program import Barrier, Hadamard, Measure, Prepare, Program, Reset, Unitary
 from shadowsim.core import LocalHamiltonian, State
 from shadowsim.simulators import SplitJMatrixSimulator, TrotterizationSimulator
@@ -25,6 +26,12 @@ _SIMULATORS = [SplitJMatrixSimulator, TrotterizationSimulator]
 
 
 def _settings(**kwargs):
+    shots = kwargs.pop("shots", 4)
+    backend = kwargs.get("circuit_backend")
+    if backend is None:
+        kwargs["circuit_backend"] = AerCircuitBackend(shots=shots)
+    else:
+        backend.shots = shots
     defaults = {
         "hamiltonians": [LocalHamiltonian(Z, [0])],
         "lindblads": [],
@@ -33,7 +40,6 @@ def _settings(**kwargs):
         "total_time": 0.1,
         "time_steps": 1,
         "num_steps": 1,
-        "shots": 4,
         "seed": 7,
     }
     defaults.update(kwargs)
@@ -56,26 +62,6 @@ class _RecordingBackend:
         return {"1": 4}
 
 
-class _WrappedBackend:
-    """Stand in for a BackendV2 whose run method is observable."""
-
-    def __init__(self):
-        self.runs = []
-
-    def run(self, compiled, shots):
-        self.runs.append((compiled, shots))
-
-        class _Job:
-            def result(self):
-                class _Result:
-                    def get_counts(self):
-                        return {"1": 4}
-
-                return _Result()
-
-        return _Job()
-
-
 @pytest.mark.parametrize("cls", _SIMULATORS)
 def test_default_backend_passes_seed_simulator(monkeypatch, cls):
     ctor_kwargs = []
@@ -95,8 +81,8 @@ def test_default_backend_passes_seed_simulator(monkeypatch, cls):
         def run(self, compiled, shots):
             return FakeJob()
 
-    monkeypatch.setattr(circuit_backend_module, "AerSimulator", FakeBackend)
-    monkeypatch.setattr(circuit_backend_module, "transpile", lambda circ, backend: circ)
+    monkeypatch.setattr(aer_backend_module, "AerSimulator", FakeBackend)
+    monkeypatch.setattr(aer_backend_module, "transpile", lambda circ, backend: circ)
 
     result = cls(**_settings()).simulate()
 
@@ -105,7 +91,7 @@ def test_default_backend_passes_seed_simulator(monkeypatch, cls):
 
 
 def test_one_fake_backend_drives_both_simulators(monkeypatch):
-    monkeypatch.setattr(circuit_backend_module, "AerSimulator", _forbid_aer)
+    monkeypatch.setattr(aer_backend_module, "AerSimulator", _forbid_aer)
     backend = _RecordingBackend()
 
     for cls in _SIMULATORS:
@@ -114,47 +100,6 @@ def test_one_fake_backend_drives_both_simulators(monkeypatch):
         np.testing.assert_allclose(result.observables[0], [1.0])
 
     assert backend.calls == [(4, 7), (4, 7)]
-
-
-def test_qiskit_circuit_backend_runs_wrapped_backend(monkeypatch):
-    monkeypatch.setattr(circuit_backend_module, "AerSimulator", _forbid_aer)
-    wrapped = _WrappedBackend()
-    transpiled_to = []
-
-    def fake_transpile(circ, backend):
-        transpiled_to.append(backend)
-        return circ
-
-    monkeypatch.setattr(circuit_backend_module, "transpile", fake_transpile)
-    backend = QiskitCircuitBackend(wrapped, name="lab")
-
-    for cls in _SIMULATORS:
-        result = cls(**_settings(circuit_backend=backend)).simulate()
-        assert result.metadata["circuit_backend"] == "lab"
-
-    assert transpiled_to == [wrapped, wrapped]
-    assert len(wrapped.runs) == 2
-    assert all(shots == 4 for _compiled, shots in wrapped.runs)
-
-
-def test_qiskit_circuit_backend_requires_get_counts(monkeypatch):
-    monkeypatch.setattr(circuit_backend_module, "transpile", lambda circ, backend: circ)
-
-    class _Result:
-        pass
-
-    class _Job:
-        def result(self):
-            return _Result()
-
-    class _Backend:
-        def run(self, compiled, shots):
-            return _Job()
-
-    circuit = QuantumCircuit(1)
-    circuit.measure_all()
-    with pytest.raises(TypeError, match="get_counts"):
-        QiskitCircuitBackend(_Backend()).run_counts(circuit, shots=1, seed=1)
 
 
 def _permutation_matrix() -> np.ndarray:
@@ -298,28 +243,58 @@ def test_backends_transpile_the_rebuilt_circuit(monkeypatch):
 
             return _Job()
 
-    monkeypatch.setattr(circuit_backend_module, "transpile", fake_transpile)
-    monkeypatch.setattr(circuit_backend_module, "AerSimulator", _CountingBackend)
+    monkeypatch.setattr(aer_backend_module, "transpile", fake_transpile)
+    monkeypatch.setattr(aer_backend_module, "AerSimulator", _CountingBackend)
     circuit, _matrix = _two_register_circuit()
     expected = from_qiskit(circuit)
 
     AerCircuitBackend().run_counts(circuit, shots=1, seed=1)
-    QiskitCircuitBackend(_CountingBackend()).run_counts(circuit, shots=1, seed=None)
 
     assert seen[0] is not circuit
-    assert seen[1] is not circuit
-    assert [from_qiskit(circ) for circ in seen] == [expected, expected]
+    assert from_qiskit(seen[0]) == expected
 
 
 def test_backends_reject_a_gate_without_a_matrix_before_running(monkeypatch):
-    monkeypatch.setattr(circuit_backend_module, "AerSimulator", _forbid_aer)
+    monkeypatch.setattr(aer_backend_module, "AerSimulator", _forbid_aer)
     circuit = QuantumCircuit(1)
     circuit.append(Gate("black_box", 1, []), [0])
 
     with pytest.raises(ValueError, match="'black_box'"):
         AerCircuitBackend().run_counts(circuit, shots=1, seed=1)
-    with pytest.raises(ValueError, match="'black_box'"):
-        QiskitCircuitBackend(_WrappedBackend()).run_counts(circuit, shots=1, seed=1)
+
+
+def test_aer_backend_rejects_a_nonpositive_shot_budget():
+    with pytest.raises(ValueError, match="shots must be a positive integer"):
+        AerCircuitBackend(shots=0)
+    with pytest.raises(ValueError, match="shots must be a positive integer"):
+        AerCircuitBackend(shots=True)  # type: ignore[arg-type]
+
+
+def test_simulator_requires_backend_shots():
+    class Budget:
+        name = "budget"
+
+    def build():
+        return TrotterizationSimulator(
+            [LocalHamiltonian(Z, [0])],
+            [],
+            State(np.array([1.0, 0.0], dtype=np.complex128), 1),
+            num_qubits=1,
+            total_time=0.1,
+            time_steps=1,
+            num_steps=1,
+            circuit_backend=Budget(),  # type: ignore[arg-type]
+        )
+
+    assert build().circuit_backend.name == "budget"
+    Budget.shots = 0
+    with pytest.raises(ValueError, match="shots must be a positive integer"):
+        build()
+    Budget.shots = True
+    with pytest.raises(ValueError, match="shots must be a positive integer"):
+        build()
+    Budget.shots = 4
+    assert build().circuit_backend.shots == 4
 
 
 def test_aer_backend_runs_rx():
@@ -334,3 +309,28 @@ def test_aer_backend_matches_direct_counts():
     circuit, _matrix = _two_register_circuit()
 
     assert AerCircuitBackend().run_counts(circuit, shots=64, seed=3) == _aer_counts(circuit)
+
+
+def test_aer_z_expectations_follow_qubit_order():
+    circuit = QuantumCircuit(2, 1)
+    circuit.x(1)
+    backend = AerCircuitBackend()
+
+    assert backend.z_expectations(circuit, [1, 0], shots=4, seed=1) == [-1.0, 1.0]
+    assert backend.z_expectations(circuit, [], shots=1, seed=1) == []
+
+
+def test_aer_x_expectation_of_plus_is_one():
+    circuit = QuantumCircuit(1)
+    circuit.h(0)
+
+    assert AerCircuitBackend().x_expectations(circuit, [0], shots=5, seed=2) == [1.0]
+
+
+def test_aer_expectations_reject_an_index_outside_the_circuit():
+    circuit = QuantumCircuit(1)
+
+    with pytest.raises(ValueError, match="outside a circuit of 1 qubits"):
+        AerCircuitBackend().z_expectations(circuit, [1], shots=1, seed=1)
+    with pytest.raises(ValueError, match="outside a circuit of 1 qubits"):
+        AerCircuitBackend().x_expectations(circuit, [True], shots=1, seed=1)

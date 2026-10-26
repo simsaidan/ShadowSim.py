@@ -8,7 +8,8 @@ import scipy
 from qiskit import QuantumCircuit, QuantumRegister
 from qiskit.circuit.library import UnitaryGate
 
-from shadowsim.backends.circuit import AerCircuitBackend, CircuitBackend
+from shadowsim.backends.aer import AerCircuitBackend
+from shadowsim.backends.circuit import CircuitBackend, backend_samples, backend_shots
 from shadowsim.core.local_hamiltonian import LocalHamiltonian
 from shadowsim.core.local_operator import LocalOperator
 from shadowsim.core.operator import _Matrix
@@ -165,6 +166,7 @@ class SplitJMatrixSimulator(Simulator):
     covers coherent time ``t``.
 
     Counts come from ``circuit_backend``. Omitting it uses :class:`AerCircuitBackend`.
+    The shot count is that backend's ``shots`` attribute.
     With ``workers`` greater than 1, that backend is pickled into each worker process.
 
     Each time point starts from ``initial_state`` and uses the same ``seed``.
@@ -190,7 +192,6 @@ class SplitJMatrixSimulator(Simulator):
         measurement_groups: list[int | list[int]] | None = None,
         reducers: list[Callable[[dict[str, int]], float]] | None = None,
         verbose: bool = False,
-        shots: int = 10000,
         seed: int | None = None,
         progress: ProgressCallback | None = None,
         workers: int = 1,
@@ -213,8 +214,6 @@ class SplitJMatrixSimulator(Simulator):
                     "SplitJMatrixSimulator `lindblads` must be LocalOperator (with "
                     f"`sites` on the register); got {type(L).__name__}."
                 )
-        if shots <= 0:
-            raise ValueError("shots must be a positive integer")
         if seed is not None and not isinstance(seed, int):
             raise TypeError("seed must be an int or None")
         if isinstance(workers, bool) or not isinstance(workers, int):
@@ -228,9 +227,11 @@ class SplitJMatrixSimulator(Simulator):
         self.trotter_depth = trotter_depth
         self.order = order
         self.verbose = verbose
-        self.shots = shots
         self.seed = seed
         self.circuit_backend = circuit_backend if circuit_backend is not None else AerCircuitBackend()
+        if not backend_samples(self.circuit_backend):
+            raise ValueError("Split JMatrix samples an ancilla circuit and needs a backend with a shot budget")
+        backend_shots(self.circuit_backend)
         self.x_qubits = _checked_x_qubits(x_qubits, num_qubits)
         self.progress = progress
         self.workers = workers
@@ -285,7 +286,7 @@ class SplitJMatrixSimulator(Simulator):
                 self.trotter_depth,
                 order=self.order,
                 verbose=self.verbose,
-                shots=self.shots,
+                shots=backend_shots(self.circuit_backend),
                 seed=self.seed,
                 circuit_backend=self.circuit_backend,
                 x_qubits=self.x_qubits,
@@ -315,7 +316,7 @@ class SplitJMatrixSimulator(Simulator):
                 {
                     "order": self.order,
                     "verbose": self.verbose,
-                    "shots": self.shots,
+                    "shots": backend_shots(self.circuit_backend),
                     # Same seed the serial loop passes for this circuit.
                     "seed": self.seed,
                     "circuit_backend": self.circuit_backend,
@@ -349,7 +350,7 @@ class SplitJMatrixSimulator(Simulator):
             results,
             runtime=runtime,
             seed=self.seed,
-            shots=self.shots,
+            shots=backend_shots(self.circuit_backend),
             num_steps=self.num_steps,
             trotter_depth=self.trotter_depth,
             order=self.order,
@@ -367,7 +368,7 @@ class SplitJMatrixSimulator(Simulator):
             f"trotter_depth={self.trotter_depth}, "
             f"order={self.order}, "
             f"time_steps={self.time_steps}, "
-            f"shots={self.shots}, "
+            f"shots={backend_shots(self.circuit_backend)}, "
             f"seed={self.seed}"
             ")"
         )
@@ -387,7 +388,7 @@ class SplitJMatrixSimulator(Simulator):
             f"order={self.order}, "
             f"measurement_groups={self.measurement_groups!r}, "
             f"verbose={self.verbose!r}, "
-            f"shots={self.shots}, "
+            f"shots={backend_shots(self.circuit_backend)}, "
             f"seed={self.seed!r}, "
             f"workers={self.workers}, "
             f"progress={self.progress!r}"

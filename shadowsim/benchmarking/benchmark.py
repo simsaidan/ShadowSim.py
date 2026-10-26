@@ -106,9 +106,10 @@ class Benchmark:
     def resource_metrics(self) -> list[dict[str, Any]]:
         """Return wall-clock time and shot budget for each simulator.
 
-        Requires ``run()`` first. Shot fields are ``None`` when a simulator has no
-        ``shots`` attribute (e.g. QuTiP); otherwise ``num_jobs`` is ``len(tlist)``
-        and ``total_shots`` is ``shots_per_job * num_jobs``.
+        Requires ``run()`` first. Shot fields are ``None`` when neither the circuit
+        backend nor the simulator stores an integer ``shots`` count (for example
+        QuTiP). Otherwise ``num_jobs`` is ``len(tlist)`` and ``total_shots`` is
+        ``shots_per_job * num_jobs``.
 
         ``simulator_id`` is that simulator's id. When the same id appears more
         than once, it is reported as ``id#1``, ``id#2``, and so on, in benchmark
@@ -119,7 +120,11 @@ class Benchmark:
         metrics: list[dict[str, Any]] = []
         labels = _report_ids(self.simulators)
         for simulator, wall_time, label in zip(self.simulators, self._wall_times, labels, strict=True):
-            shots_per_job = getattr(simulator, "shots", None)
+            backend = getattr(simulator, "circuit_backend", None)
+            if backend is None:
+                shots_per_job = getattr(simulator, "shots", None)
+            else:
+                shots_per_job = getattr(backend, "shots", None)
             if shots_per_job is None:
                 num_jobs = None
                 total_shots = None

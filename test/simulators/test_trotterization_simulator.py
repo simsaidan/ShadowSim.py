@@ -11,11 +11,11 @@ pytest.importorskip("scipy")
 
 import scipy.linalg
 
-import shadowsim.backends.circuit as circuit_backend_module
+import shadowsim.backends.aer as aer_backend_module
 import shadowsim.simulators.trotterization_simulator as trotter_module
 from shadowsim.benchmarking import Benchmark
 from shadowsim.core import Hamiltonian, LocalHamiltonian, Operator, State
-from shadowsim.simulators import TrotterizationSimulator, population_one
+from shadowsim.simulators import TrotterizationSimulator, expectation_z, population_one
 from shadowsim.simulators.simulator import Simulator
 from shadowsim.simulators.trotterization_simulator import (
     _trace_qubits,
@@ -30,6 +30,12 @@ ONE = np.array([[0.0, 0.0], [0.0, 1.0]], dtype=np.complex128)
 
 
 def _tiny(**kwargs):
+    shots = kwargs.pop("shots", 256)
+    backend = kwargs.get("circuit_backend")
+    if backend is None:
+        kwargs["circuit_backend"] = aer_backend_module.AerCircuitBackend(shots=shots)
+    else:
+        backend.shots = shots
     defaults = {
         "hamiltonians": [LocalHamiltonian(Z, [0])],
         "lindblads": [],
@@ -38,7 +44,6 @@ def _tiny(**kwargs):
         "total_time": 0.1,
         "time_steps": 3,
         "num_steps": 4,
-        "shots": 256,
         "seed": 0,
     }
     defaults.update(kwargs)
@@ -62,8 +67,8 @@ def _fake_aer_backend(monkeypatch, ctor_kwargs_log=None):
         def run(self, compiled, shots):
             return FakeJob()
 
-    monkeypatch.setattr(circuit_backend_module, "AerSimulator", FakeBackend)
-    monkeypatch.setattr(circuit_backend_module, "transpile", lambda circ, backend: circ)
+    monkeypatch.setattr(aer_backend_module, "AerSimulator", FakeBackend)
+    monkeypatch.setattr(aer_backend_module, "transpile", lambda circ, backend: circ)
 
 
 def test_trotterization_simulator_is_simulator():
@@ -103,6 +108,93 @@ def test_trotterization_simulator_rejects_lindblads():
 def test_trotterization_simulator_rejects_non_local_hamiltonian():
     with pytest.raises(TypeError, match="LocalHamiltonian"):
         _tiny(hamiltonians=[Hamiltonian(Z)])
+
+
+def test_trotterization_simulator_reads_pauli_expectations():
+    class Expectations:
+        name = "expectations"
+
+        def __init__(self) -> None:
+            self.qubits: list[list[int]] = []
+            self.measured = False
+
+        def z_expectations(self, circuit, qubits, *, shots, seed):
+            self.qubits.append(list(qubits))
+            self.measured = any(instruction.operation.name == "measure" for instruction in circuit.data)
+            return [0.5 for _ in qubits]
+
+        def run_counts(self, circuit, *, shots, seed):
+            raise AssertionError("counts")
+
+    backend = Expectations()
+    shared = {
+        "hamiltonians": [LocalHamiltonian(Z, [0])],
+        "lindblads": [],
+        "initial_state": State(np.array([1.0, 0.0], dtype=np.complex128), 1),
+        "num_qubits": 1,
+        "total_time": 0.2,
+        "time_steps": 2,
+        "num_steps": 1,
+        "seed": 3,
+        "circuit_backend": backend,
+    }
+    simulator = TrotterizationSimulator(
+        **shared,
+        measurement_groups=[0],
+        reducers=[expectation_z],
+    )
+    expectations = simulator.simulate()
+    populations = TrotterizationSimulator(
+        **shared,
+        measurement_groups=[[0]],
+        reducers=[population_one],
+    ).simulate()
+
+    assert expectations.observables[0].tolist() == [0.5, 0.5]
+    assert populations.observables[0].tolist() == [0.25, 0.25]
+    assert backend.qubits == [[0], [0], [0], [0]]
+    assert backend.measured is False
+    assert "shots=" not in str(simulator)
+
+
+def test_trotterization_simulator_rejects_a_joint_pauli_group():
+    class Expectations:
+        name = "expectations"
+
+        def z_expectations(self, circuit, qubits, *, shots, seed):
+            raise AssertionError("expectations")
+
+    with pytest.raises(ValueError, match="one qubit"):
+        TrotterizationSimulator(
+            [LocalHamiltonian(Z, [0])],
+            [],
+            State(np.array([1.0, 0.0], dtype=np.complex128), 1),
+            num_qubits=1,
+            total_time=0.1,
+            time_steps=1,
+            num_steps=1,
+            measurement_groups=[[0, 0]],
+            reducers=[population_one],
+            circuit_backend=Expectations(),  # type: ignore[arg-type]
+        ).simulate()
+
+
+def test_trotterization_simulator_rejects_parallel_pauli_runs():
+    class Expectations:
+        name = "expectations"
+
+    with pytest.raises(ValueError, match="calling process"):
+        TrotterizationSimulator(
+            [LocalHamiltonian(Z, [0])],
+            [],
+            State(np.array([1.0, 0.0], dtype=np.complex128), 1),
+            num_qubits=1,
+            total_time=0.1,
+            time_steps=1,
+            num_steps=1,
+            workers=2,
+            circuit_backend=Expectations(),  # type: ignore[arg-type]
+        )
 
 
 def test_trotterization_simulator_rejects_nonpositive_shots():
@@ -489,8 +581,8 @@ def test_circuit_repeats_slice_unitaries(monkeypatch, order):
             captured.append(compiled)
             return FakeJob()
 
-    monkeypatch.setattr(circuit_backend_module, "AerSimulator", lambda *args, **kwargs: FakeBackend())
-    monkeypatch.setattr(circuit_backend_module, "transpile", lambda circ, backend: circ)
+    monkeypatch.setattr(aer_backend_module, "AerSimulator", lambda *args, **kwargs: FakeBackend())
+    monkeypatch.setattr(aer_backend_module, "transpile", lambda circ, backend: circ)
 
     terms = [LocalHamiltonian(X, [0]), LocalHamiltonian(Z, [0])]
     t = 0.5
@@ -554,8 +646,8 @@ def test_trotterization_qutip_closed_agreement():
         num_steps=NUM_STEPS,
         measurement_groups=[0],
         reducers=[population_one],
-        shots=SHOTS,
         seed=0,
+        circuit_backend=aer_backend_module.AerCircuitBackend(shots=SHOTS),
     )
 
     benchmark = Benchmark(qutip_simulator, trotter_simulator)

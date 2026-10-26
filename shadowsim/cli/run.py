@@ -60,8 +60,8 @@ def build_simulator(selection: Mapping[str, object], *, time_steps: int = 101) -
     """Build a simulator for one builder-page selection.
 
     Args:
-        selection: Page ids and settings. ``then`` is ignored. ``backend`` must
-            be ``aer``. ``measure`` of ``x`` or ``z`` records that Pauli's
+        selection: Page ids and settings. ``then`` is ignored. ``backend`` is
+            ``aer`` or ``paulipropagation``. ``measure`` of ``x`` or ``z`` records that Pauli's
             expectation on each selected qubit for every simulator.
             ``model`` is a factory name from :func:`shadowsim.models.catalog.listed_models`.
             A non-empty ``terms`` list is the model instead: each item has ``id``
@@ -79,8 +79,9 @@ def build_simulator(selection: Mapping[str, object], *, time_steps: int = 101) -
             every qubit.
             ``time_steps`` in ``selection`` overrides the ``time_steps`` argument.
             Shot-based simulators also read ``num_steps``, ``trotter_depth``,
-            ``order`` (1 or 2), ``shots``, and ``seed``. ``shots`` is shared by
-            those simulators; the page collects it on the backend.
+            ``order`` (1 or 2), ``shots``, and ``seed``. ``shots`` is the Aer
+            backend's shot budget; the page collects it on that backend.
+            PauliPropagation ignores ``shots`` and runs a closed Trotter circuit.
             Missing shot-based values use the page budget.
         time_steps: Points on the QuTiP solver grid when ``selection`` omits
             ``time_steps``. Defaults to the page preview.
@@ -98,8 +99,8 @@ def build_simulator(selection: Mapping[str, object], *, time_steps: int = 101) -
     if simulator_id not in _SIMULATORS:
         raise ValueError("unknown simulator")
     backend = _choice(selection, "backend")
-    if backend != "aer":
-        raise ValueError("only Aer can run from the page")
+    if backend not in {"aer", "paulipropagation"}:
+        raise ValueError("only Aer and PauliPropagation can run from the page")
     state_id = _choice(selection, "state")
     if state_id not in _STATES:
         raise ValueError("unknown initial state")
@@ -116,7 +117,7 @@ def build_simulator(selection: Mapping[str, object], *, time_steps: int = 101) -
     if simulator_id == "qutip":
         steps = _selection_positive_int(selection, "time_steps", time_steps, "time steps")
         return _qutip_simulator(model, state, measure_id, total_time, steps, sites)
-    return _circuit_simulator(simulator_id, selection, model, state, measure_id, total_time, sites)
+    return _circuit_simulator(simulator_id, selection, model, state, measure_id, total_time, sites, backend)
 
 
 def run_page(selection: Mapping[str, object]) -> dict[str, object]:
@@ -208,7 +209,11 @@ def _export_location(selection: Mapping[str, object]) -> Path | None:
 
 def _resource_record(simulator: Simulator, wall_time: float | None) -> dict[str, object]:
     """Return one simulator's runtime and shot budget."""
-    shots_per_job = getattr(simulator, "shots", None)
+    backend = getattr(simulator, "circuit_backend", None)
+    if backend is None:
+        shots_per_job = getattr(simulator, "shots", None)
+    else:
+        shots_per_job = getattr(backend, "shots", None)
     if isinstance(shots_per_job, bool) or not isinstance(shots_per_job, int):
         num_jobs = None
         total_shots = None
@@ -348,25 +353,32 @@ def _circuit_simulator(
     measure_id: str,
     total_time: float,
     sites: list[int],
+    backend: str,
 ) -> Simulator:
-    """Build a shot-based simulator on Aer.
+    """Build a Trotter or Split J simulator on Aer or PauliPropagation.
 
     Z and X each record that Pauli's expectation on every selected qubit.
     X is measured by rotating those qubits into the X basis first. Split J
     measures an ancilla first, so those qubit indexes shift by one.
+    PauliPropagation runs the closed Trotter circuit and ignores the shot budget.
     """
     if measure_id not in ("x", "z"):
         raise ValueError("unknown measurement")
     steps = _selection_positive_int(selection, "time_steps", _CIRCUIT_TIME_STEPS, "time steps")
     num_steps = _selection_positive_int(selection, "num_steps", _CIRCUIT_NUM_STEPS, "product steps")
     depth = _selection_positive_int(selection, "trotter_depth", 1, "Trotter depth")
-    shots = _selection_positive_int(selection, "shots", _CIRCUIT_SHOTS, "shots")
     seed = _selection_integer(selection, "seed", _CIRCUIT_SEED, "seed")
     order = _selection_order(selection)
     if simulator_id == "trotterization" and model.c_ops_local:
         raise ValueError("Trotterization is closed-system only")
     groups, reducers = _pauli_expectation_groups(simulator_id, sites, measure_id)
-    circuit = import_optional("shadowsim.backends.circuit", extra="qiskit")
+    if backend == "paulipropagation":
+        pauli = import_optional("shadowsim.backends.pauli_propagation", extra="pauli_propagation")
+        circuit_backend = pauli.PauliPropagationBackend()
+    else:
+        shots = _selection_positive_int(selection, "shots", _CIRCUIT_SHOTS, "shots")
+        aer = import_optional("shadowsim.backends.aer", extra="qiskit")
+        circuit_backend = aer.AerCircuitBackend(shots=shots)
     module_name = (
         "shadowsim.simulators.trotterization_simulator"
         if simulator_id == "trotterization"
@@ -388,11 +400,10 @@ def _circuit_simulator(
         num_steps=num_steps,
         trotter_depth=depth,
         order=order,
-        shots=shots,
         seed=seed,
         measurement_groups=groups,
         reducers=reducers,
-        circuit_backend=circuit.AerCircuitBackend(),
+        circuit_backend=circuit_backend,
         **({"x_qubits": sites} if measure_id == "x" else {}),
     )
 

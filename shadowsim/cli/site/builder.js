@@ -357,7 +357,7 @@ function selectedSites(count) {
 }
 
 function usesShots() {
-  return placedSims.some((entry) => !blockById("simulator", entry.id)?.observables);
+  return Boolean(blockById("backend", selection.backend)?.shots);
 }
 
 function shotsReady() {
@@ -409,7 +409,8 @@ function fillSetup(block, name) {
   return block.setup
     .replaceAll("{name}", name)
     .replaceAll("{qubits}", qubits == null ? "" : String(Math.round(qubits)))
-    .replaceAll("{total}", total == null ? "" : pyFloat(total));
+    .replaceAll("{total}", total == null ? "" : pyFloat(total))
+    .replaceAll("{shots}", shots.trim());
 }
 
 function modelLine() {
@@ -574,7 +575,6 @@ function simulatorCall(entry, name) {
     time_steps=${params.timeSteps},
     num_steps=${params.numSteps},
     trotter_depth=${params.trotterDepth}${orderLine},
-    shots=${shots.trim()},
     seed=${params.seed},
     measurement_groups=[${groups.join(", ")}],
     reducers=[${expectation}] * ${groups.length}${xLine},
@@ -582,9 +582,14 @@ function simulatorCall(entry, name) {
 )`;
 }
 
+function backendClass(backendId) {
+  const setup = blockById("backend", backendId)?.setup ?? "";
+  return setup.match(/circuit_backend = ([A-Za-z0-9_]+)/)?.[1] ?? "";
+}
+
 function backendSetup(backendId) {
   const block = blockById("backend", backendId);
-  return block ? block.setup : "";
+  return block ? fillSetup(block, "") : "";
 }
 
 function previewText() {
@@ -596,6 +601,10 @@ function previewText() {
   if (selection.model === "preexisting") lines.push(`from shadowsim.models import ${preexistingId}`);
   else if (selection.model) lines.push(`from shadowsim.models import ${selection.model}`);
   lines.push("from shadowsim.simulators import *");
+  const backendName = backendClass(selection.backend);
+  if (placedSims.some((entry) => !blockById("simulator", entry.id)?.observables) && backendName) {
+    lines.push(`from shadowsim.backends import ${backendName}`);
+  }
   const symbols = [...new Set(modelTerms.map((term) => blockById("model", term.id)?.symbol).filter(Boolean))];
   if (placedSims.some((entry) => blockById("simulator", entry.id)?.observables)) symbols.push("Operator");
   if (modelTerms.some((term) => term.id === "lindblad" && !lindbladProblem(term))) symbols.push("LocalOperator");
@@ -1228,10 +1237,12 @@ function exportChip(block) {
 }
 
 function backendChip(block) {
-  const shown = positiveIntText(shots.trim()) ? `${shots.trim()} shots` : block.detail;
+  const samples = Boolean(block.shots);
+  const editing = samples && shotsOpen;
+  const shown = samples && positiveIntText(shots.trim()) ? `${shots.trim()} shots` : block.detail;
   return el(
     "div",
-    { className: `chip tone-violet backend${shotsOpen ? " is-editing" : ""}` },
+    { className: `chip tone-violet backend${editing ? " is-editing" : ""}` },
     el(
       "div",
       { className: "backend-head" },
@@ -1239,7 +1250,7 @@ function backendChip(block) {
         "div",
         {
           onclick: () => {
-            if (shotsOpen) return;
+            if (!samples || editing) return;
             shotsOpen = true;
             draw(document.querySelector(".board"));
           },
@@ -1250,7 +1261,7 @@ function backendChip(block) {
       el(
         "div",
         { className: "backend-actions" },
-        shotsOpen
+        editing
           ? el(
               "button",
               {
@@ -1279,7 +1290,7 @@ function backendChip(block) {
         ),
       ),
     ),
-    shotsOpen
+    editing
       ? el(
           "label",
           { className: "backend-field" },
@@ -2387,7 +2398,7 @@ function place(laneId, blockId) {
     measureOpen = qubitCount() != null;
   } else if (laneId === "backend") {
     selection.backend = blockId;
-    shotsOpen = true;
+    shotsOpen = Boolean(block?.shots);
   } else if (laneId === "then") {
     if (!placedThens.includes(blockId)) placedThens.push(blockId);
     selection.then = placedThens[0] ?? null;
