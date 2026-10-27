@@ -141,171 +141,107 @@ function el(tag, props, ...children) {
   return node;
 }
 
+function currentPage() {
+  return {
+    lanes: LANES,
+    blocks: BLOCKS,
+    selection,
+    settings,
+    modelTerms,
+    modelFactories,
+    preexistingId,
+    emitterText,
+    basisBits,
+    grayBits,
+    angleText,
+    amplitudeText,
+    placedSims,
+    placedThens,
+    savePath,
+    exportPath,
+    measureSites,
+    shots,
+    qubitsSource,
+    stateLimits: STATE_LIMITS,
+    maxEmitters: MAX_EMITTERS,
+    maxOperatorQubits: MAX_OPERATOR_QUBITS,
+  };
+}
+
+function check(fn, ...args) {
+  return fn(currentPage(), ...args);
+}
+
 function blockById(laneId, blockId) {
-  return BLOCKS[laneId].find((block) => block.id === blockId) ?? null;
+  return check(checks.blockById, laneId, blockId);
 }
 
 function chosenFactory() {
-  return modelFactories.find((item) => item.id === preexistingId) ?? null;
-}
-
-function operatorsReady() {
-  if (selection.model === "preexisting" || !modelTerms.length) return false;
-  if (modelTerms.some((term) => termProblem(term))) return false;
-  return modelTerms.some((term) => term.id === "hamiltonian" || term.id === "local_hamiltonian");
-}
-
-function usingAddedOperators() {
-  return selection.model !== "preexisting" && modelTerms.length > 0;
-}
-
-function termProblem(term) {
-  if (term.id === "hamiltonian") return hamiltonianProblem(term);
-  if (term.id === "local_hamiltonian") return localHamiltonianProblem(term);
-  if (term.id === "lindblad") return lindbladProblem(term);
-  return "Unknown operator.";
-}
-
-function otherSlotsPlaced() {
-  return LANES.every((lane) => lane.id === "model" || blockById(lane.id, selection[lane.id]));
+  return check(checks.chosenFactory);
 }
 
 function operatorStatus(preview) {
-  if (!otherSlotsPlaced() || !usingAddedOperators() || operatorsReady()) return null;
-  const tail = preview ? " to preview the script." : ".";
-  const hasHamiltonian = modelTerms.some((term) => term.id === "hamiltonian" || term.id === "local_hamiltonian");
-  return hasHamiltonian ? `Enter a valid operator${tail}` : `Enter a Hamiltonian${tail}`;
+  return check(checks.operatorStatus, preview);
 }
 
 function isComplete() {
-  return LANES.every((lane) => {
-    if (lane.id === "model" && selection.model === "preexisting") return Boolean(chosenFactory());
-    if (lane.id === "model") return operatorsReady();
-    return blockById(lane.id, selection[lane.id]);
-  });
-}
-
-function settingNumber(key) {
-  if (settings[key] === "") return null;
-  const value = Number(settings[key]);
-  return Number.isFinite(value) ? value : null;
+  return check(checks.isComplete);
 }
 
 function formatSetting(key) {
-  const value = settingNumber(key);
-  if (value == null) return null;
-  return Object.is(value, -0) ? "0" : String(value);
+  return check(checks.formatSetting, key);
 }
 
 function qubitPhrase() {
-  const label = formatSetting("qubits");
-  if (label == null) return null;
-  return Number(label) === 1 ? "1 qubit" : `${label} qubits`;
-}
-
-function pyFloat(value) {
-  return Number.isInteger(value) ? `${value}.0` : String(value);
+  return check(checks.qubitPhrase);
 }
 
 function stateOwnsQubits() {
-  return Object.hasOwn(STATE_LIMITS, selection.state);
+  return check(checks.stateOwnsQubits);
 }
 
 function numberList(raw, maxCount) {
-  const text = raw.trim();
-  if (!text || text.endsWith(",")) return null;
-  const parts = text.split(",").map((part) => part.trim());
-  if (!parts.length || parts.length > maxCount) return null;
-  const values = [];
-  for (const part of parts) {
-    if (!/^-?(?:\d+(?:\.\d+)?|\.\d+)$/.test(part)) return null;
-    values.push(Number(part));
-  }
-  return values;
+  return check(checks.numberList, raw, maxCount);
 }
 
 function amplitudeQubits(count) {
-  let padded = 1;
-  while (padded < count) padded *= 2;
-  return Math.log2(Math.max(2, padded));
-}
-
-function stateValues() {
-  if (selection.state === "angle") return numberList(angleText, STATE_LIMITS.angle);
-  if (selection.state === "amplitude") return numberList(amplitudeText, STATE_LIMITS.amplitude);
-  return null;
+  return check(checks.amplitudeQubits, count);
 }
 
 function emitterCount() {
-  const text = emitterText.trim();
-  if (!positiveIntText(text)) return null;
-  const count = Number(text);
-  return count <= MAX_EMITTERS ? count : null;
+  return check(checks.emitterCount);
 }
 
 function cavityModelSelected() {
-  return (
-    selection.model === "preexisting" &&
-    (preexistingId === "jaynes_cummings" || preexistingId === "tavis_cummings")
-  );
+  return check(checks.cavityModelSelected);
 }
 
 function fixedFactoryQubits() {
-  if (selection.model !== "preexisting") return null;
-  if (preexistingId === "jaynes_cummings") return 3;
-  if (preexistingId === "tavis_cummings") {
-    const count = emitterCount();
-    return count == null ? null : 2 + count;
-  }
-  return null;
+  return check(checks.fixedFactoryQubits);
 }
 
 function emitterProblem() {
-  return selection.model === "preexisting" && preexistingId === "tavis_cummings" && emitterCount() == null;
+  return check(checks.emitterProblem);
 }
 
 function stateImpliedQubits() {
-  if (selection.state === "basis") return basisBits ? basisBits.length : null;
-  if (selection.state === "gray") return grayBits ? grayBits.length : null;
-  if (selection.state === "angle") return numberList(angleText, STATE_LIMITS.angle)?.length ?? null;
-  if (selection.state === "amplitude") {
-    const values = numberList(amplitudeText, STATE_LIMITS.amplitude);
-    if (values && values.some((value) => value !== 0)) return amplitudeQubits(values.length);
-  }
-  return null;
+  return check(checks.stateImpliedQubits);
 }
 
 function stateSizeProblem() {
-  const expected = fixedFactoryQubits();
-  if (expected == null) return null;
-  const actual = stateImpliedQubits();
-  if (actual == null || actual === expected) return null;
-  return expected;
+  return check(checks.stateSizeProblem);
 }
 
 function stateSizeStatus(preview) {
-  const expected = stateSizeProblem();
-  const tail = preview ? " to preview the script." : ".";
-  if (selection.state === "basis") return `Enter a ${expected}-bit basis string${tail}`;
-  if (selection.state === "gray") return `Enter a ${expected}-bit Gray code string${tail}`;
-  if (selection.state === "angle") return `Enter ${expected} angles${tail}`;
-  return `Enter amplitudes for ${expected} qubits${tail}`;
+  return check(checks.stateSizeStatus, preview);
 }
 
 function stateInputProblem() {
-  if (stateSizeProblem() != null) return "size";
-  if (selection.state === "basis") return basisBits === "" ? "basis" : null;
-  if (selection.state === "gray") return grayBits === "" ? "gray" : null;
-  if (selection.state === "angle") return numberList(angleText, STATE_LIMITS.angle) ? null : "angle";
-  if (selection.state === "amplitude") {
-    const values = numberList(amplitudeText, STATE_LIMITS.amplitude);
-    if (!values || values.every((value) => value === 0)) return "amplitude";
-  }
-  return null;
+  return check(checks.stateInputProblem);
 }
 
 function positiveIntText(value) {
-  return /^[1-9]\d*$/.test(value);
+  return check(checks.positiveIntText, value);
 }
 
 function freshParams(id) {
@@ -314,352 +250,60 @@ function freshParams(id) {
   return params;
 }
 
-function entryParamsReady(entry) {
-  const params = entry.params;
-  if (!positiveIntText(params.timeSteps)) return false;
-  if (entry.id === "qutip") return true;
-  if (!positiveIntText(params.numSteps) || !positiveIntText(params.trotterDepth)) return false;
-  if (!/^-?\d+$/.test(params.seed)) return false;
-  return params.order === "1" || params.order === "2";
-}
-
 function simParamsReady() {
-  return placedSims.every(entryParamsReady);
+  return check(checks.simParamsReady);
 }
 
 function sameTimeGrid() {
-  if (placedSims.length < 2) return true;
-  const steps = placedSims[0].params.timeSteps;
-  return placedSims.every((entry) => entry.params.timeSteps === steps);
-}
-
-function hasThen(id) {
-  return placedThens.includes(id);
+  return check(checks.sameTimeGrid);
 }
 
 function missingPaths() {
-  const missing = [];
-  if (hasThen("save") && savePath.trim() === "") missing.push("save");
-  if (hasThen("export") && exportPath.trim() === "") missing.push("export");
-  return missing;
+  return check(checks.missingPaths);
 }
 
 function savePathReady() {
-  return missingPaths().length === 0;
+  return check(checks.savePathReady);
 }
 
 function qubitCount() {
-  const value = settingNumber("qubits");
-  if (value == null || !Number.isInteger(value) || value < 1) return null;
-  return value;
+  return check(checks.qubitCount);
 }
 
 function selectedSites(count) {
-  if (count == null) return [];
-  if (measureSites == null) return Array.from({ length: count }, (_, index) => index);
-  return measureSites.filter((site) => Number.isInteger(site) && site >= 0 && site < count);
-}
-
-function usesShots() {
-  return Boolean(blockById("backend", selection.backend)?.shots);
+  return check(checks.selectedSites, count);
 }
 
 function shotsReady() {
-  return !usesShots() || positiveIntText(shots.trim());
+  return check(checks.shotsReady);
 }
 
 function measureSitesReady() {
-  const count = qubitCount();
-  if (!selection.measure || count == null) return true;
-  return selectedSites(count).length > 0;
-}
-
-function pyString(value) {
-  return `"${value.replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"`;
-}
-
-function qubitBounds() {
-  if (usingAddedOperators()) return { min: 1, max: MAX_OPERATOR_QUBITS };
-  // The factory that takes n_qubits is Ising, which requires at least 2.
-  if (selection.model === "preexisting" && chosenFactory()?.qubits) return { min: 2, max: null };
-  return { min: 1, max: null };
-}
-
-function qubitProblem(preview) {
-  const value = settingNumber("qubits");
-  if (value == null) return null;
-  const { min, max } = qubitBounds();
-  const tail = preview ? " to preview the script." : ".";
-  if (!Number.isInteger(value) || value < min) return `Qubits must be an integer of at least ${min}${tail}`;
-  if (max != null && value > max) return `Qubits must be from 1 to ${max}${tail}`;
-  return null;
-}
-
-function totalProblem(preview) {
-  const value = settingNumber("total");
-  if (value == null || value > 0) return null;
-  const tail = preview ? " to preview the script." : ".";
-  return `Total time must be a positive number${tail}`;
+  return check(checks.measureSitesReady);
 }
 
 function numberProblem(preview) {
-  if (settingNumber("qubits") == null || settingNumber("total") == null) {
-    return preview ? "Enter qubits and total time to preview the script." : "Enter qubits and total time.";
-  }
-  return qubitProblem(preview) ?? totalProblem(preview);
+  return check(checks.numberProblem, preview);
 }
 
 function settingsReady() {
-  return (
-    numberProblem(false) == null &&
-    stateInputProblem() == null &&
-    simParamsReady() &&
-    sameTimeGrid() &&
-    savePathReady() &&
-    measureSitesReady() &&
-    shotsReady() &&
-    !emitterProblem() &&
-    (!usingAddedOperators() || operatorsReady())
-  );
+  return check(checks.settingsReady);
 }
 
 function runAllowed() {
-  return isComplete() && settingsReady();
-}
-
-function stateLine() {
-  if (selection.state === "basis" || selection.state === "gray") {
-    const bits = selection.state === "basis" ? basisBits : grayBits;
-    const name = selection.state === "basis" ? "ComputationalBasisEncoding" : "GrayEncoding";
-    return `state = ${name}(${bits.length}).encode([${[...bits].join(", ")}])`;
-  }
-  const values = stateValues();
-  if (!values) return "";
-  const rendered = values.map(pyFloat).join(", ");
-  if (selection.state === "angle") return `state = AngleEncoding().encode([${rendered}])`;
-  if (selection.state === "amplitude") return `state = AmplitudeEncoding().encode([${rendered}])`;
-  return "";
-}
-
-function fillSetup(block, name) {
-  const qubits = settingNumber("qubits");
-  const total = settingNumber("total");
-  return block.setup
-    .replaceAll("{name}", name)
-    .replaceAll("{qubits}", qubits == null ? "" : String(Math.round(qubits)))
-    .replaceAll("{total}", total == null ? "" : pyFloat(total))
-    .replaceAll("{shots}", shots.trim());
-}
-
-function modelLine() {
-  const factory = chosenFactory();
-  if (selection.model === "preexisting" && preexistingId === "tavis_cummings" && emitterCount() != null) {
-    return `model = tavis_cummings(n_emitters=${emitterCount()})`;
-  }
-  if (selection.model === "preexisting" && factory) return fillSetup(factory, "");
-  return usingAddedOperators() ? addedOperatorLines() : "";
-}
-
-function matrixLiteral(term) {
-  const parsed = term.id === "lindblad" ? squareMatrix(term.matrix ?? "") : inspectMatrix(term.matrix ?? "");
-  const rows = parsed.matrix.map((row) => `[${row.map(pyComplex).join(", ")}]`).join(", ");
-  return `np.array([${rows}], dtype=complex)`;
-}
-
-function addedOperatorLines() {
-  const count = qubitCount();
-  const seen = {};
-  const lines = [];
-  const qutip = [];
-  const circuit = [];
-  const lindblads = [];
-  modelTerms.forEach((term) => {
-    const block = blockById("model", term.id);
-    if (!block || termProblem(term)) return;
-    seen[term.id] = (seen[term.id] || 0) + 1;
-    const suffix = seen[term.id] === 1 ? "" : `_${seen[term.id]}`;
-    const name = `${block.stem}${suffix}`;
-    const matrix = matrixLiteral(term);
-    if (term.id === "hamiltonian") {
-      lines.push(`${name} = Hamiltonian(${matrix})`);
-      qutip.push(name);
-      circuit.push(`${name}.to_local_hamiltonian()`);
-    } else if (term.id === "local_hamiltonian") {
-      const sites = localSites(term, count).join(", ");
-      lines.push(`${name} = LocalHamiltonian(${matrix}, [${sites}])`);
-      qutip.push(name);
-      circuit.push(name);
-    } else if (term.id === "lindblad") {
-      const sites = localSites(term, count).join(", ");
-      lines.push(`${name} = LocalOperator(${matrix}, [${sites}])`);
-      lindblads.push(name);
-    }
-  });
-  lines.push(`qutip_hamiltonians = [${qutip.join(", ")}]`);
-  lines.push(`circuit_hamiltonians = [${circuit.join(", ")}]`);
-  lines.push(`lindblads = [${lindblads.join(", ")}]`);
-  lines.push(`lindblads_full = [op.to_full_operator(${count}) for op in lindblads]`);
-  return lines.join("\n");
+  return check(checks.runAllowed);
 }
 
 function postedTerms() {
-  if (!operatorsReady()) return undefined;
-  return modelTerms.map((term) => {
-    const parsed = term.id === "lindblad" ? squareMatrix(term.matrix ?? "") : inspectMatrix(term.matrix ?? "");
-    const body = {
-      id: term.id,
-      matrix: parsed.matrix.map((row) => row.map((value) => [value.re, value.im])),
-    };
-    if (term.id !== "hamiltonian") body.sites = localSites(term, qubitCount());
-    return body;
-  });
-}
-
-function pyComplex(value) {
-  if (value.im === 0) return pyFloat(value.re);
-  const imag = `${pyFloat(Math.abs(value.im))}j`;
-  const signed = value.im < 0 ? `-${imag}` : imag;
-  if (value.re === 0) return signed;
-  return `(${pyFloat(value.re)}${value.im < 0 ? "" : "+"}${signed})`;
-}
-
-function termLines() {
-  if (usingAddedOperators()) return [];
-  const seen = {};
-  return modelTerms.flatMap((term) => {
-    const block = blockById("model", term.id);
-    if (!block) return [];
-    seen[term.id] = (seen[term.id] || 0) + 1;
-    const suffix = seen[term.id] === 1 ? "" : `_${seen[term.id]}`;
-    const name = `${block.stem}${suffix}`;
-    if (term.id === "lindblad") {
-      if (lindbladProblem(term)) return [fillSetup(block, name)];
-      const parsed = squareMatrix(term.matrix ?? "");
-      const rows = parsed.matrix.map((row) => `[${row.map(pyComplex).join(", ")}]`).join(", ");
-      const sites = localSites(term, qubitCount()).join(", ");
-      return [`${name} = LocalOperator(np.array([${rows}], dtype=complex), [${sites}])`];
-    }
-    if (term.id !== "hamiltonian" && term.id !== "local_hamiltonian") return [fillSetup(block, name)];
-    const inspected = inspectMatrix(term.matrix ?? "");
-    const localProblem = term.id === "local_hamiltonian" && localHamiltonianProblem(term);
-    if (inspected.problem || localProblem) return [fillSetup(block, name)];
-    const rows = inspected.matrix.map((row) => `[${row.map(pyComplex).join(", ")}]`).join(", ");
-    const matrix = `np.array([${rows}], dtype=complex)`;
-    if (term.id === "hamiltonian") return [`${name} = Hamiltonian(${matrix})`];
-    const sites = localSites(term, qubitCount()).join(", ");
-    return [`${name} = LocalHamiltonian(${matrix}, [${sites}])`];
-  });
-}
-
-function observableSetup() {
-  const letter = selection.measure.toUpperCase();
-  const count = qubitCount();
-  const sites = selectedSites(count);
-  if (count == null || sites.length === count) {
-    const countName = systemQubits();
-    return `e_ops = [Operator("I" * i + "${letter}" + "I" * (${countName} - i - 1))
-         for i in range(${countName})]`;
-  }
-  const operators = sites.map((site) => {
-    const label = `${"I".repeat(site)}${letter}${"I".repeat(count - site - 1)}`;
-    return `Operator(${pyString(label)})`;
-  });
-  return `e_ops = [${operators.join(", ")}]`;
-}
-
-function systemQubits() {
-  return usingAddedOperators() ? String(qubitCount()) : "model.num_qubits";
-}
-
-function qutipCall(name, params) {
-  const hamiltonians = usingAddedOperators() ? "qutip_hamiltonians" : "model.full_hamiltonians";
-  const lindblads = usingAddedOperators() ? "lindblads_full" : "model.c_ops_full";
-  return `${name} = QutipSimulator(${hamiltonians}, ${lindblads}, state,
-                    e_ops, num_qubits=${systemQubits()},
-                    total_time=${pyFloat(settingNumber("total"))}, time_steps=${params.timeSteps})`;
+  return check(checks.postedTerms);
 }
 
 function entryBody(entry) {
-  const params = entry.params;
-  const body = { simulator: entry.id, time_steps: params.timeSteps };
-  if (entry.id === "qutip") return body;
-  body.num_steps = params.numSteps;
-  body.trotter_depth = params.trotterDepth;
-  body.seed = params.seed;
-  body.order = params.order;
-  return body;
-}
-
-function simulatorCall(entry, name) {
-  const params = entry.params;
-  const block = blockById("simulator", entry.id);
-  if (!params || !block) return "";
-  if (block.observables) return qutipCall(name, params);
-  const className = entry.id === "trotterization" ? "TrotterizationSimulator" : "SplitJMatrixSimulator";
-  const offset = entry.id === "splitjmatrix" ? 1 : 0;
-  const groups = selectedSites(qubitCount()).map((site) => `[${site + offset}]`);
-  const orderLine = `,\n    order=${params.order}`;
-  const expectation = selection.measure === "x" ? "expectation_x" : "expectation_z";
-  const sites = selectedSites(qubitCount());
-  const xLine = selection.measure === "x" ? `,\n    x_qubits=[${sites.join(", ")}]` : "";
-  const hamiltonians = usingAddedOperators() ? "circuit_hamiltonians" : "model.local_hamiltonians";
-  const lindblads = usingAddedOperators() ? "lindblads" : "model.c_ops_local";
-  return `${name} = ${className}(
-    ${hamiltonians},
-    ${lindblads},
-    state,
-    num_qubits=${systemQubits()},
-    total_time=${pyFloat(settingNumber("total"))},
-    time_steps=${params.timeSteps},
-    num_steps=${params.numSteps},
-    trotter_depth=${params.trotterDepth}${orderLine},
-    seed=${params.seed},
-    measurement_groups=[${groups.join(", ")}],
-    reducers=[${expectation}] * ${groups.length}${xLine},
-    circuit_backend=circuit_backend,
-)`;
-}
-
-function backendClass(backendId) {
-  const setup = blockById("backend", backendId)?.setup ?? "";
-  return setup.match(/circuit_backend = ([A-Za-z0-9_]+)/)?.[1] ?? "";
-}
-
-function backendSetup(backendId) {
-  const block = blockById("backend", backendId);
-  return block ? fillSetup(block, "") : "";
+  return check(checks.entryBody, entry);
 }
 
 function previewText() {
-  if (!runAllowed()) return "";
-  const lines = [
-    "import numpy as np",
-    "from shadowsim.encoding import *",
-  ];
-  if (selection.model === "preexisting") lines.push(`from shadowsim.models import ${preexistingId}`);
-  else if (selection.model) lines.push(`from shadowsim.models import ${selection.model}`);
-  lines.push("from shadowsim.simulators import *");
-  const backendName = backendClass(selection.backend);
-  if (placedSims.some((entry) => !blockById("simulator", entry.id)?.observables) && backendName) {
-    lines.push(`from shadowsim.backends import ${backendName}`);
-  }
-  const symbols = [...new Set(modelTerms.map((term) => blockById("model", term.id)?.symbol).filter(Boolean))];
-  if (placedSims.some((entry) => blockById("simulator", entry.id)?.observables)) symbols.push("Operator");
-  if (modelTerms.some((term) => term.id === "lindblad" && !lindbladProblem(term))) symbols.push("LocalOperator");
-  if (symbols.length) lines.push(`from shadowsim.core import ${symbols.join(", ")}`);
-  const benchmark = placedSims.length >= 2;
-  if (benchmark) lines.push("from shadowsim.benchmarking import Benchmark");
-  const beforeSimulator = ["", stateLine(), "", modelLine(), ...termLines(), ""];
-  if (placedSims.some((entry) => !blockById("simulator", entry.id)?.observables)) {
-    beforeSimulator.push(backendSetup(selection.backend), "");
-  }
-  if (placedSims.some((entry) => blockById("simulator", entry.id)?.observables)) {
-    beforeSimulator.push(observableSetup(), "");
-  }
-  const names = placedSims.map((_, index) => (benchmark ? `sim_${index + 1}` : "sim"));
-  lines.push(...beforeSimulator, ...placedSims.map((entry, index) => simulatorCall(entry, names[index])), "");
-  lines.push(...(benchmark ? benchmarkThenLines(names) : singleThenLines()));
-  return lines.join("\n");
+  return check(checks.previewText);
 }
 
 function modelChoiceBlocked(block) {
@@ -1141,34 +785,6 @@ function simulatorChip(entry) {
   );
 }
 
-function benchmarkThenLines(names) {
-  const lines = [`benchmark = Benchmark(${names.join(", ")})`, "benchmark.run()"];
-  if (hasThen("plot")) lines.push("benchmark.save_result_plot()");
-  if (hasThen("save")) {
-    names.forEach((name) => {
-      lines.push(`${name}.last_result.save(${pyString(`${savePath.trim()}/${name}`)})`);
-    });
-  }
-  if (hasThen("export")) lines.push(exportCall());
-  return lines;
-}
-
-function singleThenLines() {
-  const save = `result.save(${pyString(savePath.trim())})`;
-  if (hasThen("save") && hasThen("plot")) return ["result = sim.simulate()", save, "sim.plot_results()"];
-  if (hasThen("save")) return [`sim.simulate().save(${pyString(savePath.trim())})`];
-  if (hasThen("plot")) return ["sim.simulate()", "sim.plot_results()"];
-  return ["result = sim.simulate()"];
-}
-
-function exportCall() {
-  const directory = exportPath.trim();
-  const target = directory.endsWith(".json")
-    ? `path=${pyString(directory)}`
-    : `output_dir=${pyString(directory)}`;
-  return `benchmark.save_error_metrics(${target})`;
-}
-
 function pathChip(block, options) {
   const shown = options.path.trim();
   return el(
@@ -1354,133 +970,20 @@ function backendChip(block) {
   );
 }
 
-function readNumber(source, index) {
-  const match = source.slice(index).match(/^[+-]?(?:\d+(?:\.\d*)?|\.\d+)/);
-  if (!match) return null;
-  return { value: Number(match[0]), next: index + match[0].length };
-}
-
-function skipSpaces(source, index) {
-  while (/\s/.test(source[index] ?? "")) index += 1;
-  return index;
-}
-
-function parseComplex(source, index) {
-  const lone = source.slice(index).match(/^[+-]?j/i);
-  const number = readNumber(source, index);
-  if (lone && (!number || lone[0].length < number.next - index)) {
-    return { re: 0, im: lone[0].startsWith("-") ? -1 : 1, next: index + lone[0].length };
-  }
-  if (!number) return null;
-  let cursor = skipSpaces(source, number.next);
-  if ((source[cursor] ?? "").toLowerCase() === "j") return { re: 0, im: number.value, next: cursor + 1 };
-  const imag = source.slice(cursor).match(/^([+-])\s*(?:(\d+(?:\.\d*)?|\.\d+)\s*)?j/i);
-  if (!imag) return { re: number.value, im: 0, next: number.next };
-  const magnitude = imag[2] == null ? 1 : Number(imag[2]);
-  return { re: number.value, im: imag[1] === "-" ? -magnitude : magnitude, next: cursor + imag[0].length };
-}
-
-function parseMatrix(text) {
-  const source = text.trim();
-  if (!source) return { error: "empty" };
-  let index = 0;
-  function skip() {
-    while (/\s/.test(source[index] ?? "")) index += 1;
-  }
-  function parseList() {
-    skip();
-    if (source[index] !== "[") return null;
-    index += 1;
-    skip();
-    const items = [];
-    if (source[index] === "]") {
-      index += 1;
-      return items;
-    }
-    while (index < source.length) {
-      skip();
-      const item = source[index] === "[" ? parseList() : parseComplex(source, index);
-      if (!item) return null;
-      if (item.next) index = item.next;
-      items.push(item.next ? { re: item.re, im: item.im } : item);
-      skip();
-      if (source[index] === ",") {
-        index += 1;
-        continue;
-      }
-      if (source[index] === "]") {
-        index += 1;
-        return items;
-      }
-      return null;
-    }
-    return null;
-  }
-  const value = parseList();
-  skip();
-  if (!value || index !== source.length || value.some((row) => !Array.isArray(row))) return { error: "shape" };
-  const width = value.length;
-  if (!width || value.some((row) => row.length !== width || row.some((cell) => Array.isArray(cell)))) {
-    return { error: "shape" };
-  }
-  return { matrix: value };
-}
-
-function nearly(left, right) {
-  return Math.abs(left - right) <= 1e-8 + 1e-5 * Math.max(Math.abs(left), Math.abs(right));
-}
-
-function isHermitian(matrix) {
-  return matrix.every((row, rowIndex) =>
-    row.every((value, columnIndex) => {
-      const mirror = matrix[columnIndex][rowIndex];
-      return nearly(value.re, mirror.re) && nearly(value.im, -mirror.im);
-    }),
-  );
-}
-
 function squareMatrix(text) {
-  const parsed = parseMatrix(text ?? "");
-  if (parsed.error === "empty") return { problem: "Enter a matrix." };
-  if (parsed.error) return { problem: "Enter a square matrix." };
-  const { matrix } = parsed;
-  const size = matrix.length;
-  if (size > 256) return { problem: "At most 8 qubits." };
-  if (size < 2 || (size & (size - 1)) !== 0) return { problem: "Size must be a power of two." };
-  return { matrix, qubits: Math.log2(size) };
+  return check(checks.squareMatrix, text);
 }
 
 function inspectMatrix(text) {
-  const parsed = squareMatrix(text);
-  if (parsed.problem) return parsed;
-  if (!isHermitian(parsed.matrix)) return { problem: "Matrix must be Hermitian." };
-  return parsed;
-}
-
-function fixedQubitCount() {
-  if (stateOwnsQubits() || qubitsSource === "user") return qubitCount();
-  return null;
+  return check(checks.inspectMatrix, text);
 }
 
 function hamiltonianProblem(term) {
-  const inspected = inspectMatrix(term.matrix);
-  if (inspected.problem) return inspected.problem;
-  const fixed = fixedQubitCount();
-  if (fixed != null && inspected.qubits !== fixed) {
-    const side = 2 ** fixed;
-    const label = fixed === 1 ? "qubit" : "qubits";
-    return `Must be ${side}×${side} for ${fixed} ${label}.`;
-  }
-  if (fixed == null && new Set(validHamiltonianQubits()).size > 1) return "Matrices must be the same size.";
-  return null;
+  return check(checks.hamiltonianProblem, term);
 }
 
 function validHamiltonianQubits() {
-  return modelTerms.flatMap((term) => {
-    if (term.id !== "hamiltonian") return [];
-    const inspected = inspectMatrix(term.matrix);
-    return inspected.problem ? [] : [inspected.qubits];
-  });
+  return check(checks.validHamiltonianQubits);
 }
 
 function hamiltonianDetail(term) {
@@ -1578,33 +1081,15 @@ function hamiltonianChip(term) {
 }
 
 function localSites(term, count) {
-  return (term.sites ?? [])
-    .filter((site) => Number.isInteger(site) && site >= 0 && site < count)
-    .sort((left, right) => left - right);
-}
-
-function actedQubitProblem(term, parse) {
-  const count = qubitCount();
-  if (count == null) return "Set qubits first.";
-  const sites = localSites(term, count);
-  if (!sites.length) return "Pick at least one qubit.";
-  if (sites[sites.length - 1] - sites[0] + 1 !== sites.length) return "Qubits must be contiguous.";
-  const inspected = parse(term.matrix);
-  if (inspected.problem) return inspected.problem;
-  if (inspected.qubits !== sites.length) {
-    const side = 2 ** sites.length;
-    const label = sites.length === 1 ? "qubit" : "qubits";
-    return `Must be ${side}×${side} for ${sites.length} ${label}.`;
-  }
-  return null;
+  return check(checks.localSites, term, count);
 }
 
 function localHamiltonianProblem(term) {
-  return actedQubitProblem(term, inspectMatrix);
+  return check(checks.localHamiltonianProblem, term);
 }
 
 function lindbladProblem(term) {
-  return actedQubitProblem(term, squareMatrix);
+  return check(checks.lindbladProblem, term);
 }
 
 function actedQubitDetail(term) {
@@ -1868,8 +1353,7 @@ function summaryComponent() {
     ...modelPhrase,
     " with ",
     ...simulatorSummary(),
-    " on ",
-    el("strong", {}, backend.phrase),
+    ...(backend ? [" on ", el("strong", {}, backend.phrase)] : []),
     ", measure ",
     el("strong", {}, measurePhrase()),
     ", then ",

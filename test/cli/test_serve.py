@@ -26,11 +26,15 @@ def test_index_serves_the_builder_page():
             assert response.status == 200
             assert response.headers["Content-Type"].startswith("text/html")
             assert "ShadowSim.py Simulation Builder" in body
-            assert 'src="/builder.js"' in body
+            assert body.index('src="/checks.js"') < body.index('src="/builder.js"')
         with urllib.request.urlopen(f"http://127.0.0.1:{port}/styles.css") as response:
             assert response.status == 200
             assert response.headers["Content-Type"].startswith("text/css")
             assert ".board" in response.read().decode("utf-8")
+        with urllib.request.urlopen(f"http://127.0.0.1:{port}/checks.js") as response:
+            assert response.status == 200
+            assert "javascript" in response.headers["Content-Type"]
+            assert "previewText" in response.read().decode("utf-8")
         with urllib.request.urlopen(f"http://127.0.0.1:{port}/builder.js") as response:
             assert response.status == 200
             assert "javascript" in response.headers["Content-Type"]

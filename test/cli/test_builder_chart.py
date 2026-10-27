@@ -90,6 +90,7 @@ def _chart(payload: dict[str, Any]) -> dict[str, Any]:
             input=json.dumps(payload),
             capture_output=True,
             text=True,
+            encoding="utf-8",
             timeout=30,
             check=False,
         )
