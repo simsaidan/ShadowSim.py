@@ -1,10 +1,8 @@
 """Build a simulator from a builder-page selection."""
 
-import json
 import math
 from collections.abc import Mapping
 from dataclasses import dataclass
-from datetime import datetime
 from pathlib import Path
 from typing import cast
 
@@ -26,7 +24,7 @@ from shadowsim.models.catalog import listed_models
 from shadowsim.models.ising import IsingModel
 from shadowsim.models.tavis_cummings import TavisCummingsModel
 from shadowsim.simulators.reducers import expectation_x, expectation_z
-from shadowsim.simulators.result import SimulationResult
+from shadowsim.simulators.result import SimulationResult, save_resource_metrics
 from shadowsim.simulators.simulator import Simulator
 from shadowsim.utils.hermitian import hermitian
 
@@ -60,8 +58,9 @@ def build_simulator(selection: Mapping[str, object], *, time_steps: int = 101) -
     """Build a simulator for one builder-page selection.
 
     Args:
-        selection: Page ids and settings. ``then`` is ignored. ``backend`` is
-            ``aer`` or ``paulipropagation``. ``measure`` of ``x`` or ``z`` records that Pauli's
+        selection: Page ids and settings. ``then`` is ignored. A circuit
+            simulator's ``backend`` is ``aer`` or ``paulipropagation``. QuTiP
+            ignores a missing backend. ``measure`` of ``x`` or ``z`` records that Pauli's
             expectation on each selected qubit for every simulator.
             ``model`` is a factory name from :func:`shadowsim.models.catalog.listed_models`.
             A non-empty ``terms`` list is the model instead: each item has ``id``
@@ -99,7 +98,7 @@ def build_simulator(selection: Mapping[str, object], *, time_steps: int = 101) -
     if simulator_id not in _SIMULATORS:
         raise ValueError("unknown simulator")
     backend = _choice(selection, "backend")
-    if backend not in {"aer", "paulipropagation"}:
+    if (simulator_id != "qutip" or backend) and backend not in {"aer", "paulipropagation"}:
         raise ValueError("only Aer and PauliPropagation can run from the page")
     state_id = _choice(selection, "state")
     if state_id not in _STATES:
@@ -133,7 +132,8 @@ def run_page(selection: Mapping[str, object], *, output_root: Path | None = None
     ``sim_2``, and so on inside it. ``export`` writes metrics JSON under
     ``export_path``, or ``results/`` when that key is missing. A benchmark uses
     :meth:`~shadowsim.benchmarking.benchmark.Benchmark.save_error_metrics`.
-    One simulator writes its runtime and shot budget. ``plot`` is drawn by the
+    One simulator writes its runtime and shot budget with
+    :func:`~shadowsim.simulators.result.save_resource_metrics`. ``plot`` is drawn by the
     page. Save and export both run when both are selected. When ``output_root``
     is set, ``save_path`` and ``export_path`` must resolve under that directory.
     A relative path is resolved from the working directory.
@@ -235,42 +235,15 @@ def _export_location(selection: Mapping[str, object], output_root: Path | None) 
     return _path_under_root(path, output_root, "export path")
 
 
-def _resource_record(simulator: Simulator, wall_time: float | None) -> dict[str, object]:
-    """Return one simulator's runtime and shot budget."""
-    backend = getattr(simulator, "circuit_backend", None)
-    if backend is None:
-        shots_per_job = getattr(simulator, "shots", None)
-    else:
-        shots_per_job = getattr(backend, "shots", None)
-    if isinstance(shots_per_job, bool) or not isinstance(shots_per_job, int):
-        num_jobs = None
-        total_shots = None
-        shots_per_job = None
-    else:
-        num_jobs = len(simulator.tlist)
-        total_shots = shots_per_job * num_jobs
-    return {
-        "simulator_id": simulator.id,
-        "wall_time_s": wall_time,
-        "shots_per_job": shots_per_job,
-        "num_jobs": num_jobs,
-        "total_shots": total_shots,
-    }
-
-
 def _export_resources(location: Path | None, simulator: Simulator, wall_time: float | None) -> str | None:
     """Write one simulator's runtime and shot budget. A ``.json`` path is that file."""
     if location is None:
         return None
-    payload = {"resources": [_resource_record(simulator, wall_time)]}
     if location.suffix == ".json":
-        path = location
+        written = save_resource_metrics(simulator, wall_time, path=location)
     else:
-        stamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
-        path = location / f"resource_metrics_{stamp}.json"
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(payload, indent=2) + "\n")
-    return str(path)
+        written = save_resource_metrics(simulator, wall_time, output_dir=location)
+    return str(written)
 
 
 def _export_benchmark(location: Path | None, benchmark: Benchmark) -> str | None:

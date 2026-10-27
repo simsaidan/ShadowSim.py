@@ -4,6 +4,7 @@ import json
 import zipfile
 from collections.abc import Sequence
 from dataclasses import dataclass, field
+from datetime import datetime
 from importlib.metadata import PackageNotFoundError, version
 from io import BytesIO
 from pathlib import Path
@@ -239,3 +240,52 @@ class SimulationResult:
             runtime=meta.get("runtime"),
             metadata=dict(meta.get("metadata") or {}),
         )
+
+
+def _resource_record(simulator: object, wall_time: float | None) -> dict[str, object]:
+    """Return one simulator's runtime and shot budget."""
+    backend = getattr(simulator, "circuit_backend", None)
+    shots_per_job = getattr(simulator if backend is None else backend, "shots", None)
+    if isinstance(shots_per_job, bool) or not isinstance(shots_per_job, int):
+        num_jobs = None
+        total_shots = None
+        shots_per_job = None
+    else:
+        num_jobs = len(getattr(simulator, "tlist"))
+        total_shots = shots_per_job * num_jobs
+    return {
+        "simulator_id": getattr(simulator, "id"),
+        "wall_time_s": wall_time,
+        "shots_per_job": shots_per_job,
+        "num_jobs": num_jobs,
+        "total_shots": total_shots,
+    }
+
+
+def save_resource_metrics(
+    simulator: object,
+    wall_time: float | None,
+    *,
+    path: Path | None = None,
+    output_dir: str | Path = "results",
+) -> Path:
+    """Write one simulator's runtime and shot budget as JSON.
+
+    When ``path`` is set, that file is written and ``output_dir`` is ignored.
+    Otherwise a timestamped ``resource_metrics_*.json`` file is written under
+    ``output_dir`` (default ``results/``), which is created if it does not exist.
+
+    The payload is ``{"resources": [record]}``. Shot fields are ``None`` when
+    neither the circuit backend nor the simulator stores an integer ``shots``
+    count. Otherwise ``num_jobs`` is ``len(tlist)`` and ``total_shots`` is
+    ``shots_per_job * num_jobs``.
+    """
+    if path is None:
+        stamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+        path = Path(output_dir) / f"resource_metrics_{stamp}.json"
+    else:
+        path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    payload = {"resources": [_resource_record(simulator, wall_time)]}
+    path.write_text(json.dumps(payload, indent=2) + "\n")
+    return path

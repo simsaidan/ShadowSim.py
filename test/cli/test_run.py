@@ -91,6 +91,18 @@ def test_build_simulator_rejects(overrides: dict[str, object], message: str, for
         build_simulator(_selection(**overrides))
 
 
+def test_qutip_without_a_backend_reaches_the_simulator(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("shadowsim.cli.run._qutip_simulator", lambda *_args, **_kwargs: "built")
+    selection = _selection()
+    del selection["backend"]
+    assert build_simulator(selection, time_steps=2) == "built"
+
+
+def test_circuit_simulator_without_a_backend_is_rejected(forbid_qutip: None) -> None:
+    with pytest.raises(ValueError, match="only Aer"):
+        build_simulator(_selection(simulator="trotterization", backend=None))
+
+
 @pytest.mark.parametrize("time_steps", [0, True, 1.5])
 def test_time_steps_must_be_a_positive_integer(time_steps: object, forbid_qutip: None) -> None:
     with pytest.raises(ValueError, match="positive integer"):

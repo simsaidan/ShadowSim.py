@@ -7,7 +7,9 @@ from typing import Any
 
 import pytest
 
-BUILDER = Path(__file__).resolve().parents[2] / "shadowsim" / "cli" / "site" / "builder.js"
+_SITE = Path(__file__).resolve().parents[2] / "shadowsim" / "cli" / "site"
+CHECKS = _SITE / "checks.js"
+BUILDER = _SITE / "builder.js"
 
 _HARNESS = r"""
 const fs = require("fs");
@@ -110,7 +112,7 @@ function fillIsing(qubits, total) {
   placedThens.push("plot");
 }
 
-const request = JSON.parse(process.argv[2]);
+const request = JSON.parse(process.argv[3]);
 if (request.complete) fillIsing(request.qubits, request.total);
 else resetPage();
 
@@ -126,7 +128,8 @@ process.stdout.write(JSON.stringify({
 }));
 `;
 
-vm.runInContext(`${fs.readFileSync(process.argv[1], "utf8")}\n${probe}`, sandbox);
+vm.runInContext(fs.readFileSync(process.argv[1], "utf8"), sandbox);
+vm.runInContext(`${fs.readFileSync(process.argv[2], "utf8")}\n${probe}`, sandbox);
 """
 
 
@@ -135,7 +138,7 @@ def _page(*, complete: bool, qubits: str = "", total: str = "") -> dict[str, Any
     scenario = {"complete": complete, "qubits": qubits, "total": total}
     try:
         completed = subprocess.run(
-            ["node", "-e", _HARNESS, str(BUILDER), json.dumps(scenario)],
+            ["node", "-e", _HARNESS, str(CHECKS), str(BUILDER), json.dumps(scenario)],
             capture_output=True,
             text=True,
             timeout=30,

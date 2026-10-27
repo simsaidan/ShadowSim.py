@@ -1,5 +1,6 @@
 """Tests for SimulationResult and simulator integration."""
 
+import json
 import pickle
 import zipfile
 from io import BytesIO
@@ -11,7 +12,7 @@ import pytest
 from shadowsim.core import Hamiltonian, Operator, OperatorSet, State
 from shadowsim.simulators import SimulationResult
 from shadowsim.simulators import result as result_module
-from shadowsim.simulators.result import package_version
+from shadowsim.simulators.result import package_version, save_resource_metrics
 from shadowsim.simulators.simulator import Simulator
 
 Z = np.diag([1.0, -1.0]).astype(np.complex128)
@@ -500,3 +501,39 @@ def test_make_result_stores_last_result_and_keeps_traces():
     assert result.seed == 3
     assert result.metadata["custom"] == "x"
     assert result.metadata["simulator_id"] == "tiny"
+
+
+def test_save_resource_metrics_writes_runtime_and_shots(tmp_path: Path) -> None:
+    class Backend:
+        shots = 4
+
+    class Recorded:
+        id = "trotterization_simulator"
+        tlist = [0.0, 0.5]
+        circuit_backend = Backend()
+
+    path = save_resource_metrics(Recorded(), 1.5, path=tmp_path / "metrics.json")
+    record = json.loads(path.read_text())["resources"][0]
+    assert record == {
+        "simulator_id": "trotterization_simulator",
+        "wall_time_s": 1.5,
+        "shots_per_job": 4,
+        "num_jobs": 2,
+        "total_shots": 8,
+    }
+
+
+def test_save_resource_metrics_timestamps_a_directory(tmp_path: Path) -> None:
+    class Recorded:
+        id = "qutip_simulator"
+        circuit_backend = None
+        shots = None
+
+    written = save_resource_metrics(Recorded(), None, output_dir=tmp_path)
+    assert written.parent == tmp_path
+    assert written.name.startswith("resource_metrics_")
+    record = json.loads(written.read_text())["resources"][0]
+    assert record["wall_time_s"] is None
+    assert record["shots_per_job"] is None
+    assert record["num_jobs"] is None
+    assert record["total_shots"] is None
