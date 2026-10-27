@@ -141,6 +141,7 @@ def _page(*, complete: bool, qubits: str = "", total: str = "") -> dict[str, Any
             ["node", "-e", _HARNESS, str(CHECKS), str(BUILDER), json.dumps(scenario)],
             capture_output=True,
             text=True,
+            encoding="utf-8",
             timeout=30,
             check=False,
         )

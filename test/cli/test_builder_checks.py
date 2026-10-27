@@ -34,6 +34,7 @@ def _call(fn: str, page: dict[str, Any], *args: object) -> Any:
             ["node", "-e", _SCRIPT, str(CHECKS), json.dumps(request)],
             capture_output=True,
             text=True,
+            encoding="utf-8",
             timeout=30,
             check=False,
         )
@@ -188,5 +189,5 @@ def test_hamiltonian_problems_use_different_messages() -> None:
         {"id": "hamiltonian", "matrix": "[[1, 0], [0, -1]]"},
     )
     assert nonhermitian == "Matrix must be Hermitian."
-    assert wrong_size == "Must be 4×4 for 2 qubits."
+    assert wrong_size == "Must be 4\u00d74 for 2 qubits."
     assert nonhermitian != wrong_size
