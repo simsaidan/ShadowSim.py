@@ -2031,25 +2031,47 @@ function resultsComponent(payload) {
   return el("div", { className: "results" }, note, metrics, chart);
 }
 
+function curveColor(index, count) {
+  if (count <= CURVE_COLORS.length) return CURVE_COLORS[index];
+  const hue = Math.round((360 * index) / count);
+  return `hsl(${hue} 58% 42%)`;
+}
+
+function finitePairs(times, values) {
+  const pairs = [];
+  if (!Array.isArray(values)) return pairs;
+  const count = Math.min(times.length, values.length);
+  for (let index = 0; index < count; index++) {
+    const time = times[index];
+    const value = values[index];
+    if (time == null || value == null) continue;
+    const x = Number(time);
+    const y = Number(value);
+    if (!Number.isFinite(x) || !Number.isFinite(y)) continue;
+    pairs.push([x, y]);
+  }
+  return pairs;
+}
+
 function chartComponent(payload) {
   const times = Array.isArray(payload.times) ? payload.times : [];
   const curves = chartCurves(payload);
   if (!times.length || !curves.length) {
     return el("p", { className: "placeholder" }, "The run returned no curves.");
   }
+  const plotted = curves.map((curve) => finitePairs(times, curve.values));
   const width = 640;
   const height = 220;
   const pad = 28;
+  const padLeft = 56;
   const first = Number(times[0]);
   const last = Number(times[times.length - 1]);
   let yMin = Infinity;
   let yMax = -Infinity;
-  for (const curve of curves) {
-    for (const value of curve.values) {
-      const y = Number(value);
-      if (!Number.isFinite(y)) continue;
-      yMin = Math.min(yMin, y);
-      yMax = Math.max(yMax, y);
+  for (const pairs of plotted) {
+    for (const [, value] of pairs) {
+      yMin = Math.min(yMin, value);
+      yMax = Math.max(yMax, value);
     }
   }
   if (!Number.isFinite(yMin) || !Number.isFinite(yMax)) {
@@ -2061,7 +2083,7 @@ function chartComponent(payload) {
   }
   const xSpan = last - first || 1;
   const ySpan = yMax - yMin;
-  const sx = (time) => pad + ((Number(time) - first) / xSpan) * (width - pad * 2);
+  const sx = (time) => padLeft + ((Number(time) - first) / xSpan) * (width - padLeft - pad);
   const sy = (value) => height - pad - ((Number(value) - yMin) / ySpan) * (height - pad * 2);
   const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
   svg.setAttribute("class", "plot");
@@ -2069,24 +2091,36 @@ function chartComponent(payload) {
   svg.setAttribute("role", "img");
   svg.setAttribute("aria-label", "Observable curves");
   const axis = document.createElementNS("http://www.w3.org/2000/svg", "line");
-  axis.setAttribute("x1", String(pad));
+  axis.setAttribute("x1", String(padLeft));
   axis.setAttribute("x2", String(width - pad));
   axis.setAttribute("y1", String(height - pad));
   axis.setAttribute("y2", String(height - pad));
-  svg.append(axis);
-  curves.forEach((curve, index) => {
+  const yAxis = document.createElementNS("http://www.w3.org/2000/svg", "line");
+  yAxis.setAttribute("x1", String(padLeft));
+  yAxis.setAttribute("x2", String(padLeft));
+  yAxis.setAttribute("y1", String(pad));
+  yAxis.setAttribute("y2", String(height - pad));
+  svg.append(axis, yAxis);
+  plotted.forEach((pairs, index) => {
+    if (!pairs.length) return;
     const line = document.createElementNS("http://www.w3.org/2000/svg", "polyline");
     line.setAttribute("fill", "none");
-    line.setAttribute("stroke", CURVE_COLORS[index % CURVE_COLORS.length]);
+    line.setAttribute("stroke", curveColor(index, curves.length));
     line.setAttribute("stroke-width", "2");
-    line.setAttribute(
-      "points",
-      curve.values.map((value, point) => `${sx(times[point])},${sy(value)}`).join(" "),
-    );
+    line.setAttribute("points", pairs.map(([time, value]) => `${sx(time)},${sy(value)}`).join(" "));
     svg.append(line);
   });
+  for (const tick of [yMin, (yMin + yMax) / 2, yMax]) {
+    const label = document.createElementNS("http://www.w3.org/2000/svg", "text");
+    label.setAttribute("x", String(padLeft - 6));
+    label.setAttribute("y", String(sy(tick)));
+    label.setAttribute("text-anchor", "end");
+    label.setAttribute("dominant-baseline", "middle");
+    label.textContent = formatAxis(tick);
+    svg.append(label);
+  }
   const startLabel = document.createElementNS("http://www.w3.org/2000/svg", "text");
-  startLabel.setAttribute("x", String(pad));
+  startLabel.setAttribute("x", String(padLeft));
   startLabel.setAttribute("y", String(height - 8));
   startLabel.textContent = formatAxis(first);
   const endLabel = document.createElementNS("http://www.w3.org/2000/svg", "text");
@@ -2106,7 +2140,7 @@ function chartComponent(payload) {
         el(
           "li",
           {},
-          el("i", { style: `background:${CURVE_COLORS[index % CURVE_COLORS.length]}` }),
+          el("i", { style: `background:${curveColor(index, curves.length)}` }),
           curve.label,
         ),
       ),
