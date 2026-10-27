@@ -6,6 +6,7 @@ import ipaddress
 import json
 import multiprocessing
 import os
+import secrets
 import signal
 import sys
 import threading
@@ -19,7 +20,7 @@ from multiprocessing.process import BaseProcess
 from pathlib import Path
 from socketserver import ThreadingMixIn
 from typing import Any
-from urllib.parse import urlsplit
+from urllib.parse import parse_qs, urlsplit
 
 from shadowsim.backends import listed_backends
 from shadowsim.cli.run import run_page
@@ -41,6 +42,9 @@ _CONTENT_TYPES = {
 _POLL_SECONDS = 0.2
 _KILL_AFTER = 2.0
 _BUSY = "a run is still finishing"
+_TOKEN_COOKIE = "shadowsim-token"
+_PAGE_UNAUTHORIZED = "Open the URL printed when the server started.\n"
+_JSON_REQUIRED = "Content-Type must be application/json"
 
 
 class _RunPhase(enum.Enum):
@@ -68,6 +72,8 @@ class HTTPServer(ThreadingMixIn, _HTTPServer):
     """Serve each request on a daemon thread so one run does not block the page."""
 
     daemon_threads = True
+    token: str | None = None
+    output_root: Path | None = None
 
 
 def _site_asset(url_path: str) -> tuple[Path, str] | None:
@@ -93,8 +99,15 @@ class _Handler(BaseHTTPRequestHandler):
     """Serve the builder page, list package choices, and run a posted selection."""
 
     def do_GET(self) -> None:
-        """Return a site asset or a package catalog, or 404 for every other path."""
+        """Return a site asset or a package catalog, or 404 for every other path.
+
+        ``GET /`` is the one route that honors ``?token=``. A matching token is
+        exchanged for a cookie and the browser is sent to ``/``. When the server
+        has a token, any other ``GET /`` needs that cookie.
+        """
         path = urlsplit(self.path).path
+        if path == "/" and not _authorize_page(self):
+            return
         key = _CATALOGS.get(path)
         if key is not None:
             try:
@@ -121,9 +134,15 @@ class _Handler(BaseHTTPRequestHandler):
 
         ``POST /runs/cancel`` stops that child process. A second ``POST /runs``
         while it is still going receives 409 and does not start another one.
+        When the server has a startup token, both routes require that token in a
+        cookie or in ``Authorization: Bearer`` before any run is started or stopped.
+        ``POST /runs`` also requires ``Content-Type: application/json`` before the
+        body is parsed. ``POST /runs/cancel`` has no body and does not.
         """
         path = urlsplit(self.path).path
         if path == "/runs/cancel":
+            if not _authorize_post(self):
+                return
             if not _cancel_run():
                 self.send_error(404)
                 return
@@ -131,6 +150,11 @@ class _Handler(BaseHTTPRequestHandler):
             return
         if path != "/runs":
             self.send_error(404)
+            return
+        if not _authorize_post(self):
+            return
+        if not _json_content(self):
+            _send_json(self, 415, {"error": _JSON_REQUIRED})
             return
         try:
             selection = _json_object(self._body())
@@ -145,7 +169,7 @@ class _Handler(BaseHTTPRequestHandler):
             _slot.cancel.clear()
         try:
             try:
-                outcome = _run_in_child(selection)
+                outcome = _run_in_child(selection, _server_output_root(self))
             except Exception as exc:
                 _send_internal_error(self, exc)
                 return
@@ -185,12 +209,12 @@ def _detach_process_group() -> None:
         return
 
 
-def _run_page_in_child(selection: dict[str, Any], connection: Connection) -> None:
+def _run_page_in_child(selection: dict[str, Any], connection: Connection, output_root: Path | None) -> None:
     """Run one selection and send ``(kind, payload)`` to the parent."""
     _detach_process_group()
     try:
         try:
-            payload = run_page(selection)
+            payload = run_page(selection, output_root=output_root)
         except ValueError as exc:
             message: tuple[str, Any] = ("invalid", str(exc))
         except Exception as exc:
@@ -220,13 +244,13 @@ def _park_until_killed(connection: Connection, started: Any) -> None:
         connection.close()
 
 
-def _spawn_page(selection: dict[str, Any]) -> tuple[BaseProcess, Connection]:
+def _spawn_page(selection: dict[str, Any], output_root: Path | None = None) -> tuple[BaseProcess, Connection]:
     """Start ``run_page`` in a spawned process and return its result pipe."""
     context = multiprocessing.get_context("spawn")
     parent, child = context.Pipe(duplex=False)
     process = context.Process(
         target=_run_page_in_child,
-        args=(selection, child),
+        args=(selection, child, output_root),
         daemon=True,
         name="shadowsim-run",
     )
@@ -240,12 +264,13 @@ def _spawn_page(selection: dict[str, Any]) -> tuple[BaseProcess, Connection]:
     return process, parent
 
 
-def _run_in_child(selection: dict[str, Any]) -> tuple[str, Any]:
+def _run_in_child(selection: dict[str, Any], output_root: Path | None = None) -> tuple[str, Any]:
     """Run ``selection`` in one child and return ``(kind, payload)``.
 
-    ``kind`` is ``ok``, ``invalid``, ``error``, or ``cancelled``.
+    ``kind`` is ``ok``, ``invalid``, ``error``, or ``cancelled``. ``output_root``
+    is the directory save and export paths must stay under.
     """
-    process, parent = _spawn_page(selection)
+    process, parent = _spawn_page(selection, output_root)
     with _slot.guard:
         _slot.process = process
         cancelled = _slot.cancel.is_set()
@@ -388,6 +413,129 @@ def _log_child_error(text: str) -> None:
     sys.stderr.flush()
 
 
+def _server_output_root(handler: BaseHTTPRequestHandler) -> Path | None:
+    """Return the directory save and export paths must stay under, if one was set."""
+    root = getattr(handler.server, "output_root", None)
+    if isinstance(root, Path):
+        return root
+    return None
+
+
+def _server_token(handler: BaseHTTPRequestHandler) -> str | None:
+    """Return the server's startup token, or ``None`` when it has none."""
+    token = getattr(handler.server, "token", None)
+    if isinstance(token, str) and token:
+        return token
+    return None
+
+
+def _same_token(presented: str | None, expected: str) -> bool:
+    """Return whether ``presented`` is exactly ``expected``.
+
+    A missing value, or one that cannot be compared, is not a match.
+    """
+    if not isinstance(presented, str):
+        return False
+    try:
+        return secrets.compare_digest(presented, expected)
+    except (TypeError, ValueError):
+        return False
+
+
+def _query_token(handler: BaseHTTPRequestHandler) -> list[str] | None:
+    """Return every ``token`` query value, or ``None`` when the query has none."""
+    values = parse_qs(urlsplit(handler.path).query).get("token")
+    if not values:
+        return None
+    return values
+
+
+def _cookie_token(handler: BaseHTTPRequestHandler) -> str | None:
+    """Return the ``shadowsim-token`` cookie, or ``None`` when it is absent."""
+    raw = handler.headers.get("Cookie")
+    if not raw:
+        return None
+    for part in raw.split(";"):
+        name, separator, value = part.strip().partition("=")
+        if separator and name == _TOKEN_COOKIE:
+            return value
+    return None
+
+
+def _json_content(handler: BaseHTTPRequestHandler) -> bool:
+    """Return whether the body is labeled ``application/json``.
+
+    Parameters such as ``charset`` are ignored. The comparison is case-insensitive.
+    """
+    raw = handler.headers.get("Content-Type", "")
+    media = raw.split(";", 1)[0].strip().lower()
+    return media == "application/json"
+
+
+def _bearer_token(handler: BaseHTTPRequestHandler) -> str | None:
+    """Return the bearer token, or ``None`` when the header is not bearer auth."""
+    header = handler.headers.get("Authorization", "")
+    prefix = "Bearer "
+    if not header.startswith(prefix):
+        return None
+    token = header.removeprefix(prefix)
+    if not token:
+        return None
+    return token
+
+
+def _authorize_page(handler: BaseHTTPRequestHandler) -> bool:
+    """Return whether ``GET /`` may serve the page.
+
+    A server with no token allows the page. A single matching ``token`` query
+    sets the cookie and redirects. Any other query token is refused. With no
+    query token, the cookie must match.
+
+    Args:
+        handler: Request for ``/``.
+
+    Returns:
+        ``True`` when the caller should write the page. ``False`` when this
+        function already wrote the response.
+    """
+    expected = _server_token(handler)
+    if expected is None:
+        return True
+    presented = _query_token(handler)
+    if presented is not None:
+        if len(presented) == 1 and _same_token(presented[0], expected):
+            _send_token_redirect(handler, expected)
+        else:
+            _send_text(handler, 401, _PAGE_UNAUTHORIZED)
+        return False
+    if _same_token(_cookie_token(handler), expected):
+        return True
+    _send_text(handler, 401, _PAGE_UNAUTHORIZED)
+    return False
+
+
+def _authorize_post(handler: BaseHTTPRequestHandler) -> bool:
+    """Return whether a posted run may proceed.
+
+    A server with no token allows the request. Otherwise the cookie or
+    ``Authorization: Bearer`` must match. A query token is not accepted.
+
+    Args:
+        handler: Request for ``POST /runs`` or ``POST /runs/cancel``.
+
+    Returns:
+        ``True`` when the caller should continue. ``False`` when this function
+        already wrote ``401``.
+    """
+    expected = _server_token(handler)
+    if expected is None:
+        return True
+    if _same_token(_bearer_token(handler), expected) or _same_token(_cookie_token(handler), expected):
+        return True
+    _send_json(handler, 401, {"error": "unauthorized"})
+    return False
+
+
 def _is_loopback_host(host: str) -> bool:
     """Return whether ``host`` is localhost or a loopback IP address.
 
@@ -455,6 +603,32 @@ def _send_empty(handler: BaseHTTPRequestHandler, status: int) -> None:
         return
 
 
+def _send_text(handler: BaseHTTPRequestHandler, status: int, text: str) -> None:
+    """Write ``text`` as a plain response. A client that already left is ignored."""
+    body = text.encode("utf-8")
+    try:
+        handler.send_response(status)
+        handler.send_header("Content-Type", "text/plain; charset=utf-8")
+        handler.send_header("Content-Length", str(len(body)))
+        handler.end_headers()
+        handler.wfile.write(body)
+    except ConnectionError:
+        return
+
+
+def _send_token_redirect(handler: BaseHTTPRequestHandler, token: str) -> None:
+    """Send the browser to ``/`` and store ``token`` in a same-site cookie."""
+    cookie = f"{_TOKEN_COOKIE}={token}; HttpOnly; SameSite=Strict; Path=/"
+    try:
+        handler.send_response(303)
+        handler.send_header("Location", "/")
+        handler.send_header("Set-Cookie", cookie)
+        handler.send_header("Content-Length", "0")
+        handler.end_headers()
+    except ConnectionError:
+        return
+
+
 def _send_internal_error(handler: BaseHTTPRequestHandler, exc: BaseException) -> None:
     """Send a fixed 500 and print ``exc`` on stderr.
 
@@ -484,13 +658,25 @@ def build_parser() -> argparse.ArgumentParser:
     serve_parser.add_argument(
         "--allow-remote",
         action="store_true",
-        help="Bind a non-loopback address. The builder does not authenticate requests.",
+        help="Bind a non-loopback address. Anyone with the startup token can submit a run.",
+    )
+    serve_parser.add_argument(
+        "--output-dir",
+        default="results",
+        help="Directory save and export paths must stay under (default: results).",
     )
     serve_parser.add_argument("--no-browser", action="store_true", help="Do not open a browser window.")
     return parser
 
 
-def serve(host: str, port: int, *, open_browser: bool, allow_remote: bool = False) -> int:
+def serve(
+    host: str,
+    port: int,
+    *,
+    open_browser: bool,
+    allow_remote: bool = False,
+    output_dir: str | Path = "results",
+) -> int:
     """Bind a server and serve the builder page until interrupted.
 
     Args:
@@ -498,7 +684,9 @@ def serve(host: str, port: int, *, open_browser: bool, allow_remote: bool = Fals
         port: TCP port to bind.
         open_browser: Open the page in the default browser after the server starts.
         allow_remote: Permit a non-loopback ``host``. Without this, such an address
-            is refused because requests, including ``POST /runs``, are not authenticated.
+            is refused. Anyone who has the startup token can submit a run.
+        output_dir: Directory save and export paths must stay under. A relative
+            path is resolved from the working directory when the server starts.
 
     Returns:
         Process exit code. ``0`` after a clean interrupt, ``1`` if the port is invalid,
@@ -510,7 +698,7 @@ def serve(host: str, port: int, *, open_browser: bool, allow_remote: bool = Fals
         return 1
     if not allow_remote and not _is_loopback_host(host):
         print(
-            f"error: refusing to bind {host}: the builder does not authenticate requests. "
+            f"error: refusing to bind {host}: anyone with the startup token can submit a run. "
             "Pass --allow-remote to listen on a non-loopback address.",
             file=sys.stderr,
         )
@@ -521,17 +709,22 @@ def serve(host: str, port: int, *, open_browser: bool, allow_remote: bool = Fals
         print(f"error: could not bind {host}:{port}: {exc}", file=sys.stderr)
         return 1
 
+    token = secrets.token_urlsafe(32)
+    output_root = Path(output_dir).expanduser().resolve()
+    server.token = token
+    server.output_root = output_root
     raw_host, bound_port = server.server_address[:2]
     bound_host = raw_host.decode() if isinstance(raw_host, bytes) else raw_host
     display_host = f"[{bound_host}]" if ":" in bound_host else bound_host
-    url = f"http://{display_host}:{bound_port}/"
+    url = f"http://{display_host}:{bound_port}/?token={token}"
     if not _is_loopback_host(host):
         print(
-            f"warning: {host} is not a loopback address. Requests are not authenticated.",
+            f"warning: {host} is not a loopback address. Anyone with the startup token can submit a run.",
             file=sys.stderr,
             flush=True,
         )
     print(f"Serving ShadowSim at {url}", flush=True)
+    print(f"Saving under {output_root}", flush=True)
     if open_browser:
         webbrowser.open(url)
     try:
@@ -552,6 +745,7 @@ def main(argv: list[str] | None = None) -> int:
         args.port,
         open_browser=not args.no_browser,
         allow_remote=args.allow_remote,
+        output_dir=args.output_dir,
     )
 
 

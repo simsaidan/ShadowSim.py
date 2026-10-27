@@ -7,6 +7,7 @@ import time
 import urllib.error
 import urllib.request
 from http.server import HTTPServer
+from pathlib import Path
 from typing import Any
 
 import pytest
@@ -49,26 +50,50 @@ def test_index_serves_the_builder_page():
 def test_main_serve_uses_the_requested_bind(monkeypatch: pytest.MonkeyPatch):
     seen: dict[str, object] = {}
 
-    def fake_serve(host: str, port: int, *, open_browser: bool, allow_remote: bool) -> int:
+    def fake_serve(
+        host: str,
+        port: int,
+        *,
+        open_browser: bool,
+        allow_remote: bool,
+        output_dir: str = "results",
+    ) -> int:
         seen["host"] = host
         seen["port"] = port
         seen["open_browser"] = open_browser
         seen["allow_remote"] = allow_remote
+        seen["output_dir"] = output_dir
         return 0
 
     monkeypatch.setattr("shadowsim.cli.serve.serve", fake_serve)
     assert main(["serve", "--host", "127.0.0.1", "--port", "8765", "--no-browser"]) == 0
-    assert seen == {"host": "127.0.0.1", "port": 8765, "open_browser": False, "allow_remote": False}
+    assert seen == {
+        "host": "127.0.0.1",
+        "port": 8765,
+        "open_browser": False,
+        "allow_remote": False,
+        "output_dir": "results",
+    }
     assert main(["serve", "--host", "0.0.0.0", "--allow-remote", "--no-browser"]) == 0
     assert seen["host"] == "0.0.0.0"
     assert seen["allow_remote"] is True
+    assert main(["serve", "--output-dir", "runs", "--no-browser"]) == 0
+    assert seen["output_dir"] == "runs"
 
 
 def test_main_opens_the_browser_by_default(monkeypatch: pytest.MonkeyPatch):
     seen: dict[str, object] = {}
 
-    def fake_serve(host: str, port: int, *, open_browser: bool, allow_remote: bool) -> int:
+    def fake_serve(
+        host: str,
+        port: int,
+        *,
+        open_browser: bool,
+        allow_remote: bool,
+        output_dir: str = "results",
+    ) -> int:
         seen["open_browser"] = open_browser
+        seen["output_dir"] = output_dir
         return 0
 
     monkeypatch.setattr("shadowsim.cli.serve.serve", fake_serve)
@@ -131,8 +156,8 @@ def test_serve_warns_when_remote_bind_is_allowed(monkeypatch: pytest.MonkeyPatch
     captured = capsys.readouterr()
     assert "warning:" in captured.err
     assert "0.0.0.0" in captured.err
-    assert "not authenticated" in captured.err
-    assert "Serving ShadowSim at http://0.0.0.0:8000/" in captured.out
+    assert "startup token" in captured.err
+    assert "Serving ShadowSim at http://0.0.0.0:8000/?token=" in captured.out
 
 
 def test_serve_reports_a_busy_port(capsys: pytest.CaptureFixture[str]):
@@ -170,14 +195,21 @@ def test_serve_answers_then_stops(monkeypatch: pytest.MonkeyPatch):
     assert started.wait(timeout=2)
     server = servers[0]
     _host, port = server.server_address[:2]
+    prefix = f"http://127.0.0.1:{port}/?token="
     try:
-        with urllib.request.urlopen(f"http://127.0.0.1:{port}/") as response:
+        assert len(opened) == 1
+        assert opened[0].startswith(prefix)
+        token = opened[0].removeprefix(prefix)
+        request = urllib.request.Request(
+            f"http://127.0.0.1:{port}/",
+            headers={"Cookie": f"shadowsim-token={token}"},
+        )
+        with urllib.request.urlopen(request) as response:
             assert b"ShadowSim.py Simulation Builder" in response.read()
     finally:
         server.shutdown()
         thread.join(timeout=5)
     assert result["code"] == 0
-    assert opened == [f"http://127.0.0.1:{port}/"]
 
 
 def test_serve_formats_an_ipv6_address_and_stops_on_interrupt(
@@ -198,13 +230,56 @@ def test_serve_formats_an_ipv6_address_and_stops_on_interrupt(
     assert "Stopped." in output
 
 
-def _exchange(port: int, method: str, path: str, body: bytes | None = None) -> tuple[int, bytes]:
-    request = urllib.request.Request(f"http://127.0.0.1:{port}{path}", data=body, method=method)
+def _exchange(
+    port: int,
+    method: str,
+    path: str,
+    body: bytes | None = None,
+    headers: dict[str, str] | None = None,
+) -> tuple[int, bytes]:
+    request_headers = dict(headers or {})
+    if body is not None:
+        request_headers.setdefault("Content-Type", "application/json")
+    request = urllib.request.Request(
+        f"http://127.0.0.1:{port}{path}",
+        data=body,
+        headers=request_headers,
+        method=method,
+    )
     try:
         with urllib.request.urlopen(request, timeout=15) as response:
             return response.status, response.read()
     except urllib.error.HTTPError as exc:
         return exc.code, exc.read()
+
+
+class _NoRedirect(urllib.request.HTTPRedirectHandler):
+    """Leave a redirect response for the test to inspect."""
+
+    def redirect_request(
+        self,
+        req: urllib.request.Request,
+        fp: Any,
+        code: int,
+        msg: str,
+        headers: Any,
+        newurl: str,
+    ) -> urllib.request.Request | None:
+        raise urllib.error.HTTPError(req.full_url, code, msg, headers, fp)
+
+
+def _open(
+    port: int,
+    path: str,
+    headers: dict[str, str] | None = None,
+) -> tuple[int, Any, bytes]:
+    request = urllib.request.Request(f"http://127.0.0.1:{port}{path}", headers=headers or {}, method="GET")
+    opener = urllib.request.build_opener(_NoRedirect)
+    try:
+        with opener.open(request, timeout=15) as response:
+            return response.status, response.headers, response.read()
+    except urllib.error.HTTPError as exc:
+        return exc.code, exc.headers, exc.read()
 
 
 def _open_server() -> tuple[Any, threading.Thread]:
@@ -247,7 +322,7 @@ def test_a_run_leaves_the_page_available_and_rejects_another(monkeypatch: pytest
     release = threading.Event()
     calls: list[object] = []
 
-    def hold(selection: dict[str, object]) -> tuple[str, dict[str, bool]]:
+    def hold(selection: dict[str, object], output_root: object = None) -> tuple[str, dict[str, bool]]:
         calls.append(selection)
         if len(calls) == 1:
             started.set()
@@ -288,7 +363,7 @@ def test_a_run_leaves_the_page_available_and_rejects_another(monkeypatch: pytest
 def test_a_child_error_is_logged_and_hidden(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    def fail(selection: dict[str, object]) -> tuple[str, str]:
+    def fail(selection: dict[str, object], output_root: object = None) -> tuple[str, str]:
         return ("error", "RuntimeError: boom\n")
 
     monkeypatch.setattr("shadowsim.cli.serve._run_in_child", fail)
@@ -342,7 +417,7 @@ def test_cancel_stops_the_child_and_frees_the_slot(monkeypatch: pytest.MonkeyPat
     context = multiprocessing.get_context("spawn")
     ready = context.Event()
 
-    def spawn(selection: dict[str, object]) -> tuple[multiprocessing.Process, Any]:
+    def spawn(selection: dict[str, object], output_root: object = None) -> tuple[multiprocessing.Process, Any]:
         parent, child = context.Pipe(duplex=False)
         process = context.Process(target=_park_until_killed, args=(child, ready), daemon=True)
         process.start()
@@ -375,3 +450,182 @@ def test_cancel_stops_the_child_and_frees_the_slot(monkeypatch: pytest.MonkeyPat
     finally:
         poster.join(timeout=5)
         _close_server(server, thread)
+
+
+def test_the_page_exchanges_a_query_token_for_a_cookie() -> None:
+    server, thread = _open_server()
+    server.token = "test-token"
+    port = server.server_address[1]
+    try:
+        status, _headers, body = _open(port, "/")
+        assert status == 401
+        assert body == b"Open the URL printed when the server started.\n"
+
+        status, headers, body = _open(port, "/?token=nope")
+        assert status == 401
+        assert "Set-Cookie" not in headers
+        status, headers, body = _open(port, "/?token=test-token&token=test-token")
+        assert status == 401
+        assert "Set-Cookie" not in headers
+
+        status, headers, body = _open(port, "/?token=wrong", {"Cookie": "shadowsim-token=test-token"})
+        assert status == 401
+        assert "Set-Cookie" not in headers
+
+        status, headers, body = _open(port, "/?token=test-token")
+        assert status == 303
+        assert headers["Location"] == "/"
+        assert headers["Set-Cookie"] == "shadowsim-token=test-token; HttpOnly; SameSite=Strict; Path=/"
+        assert body == b""
+
+        status, _headers, body = _open(port, "/", {"Cookie": "other=1; shadowsim-token=test-token"})
+        assert status == 200
+        assert b"ShadowSim.py Simulation Builder" in body
+        status, _headers, css = _open(port, "/styles.css")
+        assert status == 200
+        assert b".board" in css
+        status, _headers, models = _open(port, "/models")
+        assert status == 200
+        assert b"models" in models
+    finally:
+        _close_server(server, thread)
+
+
+def test_posted_runs_require_the_startup_token(monkeypatch: pytest.MonkeyPatch) -> None:
+    calls: list[str] = []
+
+    def run(selection: dict[str, object], output_root: object = None) -> tuple[str, dict[str, bool]]:
+        calls.append("run")
+        assert selection == {}
+        assert output_root is None
+        return ("ok", {"ok": True})
+
+    def cancel() -> bool:
+        calls.append("cancel")
+        return False
+
+    monkeypatch.setattr("shadowsim.cli.serve._run_in_child", run)
+    monkeypatch.setattr("shadowsim.cli.serve._cancel_run", cancel)
+    server, thread = _open_server()
+    server.token = "test-token"
+    port = server.server_address[1]
+    bearer = {"Authorization": "Bearer test-token"}
+    cookie = {"Cookie": "shadowsim-token=test-token"}
+    try:
+        status, body = _exchange(port, "POST", "/runs", b"{}")
+        assert status == 401
+        assert json.loads(body) == {"error": "unauthorized"}
+        status, body = _exchange(port, "POST", "/runs/cancel")
+        assert status == 401
+        assert json.loads(body) == {"error": "unauthorized"}
+        status, body = _exchange(port, "POST", "/runs", b"{}", {"Authorization": "Bearer nope"})
+        assert status == 401
+        status, body = _exchange(port, "POST", "/runs/cancel", headers={"Cookie": "shadowsim-token=nope"})
+        assert status == 401
+        status, body = _exchange(port, "POST", "/runs?token=test-token", b"{}")
+        assert status == 401
+        status, body = _exchange(port, "POST", "/runs", b"{}", {"Authorization": "Bearer caf\u00e9"})
+        assert status == 401
+        assert calls == []
+
+        status, body = _exchange(port, "POST", "/runs", b"{}", bearer)
+        assert status == 200
+        assert json.loads(body) == {"ok": True}
+        status, body = _exchange(port, "POST", "/runs", b"{}", cookie)
+        assert status == 200
+        status, _body = _exchange(port, "POST", "/runs/cancel", headers=bearer)
+        assert status == 404
+        status, _body = _exchange(port, "POST", "/runs/cancel", headers=cookie)
+        assert status == 404
+        assert calls == ["run", "run", "cancel", "cancel"]
+    finally:
+        _close_server(server, thread)
+
+
+def test_post_runs_requires_json(monkeypatch: pytest.MonkeyPatch) -> None:
+    calls: list[object] = []
+
+    def run(selection: dict[str, object], output_root: object = None) -> tuple[str, dict[str, bool]]:
+        calls.append(selection)
+        assert output_root is None
+        return ("ok", {"ok": True})
+
+    monkeypatch.setattr("shadowsim.cli.serve._run_in_child", run)
+    server, thread = _open_server()
+    port = server.server_address[1]
+    plain = {"Content-Type": "text/plain"}
+    try:
+        status, body = _exchange(port, "POST", "/runs", b"{}", plain)
+        assert status == 415
+        assert json.loads(body) == {"error": "Content-Type must be application/json"}
+        assert calls == []
+
+        server.token = "test-token"
+        auth = {"Authorization": "Bearer test-token"}
+        status, body = _exchange(port, "POST", "/runs", b"{}", {**auth, "Content-Type": "text/plain"})
+        assert status == 415
+        assert json.loads(body) == {"error": "Content-Type must be application/json"}
+        status, body = _exchange(
+            port,
+            "POST",
+            "/runs",
+            b"{}",
+            {**auth, "Content-Type": "application/x-www-form-urlencoded"},
+        )
+        assert status == 415
+        assert calls == []
+
+        status, body = _exchange(
+            port,
+            "POST",
+            "/runs",
+            b"{}",
+            {**auth, "Content-Type": "application/json; charset=utf-8"},
+        )
+        assert status == 200
+        assert json.loads(body) == {"ok": True}
+        status, _body = _exchange(port, "POST", "/runs/cancel", headers={**auth, "Content-Type": "text/plain"})
+        assert status == 404
+        assert calls == [{}]
+    finally:
+        _close_server(server, thread)
+
+
+def test_serve_resolves_the_output_directory(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    created: list[_QuietServer] = []
+
+    class _RecordingQuiet(_QuietServer):
+        def __init__(self, server_address: tuple[str, int], request_handler_class: type[_Handler]) -> None:
+            super().__init__(server_address, request_handler_class)
+            created.append(self)
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr("shadowsim.cli.serve.HTTPServer", _RecordingQuiet)
+    assert serve("127.0.0.1", 8000, open_browser=False, output_dir="results") == 0
+    resolved = (tmp_path / "results").resolve()
+    assert created[0].output_root == resolved
+    assert f"Saving under {resolved}" in capsys.readouterr().out
+
+
+def test_a_posted_run_uses_the_output_directory(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    seen: dict[str, object] = {}
+
+    def run(selection: dict[str, object], output_root: object = None) -> tuple[str, dict[str, bool]]:
+        seen["output_root"] = output_root
+        assert selection == {}
+        return ("ok", {"ok": True})
+
+    monkeypatch.setattr("shadowsim.cli.serve._run_in_child", run)
+    server, thread = _open_server()
+    root = (tmp_path / "results").resolve()
+    server.output_root = root
+    port = server.server_address[1]
+    try:
+        status, body = _exchange(port, "POST", "/runs", b"{}")
+    finally:
+        _close_server(server, thread)
+    assert status == 200
+    assert json.loads(body) == {"ok": True}
+    assert seen["output_root"] == root

@@ -120,7 +120,7 @@ def build_simulator(selection: Mapping[str, object], *, time_steps: int = 101) -
     return _circuit_simulator(simulator_id, selection, model, state, measure_id, total_time, sites, backend)
 
 
-def run_page(selection: Mapping[str, object]) -> dict[str, object]:
+def run_page(selection: Mapping[str, object], *, output_root: Path | None = None) -> dict[str, object]:
     """Run one selection, or a benchmark when ``simulators`` lists two or more.
 
     The first entry is the reference. Any exported simulator may be the reference
@@ -134,10 +134,17 @@ def run_page(selection: Mapping[str, object]) -> dict[str, object]:
     ``export_path``, or ``results/`` when that key is missing. A benchmark uses
     :meth:`~shadowsim.benchmarking.benchmark.Benchmark.save_error_metrics`.
     One simulator writes its runtime and shot budget. ``plot`` is drawn by the
-    page. Save and export both run when both are selected.
+    page. Save and export both run when both are selected. When ``output_root``
+    is set, ``save_path`` and ``export_path`` must resolve under that directory.
+    A relative path is resolved from the working directory.
+
+    Args:
+        selection: Page ids, settings, and result actions.
+        output_root: Directory that save and export paths must stay under.
+            ``None`` leaves those paths unchanged.
     """
-    directory = _save_directory(selection)
-    export_to = _export_location(selection)
+    directory = _save_directory(selection, output_root)
+    export_to = _export_location(selection, output_root)
     entries = selection.get("simulators")
     if isinstance(entries, list) and len(entries) >= 2:
         return _run_benchmark(selection, entries, directory, export_to)
@@ -175,11 +182,25 @@ def _then_actions(selection: Mapping[str, object]) -> frozenset[str]:
     return frozenset()
 
 
-def _save_directory(selection: Mapping[str, object]) -> Path | None:
+def _path_under_root(path: Path, root: Path, label: str) -> Path:
+    """Return ``path`` resolved from the working directory when it stays inside ``root``.
+
+    Raises:
+        ValueError: The resolved path is outside ``root``.
+    """
+    resolved_root = root.resolve()
+    resolved = path.resolve()
+    if not resolved.is_relative_to(resolved_root):
+        raise ValueError(f"{label} must stay under {resolved_root}")
+    return resolved
+
+
+def _save_directory(selection: Mapping[str, object], output_root: Path | None) -> Path | None:
     """Return the save directory, or ``None`` when this run is not saved.
 
     Raises:
-        ValueError: ``save`` is selected and ``save_path`` is not a path.
+        ValueError: ``save`` is selected and ``save_path`` is not a path, or it
+            resolves outside ``output_root``.
     """
     if "save" not in _then_actions(selection):
         return None
@@ -188,14 +209,18 @@ def _save_directory(selection: Mapping[str, object]) -> Path | None:
         raw = _DEFAULT_SAVE_PATH
     if not isinstance(raw, str) or not raw.strip():
         raise ValueError("save path must be a path")
-    return Path(raw.strip())
+    path = Path(raw.strip())
+    if output_root is None:
+        return path
+    return _path_under_root(path, output_root, "save path")
 
 
-def _export_location(selection: Mapping[str, object]) -> Path | None:
+def _export_location(selection: Mapping[str, object], output_root: Path | None) -> Path | None:
     """Return where to write metrics JSON, or ``None`` when this run is not exported.
 
     Raises:
-        ValueError: ``export`` is selected and ``export_path`` is not a path.
+        ValueError: ``export`` is selected and ``export_path`` is not a path, or
+            it resolves outside ``output_root``.
     """
     if "export" not in _then_actions(selection):
         return None
@@ -204,7 +229,10 @@ def _export_location(selection: Mapping[str, object]) -> Path | None:
         raw = _DEFAULT_EXPORT_DIR
     if not isinstance(raw, str) or not raw.strip():
         raise ValueError("export path must be a path")
-    return Path(raw.strip())
+    path = Path(raw.strip())
+    if output_root is None:
+        return path
+    return _path_under_root(path, output_root, "export path")
 
 
 def _resource_record(simulator: Simulator, wall_time: float | None) -> dict[str, object]:

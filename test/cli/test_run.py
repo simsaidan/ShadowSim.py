@@ -277,6 +277,53 @@ def test_then_does_not_change_the_simulator() -> None:
     assert simulator.num_qubits == 2
 
 
+def test_paths_inside_the_output_directory_are_accepted(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.chdir(tmp_path)
+    root = tmp_path / "results"
+    with pytest.raises(ValueError, match="unknown simulator"):
+        run_page(_selection(simulator="nope", then="save", save_path="results/run1"), output_root=root)
+    with pytest.raises(ValueError, match="unknown simulator"):
+        run_page(_selection(simulator="nope", then="save", save_path=str(root / "nested")), output_root=root)
+    with pytest.raises(ValueError, match="unknown simulator"):
+        run_page(_selection(simulator="nope", then="export", export_path="results"), output_root=root)
+    with pytest.raises(ValueError, match="unknown simulator"):
+        run_page(
+            _selection(simulator="nope", then="export", export_path=str(root / "metrics.json")),
+            output_root=root,
+        )
+
+
+def test_paths_outside_the_output_directory_are_rejected(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.chdir(tmp_path)
+    root = (tmp_path / "results").resolve()
+    outside = tmp_path.parent / "outside"
+    with pytest.raises(ValueError, match="save path must stay under"):
+        run_page(_selection(then="save", save_path="results/../../outside"), output_root=root)
+    with pytest.raises(ValueError, match="save path must stay under"):
+        run_page(_selection(then="save", save_path=str(outside)), output_root=root)
+    with pytest.raises(ValueError, match="export path must stay under"):
+        run_page(_selection(then="export", export_path="results/../../outside"), output_root=root)
+    with pytest.raises(ValueError, match="export path must stay under"):
+        run_page(_selection(then="export", export_path=str(outside / "metrics.json")), output_root=root)
+
+
+def test_a_symlink_that_leaves_the_output_directory_is_rejected(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    root = tmp_path / "results"
+    outside = tmp_path / "outside"
+    root.mkdir()
+    outside.mkdir()
+    (root / "link").symlink_to(outside, target_is_directory=True)
+    (root / "metrics.json").symlink_to(outside / "metrics.json")
+    resolved = root.resolve()
+    with pytest.raises(ValueError, match="save path must stay under"):
+        run_page(_selection(then="save", save_path="results/link"), output_root=resolved)
+    with pytest.raises(ValueError, match="export path must stay under"):
+        run_page(_selection(then="export", export_path="results/metrics.json"), output_root=resolved)
+
+
 def test_save_rejects_an_empty_path() -> None:
     with pytest.raises(ValueError, match="save path"):
         run_page(_selection(then="save", save_path="  "))
@@ -487,7 +534,13 @@ def _request(method: str, path: str, body: bytes | None = None) -> tuple[int, by
     port = server.server_address[1]
     thread = threading.Thread(target=server.handle_request, daemon=True)
     thread.start()
-    request = urllib.request.Request(f"http://127.0.0.1:{port}{path}", data=body, method=method)
+    headers = {"Content-Type": "application/json"} if body is not None else {}
+    request = urllib.request.Request(
+        f"http://127.0.0.1:{port}{path}",
+        data=body,
+        headers=headers,
+        method=method,
+    )
     try:
         try:
             with urllib.request.urlopen(request, timeout=60) as response:
@@ -685,7 +738,7 @@ def test_post_elsewhere_is_not_found() -> None:
 def test_post_runs_reports_a_simulator_failure(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    def explode(selection: Mapping[str, object]) -> object:
+    def explode(selection: Mapping[str, object], output_root: object = None) -> object:
         raise RuntimeError("boom")
 
     monkeypatch.setattr("shadowsim.cli.serve._run_in_child", explode)
