@@ -94,6 +94,7 @@ let preexistingId = null;
 let preexistingOpen = false;
 let emitterText = "1";
 const MAX_EMITTERS = 13;
+const MAX_OPERATOR_QUBITS = 8;
 
 const settings = { qubits: "", total: "" };
 let basisBits = "";
@@ -377,10 +378,40 @@ function pyString(value) {
   return `"${value.replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"`;
 }
 
+function qubitBounds() {
+  if (usingAddedOperators()) return { min: 1, max: MAX_OPERATOR_QUBITS };
+  // The factory that takes n_qubits is Ising, which requires at least 2.
+  if (selection.model === "preexisting" && chosenFactory()?.qubits) return { min: 2, max: null };
+  return { min: 1, max: null };
+}
+
+function qubitProblem(preview) {
+  const value = settingNumber("qubits");
+  if (value == null) return null;
+  const { min, max } = qubitBounds();
+  const tail = preview ? " to preview the script." : ".";
+  if (!Number.isInteger(value) || value < min) return `Qubits must be an integer of at least ${min}${tail}`;
+  if (max != null && value > max) return `Qubits must be from 1 to ${max}${tail}`;
+  return null;
+}
+
+function totalProblem(preview) {
+  const value = settingNumber("total");
+  if (value == null || value > 0) return null;
+  const tail = preview ? " to preview the script." : ".";
+  return `Total time must be a positive number${tail}`;
+}
+
+function numberProblem(preview) {
+  if (settingNumber("qubits") == null || settingNumber("total") == null) {
+    return preview ? "Enter qubits and total time to preview the script." : "Enter qubits and total time.";
+  }
+  return qubitProblem(preview) ?? totalProblem(preview);
+}
+
 function settingsReady() {
   return (
-    qubitPhrase() != null &&
-    settingNumber("total") != null &&
+    numberProblem(false) == null &&
     stateInputProblem() == null &&
     simParamsReady() &&
     sameTimeGrid() &&
@@ -390,6 +421,10 @@ function settingsReady() {
     !emitterProblem() &&
     (!usingAddedOperators() || operatorsReady())
   );
+}
+
+function runAllowed() {
+  return isComplete() && settingsReady();
 }
 
 function stateLine() {
@@ -596,7 +631,7 @@ function backendSetup(backendId) {
 }
 
 function previewText() {
-  if (!isComplete() || !settingsReady()) return "";
+  if (!runAllowed()) return "";
   const lines = [
     "import numpy as np",
     "from shadowsim.encoding import *",
@@ -1886,6 +1921,7 @@ function settingsComponent() {
     el("button", {
       className: "run",
       type: "button",
+      disabled: !running && !runAllowed(),
       onclick: () => void (running ? cancelRun() : startRun()),
     }, running ? "Cancel" : "Run simulation"),
   );
@@ -1906,6 +1942,7 @@ function refreshSummaryAndPreview() {
   const panel = document.querySelector('.panel[aria-label="Code preview"]');
   const body = panel?.querySelector("pre, .placeholder");
   if (body) body.replaceWith(codeBody());
+  syncRunButton();
 }
 
 function statusMessage() {
@@ -1917,7 +1954,8 @@ function statusMessage() {
   if (stateInputProblem() === "gray") return "Enter a Gray code bit string and total time.";
   if (stateInputProblem() === "angle") return "Enter one angle per qubit and total time.";
   if (stateInputProblem() === "amplitude") return "Enter a non-zero amplitude list and total time.";
-  if (qubitPhrase() == null || settingNumber("total") == null) return "Enter qubits and total time.";
+  const numbers = numberProblem(false);
+  if (numbers) return numbers;
   if (!simParamsReady()) return "Enter simulator parameters.";
   if (!sameTimeGrid()) return "Use the same number of time steps for every simulator.";
   if (!measureSitesReady()) return "Pick at least one qubit.";
@@ -1927,7 +1965,7 @@ function statusMessage() {
 }
 
 function statusComponent() {
-  const ready = !statusHold && isComplete() && settingsReady();
+  const ready = !statusHold && runAllowed();
   return el(
     "p",
     { className: ready ? "status ready" : "status", role: "status" },
@@ -1940,6 +1978,7 @@ function codeBody() {
   if (code) return el("pre", {}, code);
   let message = operatorStatus(true) ?? "Place a block in each slot to preview the script.";
   if (isComplete()) {
+    const numbers = numberProblem(true);
     if (emitterProblem()) message = "Enter an emitter count to preview the script.";
     else if (stateInputProblem() === "size") message = stateSizeStatus(true);
     else if (stateInputProblem() === "basis") message = "Enter a basis bit string and total time to preview the script.";
@@ -1948,9 +1987,8 @@ function codeBody() {
     else if (stateInputProblem() === "amplitude") {
       message = "Enter a non-zero amplitude list and total time to preview the script.";
     }
-    else if (qubitPhrase() == null || settingNumber("total") == null) {
-      message = "Enter qubits and total time to preview the script.";
-    } else if (!simParamsReady()) message = "Enter simulator parameters to preview the script.";
+    else if (numbers) message = numbers;
+    else if (!simParamsReady()) message = "Enter simulator parameters to preview the script.";
     else if (!sameTimeGrid()) message = "Use the same number of time steps to preview the script.";
     else if (!measureSitesReady()) message = "Pick at least one qubit to preview the script.";
     else if (!shotsReady()) message = "Enter a shot count to preview the script.";
@@ -2170,11 +2208,17 @@ function stopRunClock() {
   runTimer = null;
 }
 
+function syncRunButton() {
+  const button = document.querySelector(".run");
+  if (!button || running) return;
+  button.disabled = !runAllowed();
+}
+
 function setRunButton(label) {
   const button = document.querySelector(".run");
   if (!button) return;
-  button.disabled = false;
   button.textContent = label;
+  button.disabled = label !== "Cancel" && !runAllowed();
 }
 
 async function cancelRun() {
@@ -2187,7 +2231,7 @@ async function cancelRun() {
 }
 
 async function startRun() {
-  if (running || !isComplete() || !settingsReady()) return;
+  if (running || !runAllowed()) return;
   running = true;
   releaseStatusHold();
   runStartedAt = Date.now();
@@ -2243,7 +2287,7 @@ async function startRun() {
     running = false;
     setRunButton("Run simulation");
     if (statusHold) setStatus(statusHold);
-    else setStatus(statusMessage(), isComplete() && settingsReady());
+    else setStatus(statusMessage(), runAllowed());
   }
 }
 
