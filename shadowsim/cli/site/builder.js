@@ -118,6 +118,9 @@ let shotsOpen = false;
 
 let dragging = null;
 let running = false;
+let statusHold = null;
+let runStartedAt = 0;
+let runTimer = null;
 const laneNotes = { model: "", simulator: "", backend: "" };
 
 const CURVE_COLORS = ["#4c4cb8", "#1f7a6c", "#a67c1a", "#b66880", "#6a4ca8"];
@@ -713,6 +716,7 @@ function preexistingChip() {
       onchange: (event) => {
         preexistingId = event.target.value;
         syncModelQubits();
+        releaseStatusHold();
         draw(document.querySelector(".board"));
       },
     },
@@ -1879,14 +1883,23 @@ function settingsComponent() {
       field("qubits", "Qubits", "numeric"),
       field("total", "Total time", "decimal"),
     ),
-    el("button", { className: "run", type: "button", onclick: () => void startRun() }, "Run simulation"),
+    el("button", {
+      className: "run",
+      type: "button",
+      onclick: () => void (running ? cancelRun() : startRun()),
+    }, running ? "Cancel" : "Run simulation"),
   );
+}
+
+function releaseStatusHold() {
+  statusHold = null;
 }
 
 function refreshSummaryAndPreview() {
   const summary = document.querySelector(".summary");
   if (summary) summary.replaceWith(summaryComponent());
   if (!running) {
+    releaseStatusHold();
     const status = document.querySelector(".status");
     if (status) status.replaceWith(statusComponent());
   }
@@ -1896,6 +1909,7 @@ function refreshSummaryAndPreview() {
 }
 
 function statusMessage() {
+  if (statusHold) return statusHold;
   if (!isComplete()) return operatorStatus(false) ?? "Place a block in each slot.";
   if (emitterProblem()) return "Enter an emitter count.";
   if (stateInputProblem() === "size") return stateSizeStatus(false);
@@ -1913,7 +1927,7 @@ function statusMessage() {
 }
 
 function statusComponent() {
-  const ready = isComplete() && settingsReady();
+  const ready = !statusHold && isComplete() && settingsReady();
   return el(
     "p",
     { className: ready ? "status ready" : "status", role: "status" },
@@ -2100,12 +2114,52 @@ function chartComponent(payload) {
   );
 }
 
+function runningLabel(elapsedMs) {
+  const total = Math.max(0, Math.floor(elapsedMs / 1000));
+  const minutes = Math.floor(total / 60);
+  const seconds = String(total % 60).padStart(2, "0");
+  return `Running · ${minutes}:${seconds}`;
+}
+
+function showRunningClock() {
+  if (!running) return;
+  const status = document.querySelector(".status");
+  if (!status) return;
+  status.className = "status";
+  status.setAttribute("aria-live", "off");
+  status.textContent = runningLabel(Date.now() - runStartedAt);
+}
+
+function stopRunClock() {
+  if (runTimer == null) return;
+  clearInterval(runTimer);
+  runTimer = null;
+}
+
+function setRunButton(label) {
+  const button = document.querySelector(".run");
+  if (!button) return;
+  button.disabled = false;
+  button.textContent = label;
+}
+
+async function cancelRun() {
+  if (!running) return;
+  try {
+    await fetch("/runs/cancel", { method: "POST" });
+  } catch {
+    // The run request stays open and reports the outcome.
+  }
+}
+
 async function startRun() {
   if (running || !isComplete() || !settingsReady()) return;
   running = true;
-  const button = document.querySelector(".run");
-  if (button) button.disabled = true;
-  setStatus("Running.");
+  releaseStatusHold();
+  runStartedAt = Date.now();
+  setRunButton("Cancel");
+  showRunningClock();
+  runTimer = setInterval(showRunningClock, 1000);
   setResults(el("p", { className: "placeholder" }, "Running."));
   try {
     const response = await fetch("/runs", {
@@ -2135,18 +2189,27 @@ async function startRun() {
       }),
     });
     const payload = await response.json();
-    if (!response.ok) {
-      setResults(el("p", { className: "placeholder" }, payload.error || "The run failed."));
+    if (payload.cancelled) {
+      statusHold = "Cancelled.";
+      setResults(el("p", { className: "placeholder" }, statusHold));
       return;
     }
+    if (!response.ok) {
+      statusHold = payload.error || "The run failed.";
+      setResults(el("p", { className: "placeholder" }, statusHold));
+      return;
+    }
+    releaseStatusHold();
     setResults(resultsComponent(payload));
   } catch {
-    setResults(el("p", { className: "placeholder" }, "The run failed."));
+    statusHold = "The run failed.";
+    setResults(el("p", { className: "placeholder" }, statusHold));
   } finally {
+    stopRunClock();
     running = false;
-    const run = document.querySelector(".run");
-    if (run) run.disabled = false;
-    setStatus(statusMessage(), isComplete() && settingsReady());
+    setRunButton("Run simulation");
+    if (statusHold) setStatus(statusHold);
+    else setStatus(statusMessage(), isComplete() && settingsReady());
   }
 }
 
@@ -2408,6 +2471,7 @@ function place(laneId, blockId) {
   syncModelQubits();
   syncStateQubits();
   dragging = null;
+  releaseStatusHold();
   draw(document.querySelector(".board"));
 }
 
@@ -2416,6 +2480,7 @@ function removeThen(id) {
   const index = placedThens.indexOf(id);
   if (index >= 0) placedThens.splice(index, 1);
   selection.then = placedThens[0] ?? null;
+  releaseStatusHold();
   draw(document.querySelector(".board"));
 }
 
@@ -2424,6 +2489,7 @@ function removeSimulator(key) {
   const index = placedSims.findIndex((entry) => entry.key === key);
   if (index >= 0) placedSims.splice(index, 1);
   selection.simulator = placedSims[0]?.id ?? null;
+  releaseStatusHold();
   draw(document.querySelector(".board"));
 }
 
@@ -2435,6 +2501,7 @@ function removeTerm(key) {
     settings.qubits = "";
     qubitsSource = null;
   } else syncHamiltonianQubits();
+  releaseStatusHold();
   draw(document.querySelector(".board"));
 }
 
@@ -2457,6 +2524,7 @@ function clearLane(laneId) {
     syncModelQubits();
   }
   selection[laneId] = null;
+  releaseStatusHold();
   draw(document.querySelector(".board"));
 }
 

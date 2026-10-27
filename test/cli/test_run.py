@@ -688,7 +688,7 @@ def test_post_runs_reports_a_simulator_failure(
     def explode(selection: Mapping[str, object]) -> object:
         raise RuntimeError("boom")
 
-    monkeypatch.setattr("shadowsim.cli.serve.run_page", explode)
+    monkeypatch.setattr("shadowsim.cli.serve._run_in_child", explode)
     status, body = _post(json.dumps(_selection()).encode())
     payload = json.loads(body)
     assert status == 500

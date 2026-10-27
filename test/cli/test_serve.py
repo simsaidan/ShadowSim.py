@@ -1,13 +1,17 @@
 """Tests for the local builder page server."""
 
+import json
+import multiprocessing
 import threading
+import time
 import urllib.error
 import urllib.request
 from http.server import HTTPServer
+from typing import Any
 
 import pytest
 
-from shadowsim.cli.serve import _Handler, main, serve
+from shadowsim.cli.serve import _Handler, _park_until_killed, _send_json, _terminate_process, main, serve
 
 
 def test_index_serves_the_builder_page():
@@ -192,3 +196,182 @@ def test_serve_formats_an_ipv6_address_and_stops_on_interrupt(
     output = capsys.readouterr().out
     assert "http://[::1]:4321/" in output
     assert "Stopped." in output
+
+
+def _exchange(port: int, method: str, path: str, body: bytes | None = None) -> tuple[int, bytes]:
+    request = urllib.request.Request(f"http://127.0.0.1:{port}{path}", data=body, method=method)
+    try:
+        with urllib.request.urlopen(request, timeout=15) as response:
+            return response.status, response.read()
+    except urllib.error.HTTPError as exc:
+        return exc.code, exc.read()
+
+
+def _open_server() -> tuple[Any, threading.Thread]:
+    from shadowsim.cli.serve import HTTPServer as ThreadedServer
+
+    server = ThreadedServer(("127.0.0.1", 0), _Handler)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    return server, thread
+
+
+def _close_server(server: Any, thread: threading.Thread) -> None:
+    server.shutdown()
+    server.server_close()
+    thread.join(timeout=5)
+
+
+def test_send_json_ignores_a_disconnected_client() -> None:
+    class _Closed:
+        def __init__(self) -> None:
+            self.wfile = self
+
+        def send_response(self, status: int) -> None:
+            return None
+
+        def send_header(self, name: str, value: str) -> None:
+            return None
+
+        def end_headers(self) -> None:
+            return None
+
+        def write(self, body: bytes) -> None:
+            raise ConnectionResetError("closed")
+
+    _send_json(_Closed(), 200, {"ok": True})  # type: ignore[arg-type]
+
+
+def test_a_run_leaves_the_page_available_and_rejects_another(monkeypatch: pytest.MonkeyPatch) -> None:
+    started = threading.Event()
+    release = threading.Event()
+    calls: list[object] = []
+
+    def hold(selection: dict[str, object]) -> tuple[str, dict[str, bool]]:
+        calls.append(selection)
+        if len(calls) == 1:
+            started.set()
+            assert release.wait(timeout=5)
+        return ("ok", {"ok": True})
+
+    monkeypatch.setattr("shadowsim.cli.serve._run_in_child", hold)
+    server, thread = _open_server()
+    port = server.server_address[1]
+    first: dict[str, tuple[int, bytes]] = {}
+
+    def post_first() -> None:
+        first["result"] = _exchange(port, "POST", "/runs", b"{}")
+
+    poster = threading.Thread(target=post_first)
+    poster.start()
+    try:
+        assert started.wait(timeout=2)
+        with urllib.request.urlopen(f"http://127.0.0.1:{port}/", timeout=2) as response:
+            assert response.status == 200
+        status, body = _exchange(port, "POST", "/runs", b"{}")
+        assert status == 409
+        assert json.loads(body) == {"error": "a run is still finishing"}
+        assert len(calls) == 1
+        release.set()
+        poster.join(timeout=5)
+        assert first["result"] == (200, b'{"ok": true}')
+        status, body = _exchange(port, "POST", "/runs", b'{"again": true}')
+        assert status == 200
+        assert json.loads(body) == {"ok": True}
+        assert len(calls) == 2
+    finally:
+        release.set()
+        poster.join(timeout=5)
+        _close_server(server, thread)
+
+
+def test_a_child_error_is_logged_and_hidden(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    def fail(selection: dict[str, object]) -> tuple[str, str]:
+        return ("error", "RuntimeError: boom\n")
+
+    monkeypatch.setattr("shadowsim.cli.serve._run_in_child", fail)
+    server, thread = _open_server()
+    port = server.server_address[1]
+    try:
+        status, body = _exchange(port, "POST", "/runs", b"{}")
+    finally:
+        _close_server(server, thread)
+    assert status == 500
+    assert json.loads(body) == {"error": "internal error"}
+    assert "boom" in capsys.readouterr().err
+    assert b"boom" not in body
+
+
+def test_cancel_without_a_run_is_not_found() -> None:
+    server, thread = _open_server()
+    port = server.server_address[1]
+    try:
+        status, _body = _exchange(port, "POST", "/runs/cancel")
+        assert status == 404
+    finally:
+        _close_server(server, thread)
+
+
+def test_terminate_process_ends_the_group() -> None:
+    context = multiprocessing.get_context("spawn")
+    parent, child = context.Pipe(duplex=False)
+    started = context.Event()
+    process = context.Process(target=_park_until_killed, args=(child, started), daemon=True)
+    process.start()
+    child.close()
+    try:
+        assert started.wait(timeout=15)
+        _terminate_process(process)
+        assert not process.is_alive()
+        assert process.exitcode is not None and process.exitcode < 0
+    finally:
+        if process.is_alive():
+            process.kill()
+            process.join(timeout=2)
+        parent.close()
+        process.join(timeout=2)
+        if not process.is_alive():
+            process.close()
+
+
+def test_cancel_stops_the_child_and_frees_the_slot(monkeypatch: pytest.MonkeyPatch) -> None:
+    from shadowsim.cli import serve as serve_cli
+
+    context = multiprocessing.get_context("spawn")
+    ready = context.Event()
+
+    def spawn(selection: dict[str, object]) -> tuple[multiprocessing.Process, Any]:
+        parent, child = context.Pipe(duplex=False)
+        process = context.Process(target=_park_until_killed, args=(child, ready), daemon=True)
+        process.start()
+        child.close()
+        return process, parent
+
+    monkeypatch.setattr(serve_cli, "_spawn_page", spawn)
+    server, thread = _open_server()
+    port = server.server_address[1]
+    outcome: dict[str, tuple[int, bytes]] = {}
+
+    def post_run() -> None:
+        outcome["result"] = _exchange(port, "POST", "/runs", b"{}")
+
+    poster = threading.Thread(target=post_run)
+    poster.start()
+    try:
+        assert ready.wait(timeout=15)
+        status, body = _exchange(port, "POST", "/runs/cancel")
+        assert status == 204
+        assert body == b""
+        poster.join(timeout=5)
+        assert outcome["result"][0] == 200
+        assert json.loads(outcome["result"][1]) == {"cancelled": True}
+        deadline = time.monotonic() + 2
+        while serve_cli._slot.running.locked() and time.monotonic() < deadline:
+            time.sleep(0.01)
+        assert not serve_cli._slot.running.locked()
+        assert serve_cli._slot.phase is serve_cli._RunPhase.IDLE
+    finally:
+        poster.join(timeout=5)
+        _close_server(server, thread)
