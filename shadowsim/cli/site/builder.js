@@ -119,6 +119,7 @@ let copyTimer = 0;
 let statusHold = null;
 let runStartedAt = 0;
 let runTimer = null;
+let shownRun = null;
 const laneNotes = { model: "", simulator: "", backend: "" };
 
 const CURVE_COLORS = ["#4c4cb8", "#1f7a6c", "#a67c1a", "#b66880", "#6a4ca8"];
@@ -394,6 +395,10 @@ function refreshCavityModel() {
   else refreshSummaryAndPreview();
 }
 
+function replaceChip(node, next) {
+  node.closest(".chip").replaceWith(next);
+}
+
 function preexistingChip() {
   const factory = chosenFactory();
   const select = el(
@@ -404,7 +409,7 @@ function preexistingChip() {
         preexistingId = event.target.value;
         syncModelQubits();
         releaseStatusHold();
-        draw(document.querySelector(".board"));
+        commitLane("model", true);
       },
     },
     ...modelFactories.map((item) =>
@@ -434,10 +439,10 @@ function preexistingChip() {
       el(
         "div",
         {
-          onclick: () => {
+          onclick: (event) => {
             if (preexistingOpen) return;
             preexistingOpen = true;
-            draw(document.querySelector(".board"));
+            replaceChip(event.currentTarget, preexistingChip());
           },
         },
         el("strong", {}, "Preexisting model"),
@@ -465,9 +470,9 @@ function preexistingChip() {
               {
                 className: "done",
                 type: "button",
-                onclick: () => {
+                onclick: (event) => {
                   preexistingOpen = false;
-                  draw(document.querySelector(".board"));
+                  replaceChip(event.currentTarget, preexistingChip());
                 },
               },
               "Done",
@@ -525,7 +530,9 @@ function stateReady(id) {
 
 function writeQubitField() {
   const qubitsInput = document.querySelector('input[aria-label="Qubits"]');
-  if (qubitsInput && qubitsInput.value !== settings.qubits) qubitsInput.value = settings.qubits;
+  if (!qubitsInput) return;
+  qubitsInput.readOnly = stateOwnsQubits() || cavityModelSelected();
+  if (qubitsInput.value !== settings.qubits) qubitsInput.value = settings.qubits;
 }
 
 function syncStateQubits() {
@@ -543,7 +550,10 @@ function syncModelQubits() {
     if (stateOwnsQubits()) {
       qubitsSource = null;
       syncStateQubits();
-    } else qubitsSource = settings.qubits === "" ? null : "user";
+    } else {
+      qubitsSource = settings.qubits === "" ? null : "user";
+      writeQubitField();
+    }
     return;
   }
   const fixed = fixedFactoryQubits();
@@ -602,10 +612,10 @@ function stateChip(options) {
       el(
         "div",
         {
-          onclick: () => {
+          onclick: (event) => {
             if (stateOpen) return;
             stateOpen = true;
-            draw(document.querySelector(".board"));
+            replaceChip(event.currentTarget, stateChip(options));
           },
         },
         el("strong", {}, options.title),
@@ -631,9 +641,9 @@ function stateChip(options) {
               {
                 className: "done",
                 type: "button",
-                onclick: () => {
+                onclick: (event) => {
                   stateOpen = false;
-                  draw(document.querySelector(".board"));
+                  replaceChip(event.currentTarget, stateChip(options));
                 },
               },
               "Done",
@@ -774,10 +784,10 @@ function simulatorChip(entry) {
       el(
         "div",
         {
-          onclick: () => {
+          onclick: (event) => {
             if (entry.open) return;
             entry.open = true;
-            draw(document.querySelector(".board"));
+            replaceChip(event.currentTarget, simulatorChip(entry));
           },
         },
         el("strong", {}, block.title),
@@ -792,9 +802,9 @@ function simulatorChip(entry) {
               {
                 className: "done",
                 type: "button",
-                onclick: () => {
+                onclick: (event) => {
                   entry.open = false;
-                  draw(document.querySelector(".board"));
+                  replaceChip(event.currentTarget, simulatorChip(entry));
                 },
               },
               "Done",
@@ -821,6 +831,10 @@ function simulatorChip(entry) {
 
 function pathChip(block, options) {
   const shown = options.path.trim();
+  const refresh = (event) => {
+    const next = options.kind === "save" ? saveChip(block) : exportChip(block);
+    replaceChip(event.currentTarget, next);
+  };
   return el(
     "div",
     { className: `chip tone-rose ${options.kind}${options.open ? " is-editing" : ""}` },
@@ -830,10 +844,10 @@ function pathChip(block, options) {
       el(
         "div",
         {
-          onclick: () => {
+          onclick: (event) => {
             if (options.open) return;
             options.setOpen(true);
-            draw(document.querySelector(".board"));
+            refresh(event);
           },
         },
         el("strong", {}, block.title),
@@ -848,9 +862,9 @@ function pathChip(block, options) {
               {
                 className: "done",
                 type: "button",
-                onclick: () => {
+                onclick: (event) => {
                   options.setOpen(false);
-                  draw(document.querySelector(".board"));
+                  refresh(event);
                 },
               },
               "Done",
@@ -962,11 +976,11 @@ function backendChip(entry) {
       el(
         "div",
         {
-          onclick: () => {
+          onclick: (event) => {
             if (!configurable || editing) return;
             if (samples) entry.shotsOpen = true;
             else entry.backendOpen = true;
-            draw(document.querySelector(".board"));
+            replaceChip(event.currentTarget, backendChip(entry));
           },
         },
         el("strong", {}, block.title),
@@ -981,10 +995,10 @@ function backendChip(entry) {
               {
                 className: "done",
                 type: "button",
-                onclick: () => {
+                onclick: (event) => {
                   entry.shotsOpen = false;
                   entry.backendOpen = false;
-                  draw(document.querySelector(".board"));
+                  replaceChip(event.currentTarget, backendChip(entry));
                 },
               },
               "Done",
@@ -1126,13 +1140,12 @@ function syncHamiltonianQubits() {
     qubitsSource = null;
   }
   syncMeasureChip();
-  const qubitsInput = document.querySelector('input[aria-label="Qubits"]');
-  if (qubitsInput && qubitsInput.value !== settings.qubits) qubitsInput.value = settings.qubits;
+  writeQubitField();
   refreshLocalHamiltonianChips();
 }
 
 function refreshHamiltonianChips() {
-  document.querySelectorAll(".chip.hamiltonian").forEach((chip) => {
+  document.querySelectorAll?.(".chip.hamiltonian")?.forEach((chip) => {
     const term = modelTerms.find((item) => item.key === Number(chip.dataset.key));
     if (!term) return;
     const detail = chip.querySelector(".hamiltonian-detail");
@@ -1272,7 +1285,7 @@ function localFields(term) {
 }
 
 function refreshLocalHamiltonianChips() {
-  document.querySelectorAll(".chip.local-hamiltonian, .chip.lindblad").forEach((chip) => {
+  document.querySelectorAll?.(".chip.local-hamiltonian, .chip.lindblad")?.forEach((chip) => {
     const term = modelTerms.find((item) => item.key === Number(chip.dataset.key));
     if (!term) return;
     const count = qubitCount();
@@ -1601,6 +1614,7 @@ function refreshSummaryAndPreview() {
   syncCopyButton();
   syncRunButton();
   rememberBoard();
+  clearStaleResults();
 }
 
 function statusMessage() {
@@ -1716,6 +1730,21 @@ function setResults(node) {
   const panel = document.querySelector('.panel[aria-label="Results"]');
   const body = panel?.querySelector(":scope > .placeholder, :scope > .chart, :scope > .results");
   if (body) body.replaceWith(node);
+}
+
+function resultsPlaceholder() {
+  return el("p", { className: "placeholder" }, "Run a simulation to see results here.");
+}
+
+function clearResults() {
+  shownRun = null;
+  setResults(resultsPlaceholder());
+}
+
+function clearStaleResults() {
+  if (shownRun == null) return;
+  if (shownRun === JSON.stringify(runRequest())) return;
+  clearResults();
 }
 
 function formatAxis(value) {
@@ -2216,6 +2245,40 @@ async function cancelRun() {
   }
 }
 
+function runRequest() {
+  return {
+    ...postedSelection(),
+    model: selection.model === "preexisting" ? preexistingId : selection.model,
+    qubits: settings.qubits,
+    total: settings.total,
+    basis: basisBits,
+    gray: grayBits,
+    angles: numberList(angleText, STATE_LIMITS.angle),
+    amplitudes: numberList(amplitudeText, STATE_LIMITS.amplitude),
+    sites: explicitSites(),
+    ...(placedSims[0] ? entryBody(placedSims[0]) : {}),
+    simulators: placedSims.map(entryBody),
+    then: placedThens[0] ?? null,
+    thens: [...placedThens],
+    save_path: savePath.trim(),
+    export_path: exportPath.trim(),
+    terms: postedTerms(),
+    ...(selection.model === "preexisting" && preexistingId === "tavis_cummings"
+      ? { emitters: emitterCount() }
+      : {}),
+  };
+}
+
+function showRunResult(requested, node) {
+  if (JSON.stringify(runRequest()) !== requested) {
+    clearResults();
+    return false;
+  }
+  shownRun = requested;
+  setResults(node);
+  return true;
+}
+
 async function startRun() {
   if (running || !runAllowed()) return;
   running = true;
@@ -2224,49 +2287,33 @@ async function startRun() {
   setRunButton("Cancel");
   showRunningClock();
   runTimer = setInterval(showRunningClock, 1000);
+  const requested = JSON.stringify(runRequest());
+  shownRun = requested;
   setResults(el("p", { className: "placeholder" }, "Running."));
   try {
     const response = await fetch("/runs", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        ...postedSelection(),
-        model: selection.model === "preexisting" ? preexistingId : selection.model,
-        qubits: settings.qubits,
-        total: settings.total,
-        basis: basisBits,
-        gray: grayBits,
-        angles: numberList(angleText, STATE_LIMITS.angle),
-        amplitudes: numberList(amplitudeText, STATE_LIMITS.amplitude),
-        sites: explicitSites(),
-        ...(placedSims[0] ? entryBody(placedSims[0]) : {}),
-        simulators: placedSims.map(entryBody),
-        then: placedThens[0] ?? null,
-        thens: [...placedThens],
-        save_path: savePath.trim(),
-        export_path: exportPath.trim(),
-        terms: postedTerms(),
-        ...(selection.model === "preexisting" && preexistingId === "tavis_cummings"
-          ? { emitters: emitterCount() }
-          : {}),
-      }),
+      body: requested,
     });
     const payload = await response.json();
     if (payload.cancelled) {
-      statusHold = "Cancelled.";
-      setResults(el("p", { className: "placeholder" }, statusHold));
+      if (showRunResult(requested, el("p", { className: "placeholder" }, "Cancelled."))) {
+        statusHold = "Cancelled.";
+      }
       return;
     }
     if (!response.ok) {
-      statusHold = payload.error || "The run failed.";
-      setResults(el("p", { className: "placeholder" }, statusHold));
+      const message = payload.error || "The run failed.";
+      if (showRunResult(requested, el("p", { className: "placeholder" }, message))) statusHold = message;
       return;
     }
     releaseStatusHold();
-    setResults(resultsComponent(payload));
+    showRunResult(requested, resultsComponent(payload));
   } catch {
-    statusHold = "The run failed.";
-    setResults(el("p", { className: "placeholder" }, statusHold));
+    if (showRunResult(requested, el("p", { className: "placeholder" }, "The run failed."))) {
+      statusHold = "The run failed.";
+    }
   } finally {
     stopRunClock();
     running = false;
@@ -2290,7 +2337,7 @@ function panelsComponent() {
       "section",
       { className: "panel", "aria-label": "Results" },
       el("h2", {}, "Results"),
-      el("p", { className: "placeholder" }, "Run a simulation to see results here."),
+      resultsPlaceholder(),
     ),
   );
 }
@@ -2316,6 +2363,7 @@ function layoutComponent() {
 }
 
 function draw(board) {
+  shownRun = null;
   board.replaceChildren(
     layoutComponent(),
     settingsComponent(),
@@ -2431,10 +2479,10 @@ function measureChip(block) {
       el(
         "div",
         {
-          onclick: () => {
+          onclick: (event) => {
             if (open || qubitCount() == null) return;
             measureOpen = true;
-            draw(document.querySelector(".board"));
+            replaceChip(event.currentTarget, measureChip(block));
           },
         },
         el("strong", {}, block.title),
@@ -2449,9 +2497,9 @@ function measureChip(block) {
               {
                 className: "done",
                 type: "button",
-                onclick: () => {
+                onclick: (event) => {
                   measureOpen = false;
-                  draw(document.querySelector(".board"));
+                  replaceChip(event.currentTarget, measureChip(block));
                 },
               },
               "Done",
@@ -2514,6 +2562,32 @@ function simulatorSummary() {
   return nodes;
 }
 
+function laneById(laneId) {
+  return LANES.find((lane) => lane.id === laneId);
+}
+
+function repaintSlot(laneId) {
+  const current = document.querySelector(`.slot[data-slot="${laneId}"]`);
+  const lane = laneById(laneId);
+  if (current && lane) current.replaceWith(slotComponent(lane));
+}
+
+function repaintPalette(laneId) {
+  const current = document.querySelector(`.lane[data-palette="${laneId}"]`);
+  const lane = laneById(laneId);
+  if (!current || !lane) return;
+  current.replaceWith(paletteComponent(lane, (blockId) => place(lane.id, blockId)));
+}
+
+function commitLane(laneId, palette) {
+  repaintSlot(laneId);
+  if (palette) repaintPalette(laneId);
+  refreshHamiltonianChips();
+  refreshLocalHamiltonianChips();
+  refreshSummaryAndPreview();
+  clearResults();
+}
+
 function place(laneId, blockId) {
   if (running) return;
   const block = blockById(laneId, blockId);
@@ -2552,7 +2626,7 @@ function place(laneId, blockId) {
   syncStateQubits();
   dragging = null;
   releaseStatusHold();
-  draw(document.querySelector(".board"));
+  commitLane(laneId, laneId === "model");
 }
 
 function removeThen(id) {
@@ -2561,7 +2635,7 @@ function removeThen(id) {
   if (index >= 0) placedThens.splice(index, 1);
   selection.then = placedThens[0] ?? null;
   releaseStatusHold();
-  draw(document.querySelector(".board"));
+  commitLane("then");
 }
 
 function postedSelection() {
@@ -2586,7 +2660,8 @@ function attachBackend(backendId, key) {
     else if (!placedSims.some((entry) => !isReference(entry))) statusHold = "Place a simulator before its backend.";
     else statusHold = "Snap a backend onto an open simulator.";
     dragging = null;
-    draw(document.querySelector(".board"));
+    document.querySelectorAll?.(".is-over").forEach((node) => node.classList.remove("is-over"));
+    setStatus(statusHold);
     return;
   }
   target.backend = backendId;
@@ -2607,7 +2682,7 @@ function attachBackend(backendId, key) {
   }
   dragging = null;
   releaseStatusHold();
-  draw(document.querySelector(".board"));
+  commitLane("simulator");
 }
 
 function removeBackend(key) {
@@ -2618,7 +2693,7 @@ function removeBackend(key) {
   entry.shotsOpen = false;
   entry.backendOpen = false;
   releaseStatusHold();
-  draw(document.querySelector(".board"));
+  commitLane("simulator");
 }
 
 function removeSimulator(key) {
@@ -2627,7 +2702,7 @@ function removeSimulator(key) {
   if (index >= 0) placedSims.splice(index, 1);
   selection.simulator = placedSims[0]?.id ?? null;
   releaseStatusHold();
-  draw(document.querySelector(".board"));
+  commitLane("simulator");
 }
 
 function removeTerm(key) {
@@ -2637,9 +2712,11 @@ function removeTerm(key) {
   if (!modelTerms.some((term) => term.id === "hamiltonian") && qubitsSource === "hamiltonian") {
     settings.qubits = "";
     qubitsSource = null;
+    syncMeasureChip();
+    writeQubitField();
   } else syncHamiltonianQubits();
   releaseStatusHold();
-  draw(document.querySelector(".board"));
+  commitLane("model", true);
 }
 
 function clearLane(laneId) {
@@ -2655,6 +2732,8 @@ function clearLane(laneId) {
   if (laneId === "model" && qubitsSource === "hamiltonian") {
     settings.qubits = "";
     qubitsSource = null;
+    syncMeasureChip();
+    writeQubitField();
   }
   if (laneId === "model" && qubitsSource === "model") {
     selection.model = null;
@@ -2662,7 +2741,7 @@ function clearLane(laneId) {
   }
   selection[laneId] = null;
   releaseStatusHold();
-  draw(document.querySelector(".board"));
+  commitLane(laneId, laneId === "model");
 }
 
 function copyStrings(value) {
