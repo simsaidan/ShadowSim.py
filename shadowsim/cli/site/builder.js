@@ -1510,7 +1510,7 @@ function chartCurves(payload) {
         const named = typeof own[index] === "string" && own[index] ? own[index] : "";
         const common = typeof shared[index] === "string" ? shared[index] : "";
         const label = named || (common ? `${series.name} · ${common}` : `${series.name} ${index}`);
-        curves.push({ label, values, index });
+        curves.push({ label, values, index, simulator: series.name });
       });
     }
     return curves;
@@ -1609,10 +1609,21 @@ function nearestTimeIndex(payload, fraction) {
   return best;
 }
 
+function simulatorTitle(name) {
+  const text = String(name || "");
+  const hash = text.indexOf("#");
+  const base = hash === -1 ? text : text.slice(0, hash);
+  const suffix = hash === -1 ? "" : text.slice(hash);
+  const titles = { qutip: "QuTiP", split_jmatrix: "Split J", trotterization: "Trotter" };
+  return `${titles[base] || base}${suffix}`;
+}
+
 function shownCurves(payload, view, observable) {
   const curves = view === "error" ? errorCurves(payload) : chartCurves(payload);
-  if (!Number.isInteger(observable)) return curves;
-  return curves.filter((curve) => curve.index === observable);
+  const simulator = view && view !== "curves" && view !== "error" ? view : null;
+  const matched = simulator == null ? curves : curves.filter((curve) => curve.simulator === simulator);
+  if (!Number.isInteger(observable)) return matched;
+  return matched.filter((curve) => curve.index === observable);
 }
 
 function hoverReadout(payload, index, view, observable) {
@@ -1717,9 +1728,21 @@ function observableChoices(payload) {
   return choices;
 }
 
+function chartViews(payload) {
+  const series = Array.isArray(payload.series) ? payload.series : [];
+  if (series.length < 2) return [];
+  const views = [{ key: "curves", label: "Curves" }];
+  for (const entry of series) {
+    if (!entry || !entry.name) continue;
+    views.push({ key: String(entry.name), label: simulatorTitle(entry.name) });
+  }
+  views.push({ key: "error", label: "Error" });
+  return views;
+}
+
 function resultsComponent(payload) {
   const note = savedNote(payload);
-  const views = Array.isArray(payload.series) && payload.series.length >= 2 ? ["curves", "error"] : ["curves"];
+  const views = chartViews(payload);
   const choices = observableChoices(payload);
   const host = el("div", { className: "chart-host" });
   let view = "curves";
@@ -1735,24 +1758,22 @@ function resultsComponent(payload) {
       button.setAttribute("aria-pressed", pressed ? "true" : "false");
     }
   }
-  const viewButtons = views.length > 1
-    ? views.map((choice) =>
-        el(
-          "button",
-          {
-            type: "button",
-            role: "tab",
-            "data-view": choice,
-            "aria-pressed": choice === "curves" ? "true" : "false",
-            onclick: () => {
-              view = choice;
-              draw();
-            },
-          },
-          choice === "error" ? "Error" : "Curves",
-        ),
-      )
-    : [];
+  const viewButtons = views.map((choice) =>
+    el(
+      "button",
+      {
+        type: "button",
+        role: "tab",
+        "data-view": choice.key,
+        "aria-pressed": choice.key === "curves" ? "true" : "false",
+        onclick: () => {
+          view = choice.key;
+          draw();
+        },
+      },
+      choice.label,
+    ),
+  );
   const observableButtons = choices.map((choice) =>
     el(
       "button",

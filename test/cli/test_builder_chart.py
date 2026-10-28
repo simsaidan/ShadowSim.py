@@ -443,6 +443,8 @@ def test_error_switch_replaces_the_curves_and_keeps_the_resource_line() -> None:
         "⟨Z⟩ on 0",
         "⟨Z⟩ on 1",
         "Curves",
+        "QuTiP#1",
+        "QuTiP#2",
         "Error",
     ]
     assert _pressed(curves) == ["All", "Curves"]
@@ -489,3 +491,28 @@ def test_observable_switch_shows_one_chart_at_a_time() -> None:
     assert len(_polylines(restored)) == 4
     readout = _invoke("hoverReadout", payload, 0, args=[payload, 0, "error", 1])
     assert readout == "t = 0 · qutip#2 · ⟨Z⟩ on 1 = 0"
+
+
+def test_simulator_switch_sits_between_curves_and_error() -> None:
+    payload = _benchmark()
+    payload["series"][0]["name"] = "qutip"
+    payload["series"][1]["name"] = "split_jmatrix"
+    payload["series"][0]["labels"] = ["qutip · ⟨Z⟩ on 0", "qutip · ⟨Z⟩ on 1"]
+    payload["series"][1]["labels"] = ["split_jmatrix · ⟨Z⟩ on 0", "split_jmatrix · ⟨Z⟩ on 1"]
+    panel = _results(payload)
+    assert [_node_text(button) for button in _buttons(panel) if button["attrs"].get("data-view")] == [
+        "Curves",
+        "QuTiP",
+        "Split J",
+        "Error",
+    ]
+
+    one = _results(payload, click="Split J")
+    assert _pressed(one) == ["All", "Split J"]
+    assert _legend(one) == ["split_jmatrix · ⟨Z⟩ on 0", "split_jmatrix · ⟨Z⟩ on 1"]
+    assert _node_text(_by_class(one, "y-title")) == "⟨Z⟩"
+
+    focused = _results(payload, clicks=["⟨Z⟩ on 0", "QuTiP"])
+    assert _pressed(focused) == ["⟨Z⟩ on 0", "QuTiP"]
+    assert _legend(focused) == ["qutip · ⟨Z⟩ on 0"]
+    assert len(_polylines(focused)) == 1
