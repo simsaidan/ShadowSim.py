@@ -61,6 +61,7 @@ const sandbox = {
   localStorage: {
     getItem(key) { return store.has(key) ? store.get(key) : null; },
     setItem(key, value) { store.set(key, String(value)); },
+    removeItem(key) { store.delete(key); },
   },
   navigator: {
     clipboard: {
@@ -171,6 +172,7 @@ function fillCircuit() {
 
 const request = JSON.parse(process.argv[3]);
 const surface = { replaceChildren() {} };
+serverSession = "server-1";
 let result;
 if (request.action === "roundtrip") {
   fillIsing();
@@ -234,6 +236,38 @@ if (request.action === "roundtrip") {
     terms: modelTerms.map((term) => ({ id: term.id, matrix: term.matrix, sites: term.sites })),
     sims: placedSims.map((entry) => ({ id: entry.id, backend: entry.backend, shots: entry.shots })),
   };
+} else if (request.action === "launch") {
+  fillIsing();
+  boardReady = true;
+  rememberBoard();
+  resetPage();
+  serverSession = "server-2";
+  boardReady = true;
+  restoreBoard();
+  result = { state: selection.state, stored: localStorage.getItem("shadowsim.builder.board") };
+} else if (request.action === "clear") {
+  fillIsing();
+  boardReady = true;
+  running = true;
+  emptyBoard();
+  const kept = selection.state === "basis";
+  running = false;
+  document.querySelector = (selector) => (selector === ".board" ? surface : null);
+  const button = walk(settingsComponent(), []).find((node) => node.className === "clear");
+  click(button);
+  const stored = JSON.parse(localStorage.getItem("shadowsim.builder.board"));
+  result = {
+    kept,
+    state: selection.state,
+    qubits: settings.qubits,
+    bits: basisBits,
+    sims: placedSims.length,
+    terms: modelTerms.length,
+    thens: placedThens.length,
+    preexistingId,
+    storedState: stored.selection.state,
+    storedServer: stored.server,
+  };
 } else if (request.action === "copy") {
   resetPage();
   const empty = walk(panelsComponent(), []).find((node) => node.className === "copy");
@@ -292,6 +326,25 @@ def test_board_snapshot_round_trip() -> None:
     assert page["before"]["savePath"] == "results/kept"
     assert page["before"]["measureSites"] == [0]
     assert page["refreshedTotal"] == "4"
+
+
+def test_a_new_server_drops_the_saved_board() -> None:
+    page = _call("launch")
+    assert page == {"state": None, "stored": None}
+
+
+def test_clear_empties_the_board() -> None:
+    page = _call("clear")
+    assert page["kept"] is True
+    assert page["state"] is None
+    assert page["qubits"] == ""
+    assert page["bits"] == ""
+    assert page["sims"] == 0
+    assert page["terms"] == 0
+    assert page["thens"] == 0
+    assert page["preexistingId"] is None
+    assert page["storedState"] is None
+    assert page["storedServer"] == "server-1"
 
 
 def test_broken_snapshot_is_ignored() -> None:

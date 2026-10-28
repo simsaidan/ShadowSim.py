@@ -301,6 +301,27 @@ def _close_server(server: Any, thread: threading.Thread) -> None:
     thread.join(timeout=5)
 
 
+def test_session_id_belongs_to_one_server() -> None:
+    first, first_thread = _open_server()
+    second, second_thread = _open_server()
+    try:
+        first_port = first.server_address[1]
+        second_port = second.server_address[1]
+        status, _headers, body = _open(first_port, "/session")
+        assert status == 200
+        payload = json.loads(body)
+        assert isinstance(payload["id"], str)
+        assert payload["id"]
+        again, _headers, again_body = _open(first_port, "/session")
+        assert again == 200
+        assert json.loads(again_body)["id"] == payload["id"]
+        _status, _headers, other = _open(second_port, "/session")
+        assert json.loads(other)["id"] != payload["id"]
+    finally:
+        _close_server(first, first_thread)
+        _close_server(second, second_thread)
+
+
 def test_send_json_ignores_a_disconnected_client() -> None:
     class _Closed:
         def __init__(self) -> None:

@@ -114,6 +114,7 @@ let running = false;
 const BOARD_KEY = "shadowsim.builder.board";
 const BOARD_VERSION = 1;
 let boardReady = false;
+let serverSession = null;
 let copyTimer = 0;
 let statusHold = null;
 let runStartedAt = 0;
@@ -1563,12 +1564,22 @@ function settingsComponent() {
       field("qubits", "Qubits", "numeric"),
       field("total", "Total time", "decimal"),
     ),
-    el("button", {
-      className: "run",
-      type: "button",
-      disabled: !running && !runAllowed(),
-      onclick: () => void (running ? cancelRun() : startRun()),
-    }, running ? "Cancel" : "Run simulation"),
+    el(
+      "div",
+      { className: "settings-actions" },
+      el("button", {
+        className: "clear",
+        type: "button",
+        disabled: running,
+        onclick: () => emptyBoard(),
+      }, "Clear"),
+      el("button", {
+        className: "run",
+        type: "button",
+        disabled: !running && !runAllowed(),
+        onclick: () => void (running ? cancelRun() : startRun()),
+      }, running ? "Cancel" : "Run simulation"),
+    ),
   );
 }
 
@@ -2192,6 +2203,8 @@ function setRunButton(label) {
   if (!button) return;
   button.textContent = label;
   button.disabled = label !== "Cancel" && !runAllowed();
+  const clear = document.querySelector(".clear");
+  if (clear) clear.disabled = label === "Cancel";
 }
 
 async function cancelRun() {
@@ -2677,6 +2690,7 @@ function knownBlock(laneId, blockId) {
 function boardSnapshot() {
   return {
     version: BOARD_VERSION,
+    server: serverSession,
     selection: {
       state: selection.state,
       model: selection.model,
@@ -2804,6 +2818,14 @@ function applyBoard(snapshot) {
   return true;
 }
 
+function forgetBoard() {
+  try {
+    localStorage.removeItem(BOARD_KEY);
+  } catch {
+    // Storage can be unavailable.
+  }
+}
+
 function restoreBoard() {
   let raw = null;
   try {
@@ -2811,20 +2833,77 @@ function restoreBoard() {
   } catch {
     return;
   }
-  if (!raw) return;
+  if (!raw || !serverSession) {
+    if (raw) forgetBoard();
+    return;
+  }
   try {
-    applyBoard(JSON.parse(raw));
+    const snapshot = JSON.parse(raw);
+    if (!snapshot || snapshot.server !== serverSession) {
+      forgetBoard();
+      return;
+    }
+    applyBoard(snapshot);
   } catch {
-    // A stored board that is not JSON leaves the empty board in place.
+    forgetBoard();
   }
 }
 
 function rememberBoard() {
-  if (!boardReady) return;
+  if (!boardReady || !serverSession) return;
   try {
     localStorage.setItem(BOARD_KEY, JSON.stringify(boardSnapshot()));
   } catch {
     // Storage can be unavailable. The page still runs.
+  }
+}
+
+function emptyBoard() {
+  if (running) return;
+  selection.state = null;
+  selection.model = null;
+  selection.simulator = null;
+  selection.backend = null;
+  selection.measure = null;
+  selection.then = null;
+  settings.qubits = "";
+  settings.total = "";
+  basisBits = "";
+  grayBits = "";
+  angleText = "";
+  amplitudeText = "";
+  qubitsSource = null;
+  preexistingId = null;
+  emitterText = "1";
+  modelTerms.splice(0, modelTerms.length);
+  placedSims.splice(0, placedSims.length);
+  placedThens.splice(0, placedThens.length);
+  savePath = DEFAULT_SAVE_PATH;
+  exportPath = DEFAULT_EXPORT_PATH;
+  measureSites = null;
+  stateOpen = false;
+  measureOpen = false;
+  saveOpen = false;
+  exportOpen = false;
+  preexistingOpen = false;
+  releaseStatusHold();
+  const board = document.querySelector(".board");
+  if (board) draw(board);
+}
+
+async function loadSession() {
+  try {
+    const response = await fetch("/session");
+    let payload = {};
+    try {
+      payload = await response.json();
+    } catch {
+      payload = {};
+    }
+    if (!response.ok || typeof payload.id !== "string" || !payload.id) return null;
+    return payload.id;
+  } catch {
+    return null;
   }
 }
 
@@ -2878,7 +2957,9 @@ if (builder) {
     loadLane("/models", "model", "models"),
     loadLane("/simulators", "simulator", "simulators"),
     loadLane("/backends", "backend", "backends"),
-  ]).then(() => {
+    loadSession(),
+  ]).then((results) => {
+    serverSession = results[3];
     restoreBoard();
     boardReady = true;
     mount(builder);

@@ -408,7 +408,34 @@ body {
   opacity: 0.72;
 }
 
+.settings-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.clear {
+  appearance: none;
+  border: 1px solid var(--line);
+  background: #fff;
+  color: var(--ink);
+  border-radius: 999px;
+  padding: 14px 18px;
+  font: inherit;
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.clear:disabled {
+  color: var(--faint);
+  cursor: default;
+}
+
 .run:focus-visible,
+.clear:focus-visible,
 .block:focus-visible,
 .remove:focus-visible {
   outline: 2px solid var(--blue-ink);
