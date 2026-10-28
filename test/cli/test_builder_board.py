@@ -1,4 +1,4 @@
-"""Tests for restoring the builder board and copying its script."""
+"""Tests for restoring the builder board, copying its script, and updating it in place."""
 
 import json
 import subprocess
@@ -33,7 +33,43 @@ Element.prototype.removeAttribute = function (name) {
   delete this.attrs[name];
 };
 Element.prototype.append = function (...kids) {
-  this.children.push(...kids);
+  for (const kid of kids) {
+    this.children.push(kid);
+    if (kid && typeof kid === "object") kid.parentNode = this;
+  }
+};
+Element.prototype.replaceChildren = function (...kids) {
+  for (const child of this.children) {
+    if (child && typeof child === "object") child.parentNode = null;
+  }
+  this.children = [];
+  this.append(...kids);
+};
+Element.prototype.replaceWith = function (...nodes) {
+  const parent = this.parentNode;
+  if (!parent) return;
+  const next = nodes.filter(Boolean);
+  const index = parent.children.indexOf(this);
+  parent.children.splice(index, 1, ...next);
+  for (const node of next) node.parentNode = parent;
+  this.parentNode = null;
+};
+Element.prototype.matches = function (selector) {
+  return matchSimple(this, selector);
+};
+Element.prototype.closest = function (selector) {
+  let node = this;
+  while (node) {
+    if (node.matches && node.matches(selector)) return node;
+    node = node.parentNode;
+  }
+  return null;
+};
+Element.prototype.querySelector = function (selector) {
+  return findAll(this, selector)[0] || null;
+};
+Element.prototype.querySelectorAll = function (selector) {
+  return findAll(this, selector);
 };
 Element.prototype.addEventListener = function (type, fn) {
   if (!this.listeners[type]) this.listeners[type] = [];
@@ -49,6 +85,94 @@ function TextNode(value) {
 }
 TextNode.prototype = Object.create(NodeType.prototype);
 
+function splitTop(selector, separator) {
+  const parts = [];
+  let current = "";
+  let quote = "";
+  let depth = 0;
+  for (const char of selector) {
+    if (quote) {
+      current += char;
+      if (char === quote) quote = "";
+      continue;
+    }
+    if (char === '"' || char === "'") {
+      quote = char;
+      current += char;
+      continue;
+    }
+    if (char === "[") depth += 1;
+    else if (char === "]" && depth > 0) depth -= 1;
+    if (char === separator && depth === 0) {
+      if (current.trim()) parts.push(current.trim());
+      current = "";
+      continue;
+    }
+    current += char;
+  }
+  if (current.trim()) parts.push(current.trim());
+  return parts;
+}
+function matchSimple(node, selector) {
+  if (!node || !node.tag || !selector) return false;
+  let rest = selector;
+  const tag = /^[a-zA-Z][a-zA-Z0-9-]*/.exec(rest);
+  if (tag && !rest.startsWith(".") && !rest.startsWith("[")) {
+    if (node.tag !== tag[0]) return false;
+    rest = rest.slice(tag[0].length);
+  }
+  while (rest.length) {
+    if (rest.startsWith(".")) {
+      const name = /^[A-Za-z0-9_-]+/.exec(rest.slice(1));
+      if (!name) return false;
+      const classes = String(node.className || "").split(/\s+/);
+      if (!classes.includes(name[0])) return false;
+      rest = rest.slice(1 + name[0].length);
+    } else if (rest.startsWith("[")) {
+      const end = rest.indexOf("]");
+      if (end < 0) return false;
+      const quoted = rest.slice(1, end).match(/^([^=]+)="([^"]*)"$/);
+      if (!quoted || node.attrs[quoted[1]] !== quoted[2]) return false;
+      rest = rest.slice(end + 1);
+    } else return false;
+  }
+  return true;
+}
+function descendants(node) {
+  const found = [];
+  for (const child of node.children || []) {
+    if (!child || !child.tag) continue;
+    found.push(child);
+    found.push(...descendants(child));
+  }
+  return found;
+}
+function findAll(root, selector) {
+  const found = [];
+  for (const part of splitTop(selector, ",")) {
+    if (part.startsWith(":scope >")) {
+      const simple = part.slice(":scope >".length).trim();
+      for (const child of root.children || []) {
+        if (matchSimple(child, simple)) found.push(child);
+      }
+      continue;
+    }
+    let level = [root];
+    for (const simple of splitTop(part, " ")) {
+      const next = [];
+      for (const node of level) {
+        for (const candidate of descendants(node)) {
+          if (matchSimple(candidate, simple)) next.push(candidate);
+        }
+      }
+      level = next;
+    }
+    found.push(...level);
+  }
+  return found;
+}
+
+const pageRoot = new Element("html");
 const store = new Map();
 const writes = [];
 const sandbox = {
@@ -72,7 +196,9 @@ const sandbox = {
     },
   },
   document: {
-    querySelector() { return null; },
+    documentElement: pageRoot,
+    querySelector: (selector) => findAll(pageRoot, selector)[0] || null,
+    querySelectorAll: (selector) => findAll(pageRoot, selector),
     createElement: (tag) => new Element(tag),
     createElementNS: (_ns, tag) => new Element(tag),
     createTextNode: (text) => new TextNode(text),
@@ -92,6 +218,46 @@ function click(node) {
   const listeners = node.listeners && node.listeners.click;
   if (!listeners || !listeners.length) throw new Error("missing click listener");
   listeners[0]({ currentTarget: node, stopPropagation() {} });
+}
+function nodeText(node) {
+  if (!node) return "";
+  if (!node.tag) return node.text || "";
+  return (node.children || []).map(nodeText).join("");
+}
+function typeInto(node, value) {
+  node.value = value;
+  const listeners = node.listeners && node.listeners.input;
+  if (!listeners || !listeners.length) throw new Error("missing input listener");
+  listeners[0]({ target: node, currentTarget: node });
+}
+function labeled(root, label) {
+  return walk(root, []).find((node) => node.tag === "input" && node.attrs["aria-label"] === label);
+}
+function chipByClass(root, kind) {
+  return walk(root, []).find((node) => {
+    const classes = node.className.split(" ");
+    return classes.includes("chip") && classes.includes(kind);
+  });
+}
+function openChip(root, kind) {
+  const chip = chipByClass(root, kind);
+  click(chip.children[0].children[0]);
+  return chipByClass(root, kind);
+}
+function resultsNode() {
+  const panel = document.querySelector('.panel[aria-label="Results"]');
+  return panel.querySelector(":scope > .placeholder, :scope > .chart, :scope > .results");
+}
+function installChart() {
+  const chart = document.createElement("div");
+  chart.className = "chart";
+  setResults(chart);
+  shownRun = JSON.stringify(runRequest());
+  return chart;
+}
+function showingPlaceholder() {
+  const node = resultsNode();
+  return node.className === "placeholder" && nodeText(node) === "Run a simulation to see results here.";
 }
 function resetPage() {
   selection.state = null;
@@ -283,6 +449,60 @@ if (request.action === "roundtrip") {
     write: writes[0] ?? null,
     preview: previewText(),
   };
+} else if (request.action === "inplace") {
+  fillCircuit();
+  const board = document.createElement("section");
+  board.className = "board";
+  document.documentElement.append(board);
+  draw(board);
+  const total = labeled(board, "Total time");
+  let chart = installChart();
+  openChip(board, "basis");
+  const openKeepsChart = resultsNode() === chart;
+  const openKeepsTotal = labeled(board, "Total time") === total;
+  click(walk(chipByClass(board, "basis"), []).find((node) => node.className === "done"));
+  const doneKeepsChart = resultsNode() === chart;
+  const doneKeepsTotal = labeled(board, "Total time") === total;
+  typeInto(total, "4");
+  const totalClearsChart = showingPlaceholder();
+  const totalKeepsInput = labeled(board, "Total time") === total;
+  chart = installChart();
+  openChip(board, "backend");
+  const shots = labeled(board, "Shots");
+  const shotsOpenKeepsChart = resultsNode() === chart;
+  typeInto(shots, "128");
+  const shotsClearsChart = showingPlaceholder();
+  const shotsKeepsInput = labeled(board, "Shots") === shots;
+  chart = installChart();
+  place("then", "save");
+  const placeClearsChart = showingPlaceholder();
+  const placeKeepsTotal = labeled(board, "Total time") === total;
+  const placedSave = placedThens.includes("save");
+  chart = installChart();
+  removeThen("save");
+  const removeClearsChart = showingPlaceholder();
+  const removedSave = !placedThens.includes("save");
+  chart = installChart();
+  attachBackend("aer");
+  result = {
+    openKeepsChart,
+    openKeepsTotal,
+    doneKeepsChart,
+    doneKeepsTotal,
+    totalClearsChart,
+    totalKeepsInput,
+    total: settings.total,
+    shotsOpenKeepsChart,
+    shotsClearsChart,
+    shotsKeepsInput,
+    shots: placedSims[0].shots,
+    placeClearsChart,
+    placeKeepsTotal,
+    placedSave,
+    removeClearsChart,
+    removedSave,
+    attachKeepsChart: resultsNode() === chart,
+  };
 } else {
   throw new Error("unknown action");
 }
@@ -362,6 +582,27 @@ def test_unknown_blocks_are_dropped() -> None:
         {"id": "trotterization", "backend": None, "shots": "256"},
         {"id": "trotterization", "backend": "aer", "shots": "128"},
     ]
+
+
+def test_edits_keep_the_chart_until_the_run_changes() -> None:
+    page = _call("inplace")
+    assert page["openKeepsChart"] is True
+    assert page["openKeepsTotal"] is True
+    assert page["doneKeepsChart"] is True
+    assert page["doneKeepsTotal"] is True
+    assert page["totalClearsChart"] is True
+    assert page["totalKeepsInput"] is True
+    assert page["total"] == "4"
+    assert page["shotsOpenKeepsChart"] is True
+    assert page["shotsClearsChart"] is True
+    assert page["shotsKeepsInput"] is True
+    assert page["shots"] == "128"
+    assert page["placeClearsChart"] is True
+    assert page["placeKeepsTotal"] is True
+    assert page["placedSave"] is True
+    assert page["removeClearsChart"] is True
+    assert page["removedSave"] is True
+    assert page["attachKeepsChart"] is True
 
 
 def test_copy_writes_the_script_only_when_one_is_shown() -> None:

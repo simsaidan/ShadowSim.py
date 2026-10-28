@@ -29,7 +29,31 @@ Element.prototype.setAttribute = function (name, value) {
   this.attrs[name] = String(value);
 };
 Element.prototype.append = function (...kids) {
-  this.children.push(...kids);
+  for (const kid of kids) {
+    this.children.push(kid);
+    if (kid && typeof kid === "object") kid.parentNode = this;
+  }
+};
+Element.prototype.matches = function (selector) {
+  return selector === ".chip" && this.className.split(/\s+/).includes("chip");
+};
+Element.prototype.closest = function (selector) {
+  let node = this;
+  while (node) {
+    if (node.matches && node.matches(selector)) return node;
+    node = node.parentNode;
+  }
+  return null;
+};
+Element.prototype.replaceWith = function (...nodes) {
+  const parent = this.parentNode;
+  if (!parent) return;
+  const index = parent.children.indexOf(this);
+  parent.children.splice(index, 1, ...nodes.filter(Boolean));
+  for (const node of nodes) {
+    if (node) node.parentNode = parent;
+  }
+  this.parentNode = null;
 };
 Element.prototype.addEventListener = function (type, fn) {
   if (!this.listeners[type]) this.listeners[type] = [];
@@ -73,7 +97,7 @@ function walk(node, found) {
 function click(node) {
   const listeners = node.listeners && node.listeners.click;
   if (!listeners || !listeners.length) throw new Error("missing click listener");
-  listeners[0]({ stopPropagation() {} });
+  listeners[0]({ currentTarget: node, stopPropagation() {} });
 }
 function describe(card) {
   const nodes = walk(card, []);
@@ -97,14 +121,17 @@ function plain(card) {
 
 basisBits = "10";
 stateOpen = true;
-const open = describe(basisChip());
+const holder = document.createElement("div");
+holder.append(basisChip());
+const open = describe(holder.children[0]);
 let redraws = 0;
 draw = () => { redraws += 1; };
 click(open.doneNode);
-const closed = describe(basisChip());
+const closed = describe(holder.children[0]);
 click(closed.head);
 const afterReopen = redraws;
-const reopened = stateOpen === true;
+const again = describe(holder.children[0]);
+const reopened = stateOpen === true && again.editing === true && again.field === true;
 stateOpen = false;
 place("state", "basis");
 const placed = selection.state === "basis" && stateOpen === true;
@@ -182,7 +209,7 @@ def test_basis_state_card_closes_from_done() -> None:
     assert page["closed"]["done"] is None
     assert page["closed"]["field"] is False
     assert page["closed"]["detail"] == "Start in |10>"
-    assert page["redraws"] == 2
+    assert page["redraws"] == 0
     assert page["reopened"] is True
     assert page["placed"] is True
     assert page["cleared"] is True
