@@ -30,7 +30,7 @@ qiskit = ["qiskit", "qiskit-aer", "scipy>=1.14"]
 viz = ["matplotlib"]
 # 0.9.37 requires CondaPkg 0.2.38, which needs JSON 1.2. The PauliPropagation
 # revision allows only JSON 0.21, so this extra stays on the previous release.
-pauli_propagation = ["juliacall==0.9.36"]
+pauli_propagation = ["juliacall==0.9.37"]
 all = ["shadowsim[qutip]", "shadowsim[qiskit]", "shadowsim[viz]"]
 
 [project.urls]
