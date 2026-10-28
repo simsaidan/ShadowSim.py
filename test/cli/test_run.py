@@ -16,7 +16,7 @@ from typing import Protocol
 import pytest
 
 from shadowsim.backends import listed_backends
-from shadowsim.cli.run import _initial_state, _series_name, build_simulator, run_page
+from shadowsim.cli.run import _initial_state, _observable_labels, _series_name, build_simulator, run_page
 from shadowsim.cli.serve import _Handler
 from shadowsim.models.catalog import _describe_models, listed_model_terms, listed_models
 from shadowsim.simulators.catalog import _describe_simulator, listed_simulators
@@ -499,7 +499,7 @@ def test_duplicate_measure_sites_are_kept_once() -> None:
 def test_export_counts_shots_for_a_circuit_simulator(tmp_path: Path) -> None:
     pytest.importorskip("qiskit_aer")
     destination = tmp_path / "metrics.json"
-    run_page(
+    payload = run_page(
         _selection(
             simulator="trotterization",
             then="export",
@@ -513,6 +513,8 @@ def test_export_counts_shots_for_a_circuit_simulator(tmp_path: Path) -> None:
     assert record["shots_per_job"] == 4
     assert record["num_jobs"] == 2
     assert record["total_shots"] == 8
+    assert payload["resources"] == [record]
+    assert payload["labels"] == ["⟨Z⟩ on 0", "⟨Z⟩ on 1"]
 
 
 def test_thens_overrides_a_single_then() -> None:
@@ -678,6 +680,28 @@ def test_series_name_drops_the_simulator_suffix() -> None:
     assert _series_name("split_jmatrix_simulator#2") == "split_jmatrix#2"
 
 
+def test_observable_labels_name_each_measured_qubit() -> None:
+    assert _observable_labels("z", [0, 1]) == ["⟨Z⟩ on 0", "⟨Z⟩ on 1"]
+    assert _observable_labels("x", [1]) == ["⟨X⟩ on 1"]
+    with pytest.raises(ValueError, match="unknown measurement"):
+        _observable_labels("y", [0])
+
+
+@pytest.mark.qutip
+def test_run_payload_names_the_selected_qubits() -> None:
+    pytest.importorskip("qutip")
+    payload = run_page(_selection(measure="x", sites=[1], time_steps=2, then="plot"))
+    assert payload["labels"] == ["⟨X⟩ on 1"]
+    observables = payload["observables"]
+    assert isinstance(observables, list)
+    assert len(observables) == 1
+    resources = payload["resources"]
+    assert isinstance(resources, list)
+    assert resources[0]["simulator_id"] == "qutip_simulator"
+    assert resources[0]["wall_time_s"] == payload["runtime"]
+    assert resources[0]["shots_per_job"] is None
+
+
 @pytest.mark.qutip
 def test_two_simulators_form_a_benchmark() -> None:
     pytest.importorskip("qutip")
@@ -693,6 +717,15 @@ def test_two_simulators_form_a_benchmark() -> None:
     series = payload["series"]
     assert isinstance(series, list)
     assert [item["name"] for item in series] == ["qutip#1", "qutip#2"]
+    assert [item["labels"] for item in series] == [
+        ["qutip#1 · ⟨Z⟩ on 0", "qutip#1 · ⟨Z⟩ on 1"],
+        ["qutip#2 · ⟨Z⟩ on 0", "qutip#2 · ⟨Z⟩ on 1"],
+    ]
+    assert payload["labels"] == ["⟨Z⟩ on 0", "⟨Z⟩ on 1"]
+    resources = payload["resources"]
+    assert isinstance(resources, list)
+    assert [item["simulator_id"] for item in resources] == ["qutip_simulator#1", "qutip_simulator#2"]
+    assert payload["runtime"] == pytest.approx(sum(item["wall_time_s"] for item in resources))
     errors = payload["errors"]
     assert isinstance(errors, list)
     assert errors[0]["challenger_id"] == "qutip_simulator#2"
@@ -1131,6 +1164,14 @@ def test_post_runs_returns_traces() -> None:
     assert isinstance(payload["runtime"], float)
     assert len(payload["times"]) == 101
     assert len(payload["observables"]) == 2
+    assert payload["labels"] == ["⟨Z⟩ on 0", "⟨Z⟩ on 1"]
+    resources = payload["resources"]
+    assert len(resources) == 1
+    assert resources[0]["simulator_id"] == "qutip_simulator"
+    assert resources[0]["wall_time_s"] == payload["runtime"]
+    assert resources[0]["shots_per_job"] is None
+    assert resources[0]["num_jobs"] is None
+    assert resources[0]["total_shots"] is None
     assert all(len(curve) == 101 for curve in payload["observables"])
     assert "states" not in payload
 

@@ -521,10 +521,79 @@ body {
 
 .chart { margin-top: 14px; }
 
+.chart-switch {
+  display: flex;
+  gap: 6px;
+  margin-top: 14px;
+}
+
+.chart-switch button {
+  appearance: none;
+  border: 1px solid var(--line);
+  background: #fff;
+  color: var(--ink);
+  border-radius: 999px;
+  padding: 4px 10px;
+  font: inherit;
+  font-size: 12.5px;
+  cursor: pointer;
+}
+
+.chart-switch button[aria-pressed="true"] {
+  background: var(--navy);
+  border-color: var(--navy);
+  color: #fff;
+}
+
+.chart-switch button:focus-visible {
+  outline: 2px solid var(--blue-ink);
+  outline-offset: 2px;
+}
+
+.resources {
+  margin: 8px 0 0;
+  color: var(--muted);
+  font-size: 12.5px;
+}
+
+.plot-frame {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.plot-column {
+  flex: 1;
+  min-width: 0;
+}
+
+.y-title {
+  flex: none;
+  writing-mode: vertical-rl;
+  transform: rotate(180deg);
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.x-title,
+.readout {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.x-title { text-align: center; }
+
+.readout {
+  min-height: 1.2em;
+  margin-top: 6px;
+}
+
 .plot {
   display: block;
   width: 100%;
   height: auto;
+  cursor: crosshair;
 }
 
 .plot line { stroke: var(--line); }
