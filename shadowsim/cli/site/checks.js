@@ -46,12 +46,35 @@
     return "Unknown operator.";
   }
 
+  function isReference(entry) {
+    const block = blockById("simulator", entry.id);
+    if (!block) return entry.id === "qutip";
+    return Boolean(block.observables);
+  }
+
   function needsBackend() {
-    return page.placedSims.some((entry) => {
-      const block = blockById("simulator", entry.id);
-      if (!block) return entry.id !== "qutip";
-      return !block.observables;
-    });
+    return page.placedSims.some((entry) => !isReference(entry));
+  }
+
+  function backendFits(entry, backendId) {
+    if (!entry || isReference(entry) || !backendId) return false;
+    const backend = blockById("backend", backendId);
+    if (!backend) return false;
+    const simulator = blockById("simulator", entry.id);
+    if (simulator?.samples && !backend.shots) return false;
+    return true;
+  }
+
+  function socketsReady() {
+    return page.placedSims.every((entry) => isReference(entry) || backendFits(entry, entry.backend));
+  }
+
+  function socketStatus(preview) {
+    if (!otherSlotsPlaced()) return null;
+    const open = page.placedSims.find((entry) => !isReference(entry) && !backendFits(entry, entry.backend));
+    if (!open) return null;
+    const tail = preview ? " to preview the script." : ".";
+    return `Snap a backend onto each simulator${tail}`;
   }
 
   function otherSlotsPlaced() {
@@ -72,12 +95,13 @@
   }
 
   function isComplete() {
-    return page.lanes.every((lane) => {
+    const lanesReady = page.lanes.every((lane) => {
       if (lane.id === "backend" && !needsBackend()) return true;
       if (lane.id === "model" && page.selection.model === "preexisting") return Boolean(chosenFactory());
       if (lane.id === "model") return operatorsReady();
       return Boolean(blockById(lane.id, page.selection[lane.id]));
     });
+    return lanesReady && socketsReady();
   }
 
   function settingNumber(key) {
@@ -251,12 +275,12 @@
     return page.measureSites.filter((site) => Number.isInteger(site) && site >= 0 && site < count);
   }
 
-  function usesShots() {
-    return Boolean(blockById("backend", page.selection.backend)?.shots);
-  }
-
   function shotsReady() {
-    return !usesShots() || positiveIntText(page.shots.trim());
+    return page.placedSims.every((entry) => {
+      const backend = blockById("backend", entry.backend);
+      if (!backend?.shots) return true;
+      return positiveIntText(String(entry.shots ?? "").trim());
+    });
   }
 
   function measureSitesReady() {
@@ -332,14 +356,14 @@
     return "";
   }
 
-  function fillSetup(block, name) {
+  function fillSetup(block, name, shots = "") {
     const qubits = settingNumber("qubits");
     const total = settingNumber("total");
     return block.setup
       .replaceAll("{name}", name)
       .replaceAll("{qubits}", qubits == null ? "" : String(Math.round(qubits)))
       .replaceAll("{total}", total == null ? "" : pyFloat(total))
-      .replaceAll("{shots}", page.shots.trim());
+      .replaceAll("{shots}", String(shots ?? "").trim());
   }
 
   function modelLine() {
@@ -473,15 +497,18 @@
   function entryBody(entry) {
     const params = entry.params;
     const body = { simulator: entry.id, time_steps: params.timeSteps };
-    if (entry.id === "qutip") return body;
+    if (isReference(entry)) return body;
     body.num_steps = params.numSteps;
     body.trotter_depth = params.trotterDepth;
     body.seed = params.seed;
     body.order = params.order;
+    if (entry.backend) body.backend = entry.backend;
+    const backend = blockById("backend", entry.backend);
+    if (backend?.shots) body.shots = String(entry.shots ?? "").trim();
     return body;
   }
 
-  function simulatorCall(entry, name) {
+  function simulatorCall(entry, name, backendName) {
     const params = entry.params;
     const block = blockById("simulator", entry.id);
     if (!params || !block) return "";
@@ -507,7 +534,7 @@
     seed=${params.seed},
     measurement_groups=[${groups.join(", ")}],
     reducers=[${expectation}] * ${groups.length}${xLine},
-    circuit_backend=circuit_backend,
+    circuit_backend=${backendName},
 )`;
   }
 
@@ -516,9 +543,10 @@
     return setup.match(/circuit_backend = ([A-Za-z0-9_]+)/)?.[1] ?? "";
   }
 
-  function backendSetup(backendId) {
+  function backendSetup(backendId, variable, shots) {
     const block = blockById("backend", backendId);
-    return block ? fillSetup(block, "") : "";
+    if (!block) return "";
+    return fillSetup(block, "", shots).replace(/^circuit_backend =/, `${variable} =`);
   }
 
   function metricsTarget() {
@@ -575,8 +603,13 @@
     lines.push("from shadowsim.simulators import *");
     const benchmark = page.placedSims.length >= 2;
     if (!benchmark && hasThen("export")) lines.push("from shadowsim.simulators.result import save_resource_metrics");
-    const backendName = backendClass(page.selection.backend);
-    if (needsBackend() && backendName) lines.push(`from shadowsim.backends import ${backendName}`);
+    const backendClasses = [];
+    page.placedSims.forEach((entry) => {
+      if (isReference(entry)) return;
+      const className = backendClass(entry.backend);
+      if (className && !backendClasses.includes(className)) backendClasses.push(className);
+    });
+    if (backendClasses.length) lines.push(`from shadowsim.backends import ${backendClasses.join(", ")}`);
     const symbols = [
       ...new Set(page.modelTerms.map((term) => blockById("model", term.id)?.symbol).filter(Boolean)),
     ];
@@ -585,14 +618,20 @@
     if (symbols.length) lines.push(`from shadowsim.core import ${symbols.join(", ")}`);
     if (benchmark) lines.push("from shadowsim.benchmarking import Benchmark");
     const beforeSimulator = ["", stateLine(), "", modelLine(), ...termLines(), ""];
-    if (needsBackend()) beforeSimulator.push(backendSetup(page.selection.backend), "");
+    page.placedSims.forEach((entry, index) => {
+      if (isReference(entry)) return;
+      const setup = backendSetup(entry.backend, `circuit_backend_${index + 1}`, entry.shots);
+      if (setup) beforeSimulator.push(setup, "");
+    });
     if (page.placedSims.some((entry) => blockById("simulator", entry.id)?.observables)) {
       beforeSimulator.push(observableSetup(), "");
     }
     const names = page.placedSims.map((_, index) => (benchmark ? `sim_${index + 1}` : "sim"));
     lines.push(
       ...beforeSimulator,
-      ...page.placedSims.map((entry, index) => simulatorCall(entry, names[index])),
+      ...page.placedSims.map((entry, index) =>
+        simulatorCall(entry, names[index], `circuit_backend_${index + 1}`),
+      ),
       "",
     );
     lines.push(...(benchmark ? benchmarkThenLines(names) : singleThenLines()));
@@ -769,8 +808,10 @@
     fixedFactoryQubits: bind(fixedFactoryQubits),
     formatSetting: bind(formatSetting),
     hamiltonianProblem: bind(hamiltonianProblem),
+    backendFits: bind(backendFits),
     inspectMatrix: bind(inspectMatrix),
     isComplete: bind(isComplete),
+    isReference: bind(isReference),
     lindbladProblem: bind(lindbladProblem),
     localHamiltonianProblem: bind(localHamiltonianProblem),
     localSites: bind(localSites),
@@ -794,6 +835,7 @@
     settingsReady: bind(settingsReady),
     shotsReady: bind(shotsReady),
     simParamsReady: bind(simParamsReady),
+    socketStatus: bind(socketStatus),
     squareMatrix: bind(squareMatrix),
     stateImpliedQubits: bind(stateImpliedQubits),
     stateInputProblem: bind(stateInputProblem),

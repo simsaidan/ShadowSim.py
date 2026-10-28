@@ -177,6 +177,8 @@ class SplitJMatrixSimulator(Simulator):
     time point in ``completed_steps``.
     """
 
+    requires_sampling_backend: bool = True
+
     def __init__(
         self,
         hamiltonians: List[LocalHamiltonian],

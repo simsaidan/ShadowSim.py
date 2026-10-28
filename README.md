@@ -135,13 +135,13 @@ job leaves both as `None`.
 
 The following simulators are supported by the package:
 
-| Name | Type | Can handle open systems |
-| --- | --- | --- |
-| Qutip simulator | classical | true |
-| Split JMatrix | quantum-inspired | true |
-| Trotterization | quantum-inspired | false |
-| Wave matrix Lindbladization (coming soon) | — | — |
-| Pauli propagation time evolution (coming soon) | — | — |
+| Name | Type | Backend | Can handle open systems |
+| --- | --- | --- | --- |
+| Qutip simulator | classical reference | — | true |
+| Split JMatrix | quantum-inspired | sampling backend | true |
+| Trotterization | quantum-inspired | circuit backend | false |
+| Wave matrix Lindbladization (coming soon) | — | — | — |
+| Pauli propagation time evolution (coming soon) | — | — | — |
 
 Single-qubit ⟨Z⟩ and ⟨X⟩ for one circuit are available now from
 [`PauliPropagationBackend`](#paulipropagation).

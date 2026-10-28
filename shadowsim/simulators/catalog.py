@@ -18,6 +18,7 @@ class ListedSimulator(TypedDict):
     phrase: str
     setup: str
     observables: bool
+    samples: bool
 
 
 def listed_simulators() -> list[ListedSimulator]:
@@ -25,7 +26,9 @@ def listed_simulators() -> list[ListedSimulator]:
 
     :class:`~shadowsim.simulators.simulator.Simulator` itself is omitted. A class
     is skipped when its extra is not installed. QuTiP is the one that records
-    explicit observables; the others take a circuit backend.
+    explicit observables; the others take a circuit backend. ``samples`` is true
+    when the class sets ``requires_sampling_backend``, so the page pairs it only
+    with a backend that has a shot budget.
 
     Returns:
         Simulators the builder page can offer.
@@ -56,6 +59,7 @@ def _describe_simulator(cls: type) -> ListedSimulator:
     document = inspect.getdoc(cls)
     detail = title if document is None else document.split("\n", 1)[0].replace("``", "")
     observables = "observables" in inspect.signature(cls).parameters
+    samples = bool(getattr(cls, "requires_sampling_backend", False))
     if observables:
         setup = (
             f"{{name}} = {cls.__name__}(model.full_hamiltonians, model.c_ops_full, state,\n"
@@ -83,4 +87,5 @@ def _describe_simulator(cls: type) -> ListedSimulator:
         "phrase": title,
         "setup": setup,
         "observables": observables,
+        "samples": samples,
     }

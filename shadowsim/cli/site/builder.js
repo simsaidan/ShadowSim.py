@@ -1,4 +1,4 @@
-/* Builder page. Model, simulator, and backend cards come from the package. */
+/* Builder page. Model, method, and backend cards come from the package. */
 
 const LANES = [
   {
@@ -17,17 +17,10 @@ const LANES = [
   },
   {
     id: "simulator",
-    title: "Simulator",
-    hint: "The first block is the reference",
-    pick: "Add a simulator",
+    title: "Method",
+    hint: "The first row is the reference",
+    pick: "Build a method",
     tone: "blue",
-  },
-  {
-    id: "backend",
-    title: "Backend",
-    hint: "Where the circuit runs",
-    pick: "Pick a backend",
-    tone: "violet",
   },
   {
     id: "measure",
@@ -114,8 +107,6 @@ let exportOpen = false;
 let measureOpen = false;
 let measureSites = null;
 const DEFAULT_SHOTS = "256";
-let shots = DEFAULT_SHOTS;
-let shotsOpen = false;
 
 let dragging = null;
 let running = false;
@@ -160,7 +151,6 @@ function currentPage() {
     savePath,
     exportPath,
     measureSites,
-    shots,
     qubitsSource,
     stateLimits: STATE_LIMITS,
     maxEmitters: MAX_EMITTERS,
@@ -182,6 +172,18 @@ function chosenFactory() {
 
 function operatorStatus(preview) {
   return check(checks.operatorStatus, preview);
+}
+
+function isReference(entry) {
+  return check(checks.isReference, entry);
+}
+
+function backendFits(entry, backendId) {
+  return check(checks.backendFits, entry, backendId);
+}
+
+function socketStatus(preview) {
+  return check(checks.socketStatus, preview);
 }
 
 function isComplete() {
@@ -707,7 +709,7 @@ function simulatorChip(entry) {
   const fields = [
     simField(params, "timeSteps", "Time steps", false),
   ];
-  if (entry.id !== "qutip") {
+  if (!isReference(entry)) {
     fields.push(
       simField(params, "numSteps", "Product steps", false),
       simField(params, "trotterDepth", "Trotter depth", false),
@@ -891,10 +893,13 @@ function exportChip(block) {
   });
 }
 
-function backendChip(block) {
+function backendChip(entry) {
+  const block = blockById("backend", entry.backend);
+  if (!block) return null;
   const samples = Boolean(block.shots);
-  const editing = samples && shotsOpen;
-  const shown = samples && positiveIntText(shots.trim()) ? `${shots.trim()} shots` : block.detail;
+  const editing = samples && entry.shotsOpen;
+  const shotText = String(entry.shots ?? "");
+  const shown = samples && positiveIntText(shotText.trim()) ? `${shotText.trim()} shots` : block.detail;
   return el(
     "div",
     { className: `chip tone-violet backend${editing ? " is-editing" : ""}` },
@@ -906,7 +911,7 @@ function backendChip(block) {
         {
           onclick: () => {
             if (!samples || editing) return;
-            shotsOpen = true;
+            entry.shotsOpen = true;
             draw(document.querySelector(".board"));
           },
         },
@@ -923,7 +928,7 @@ function backendChip(block) {
                 className: "done",
                 type: "button",
                 onclick: () => {
-                  shotsOpen = false;
+                  entry.shotsOpen = false;
                   draw(document.querySelector(".board"));
                 },
               },
@@ -938,7 +943,7 @@ function backendChip(block) {
             "aria-label": `Remove ${block.title}`,
             onclick: (event) => {
               event.stopPropagation();
-              clearLane("backend");
+              removeBackend(entry.key);
             },
           },
           "×",
@@ -954,20 +959,52 @@ function backendChip(block) {
             type: "text",
             inputmode: "numeric",
             "aria-label": "Shots",
-            value: shots,
+            value: shotText,
             spellcheck: "false",
             oninput: (event) => {
               const next = event.target.value.replace(/\D/g, "");
               if (event.target.value !== next) event.target.value = next;
-              shots = next;
+              entry.shots = next;
               const detail = event.target.closest(".chip")?.querySelector(".backend-detail");
-              if (detail) detail.textContent = positiveIntText(shots.trim()) ? `${shots.trim()} shots` : block.detail;
+              if (detail) detail.textContent = positiveIntText(next.trim()) ? `${next.trim()} shots` : block.detail;
               refreshSummaryAndPreview();
             },
           }),
         )
       : null,
   );
+}
+
+function backendSocket(entry) {
+  return el(
+    "div",
+    {
+      className: "socket",
+      "data-socket": String(entry.key),
+      ondragover: (event) => {
+        if (!dragging || dragging.lane !== "backend") return;
+        event.preventDefault();
+        event.stopPropagation();
+        event.currentTarget.classList.add("is-over");
+      },
+      ondragleave: (event) => event.currentTarget.classList.remove("is-over"),
+      ondrop: (event) => {
+        if (!dragging || dragging.lane !== "backend") return;
+        event.preventDefault();
+        event.stopPropagation();
+        attachBackend(dragging.id, entry.key);
+      },
+    },
+    "Add a backend",
+  );
+}
+
+function methodRow(entry) {
+  const simulator = simulatorChip(entry);
+  if (!simulator) return null;
+  if (isReference(entry)) return el("div", { className: "method-row reference" }, simulator);
+  const backend = entry.backend ? backendChip(entry) : backendSocket(entry);
+  return el("div", { className: "method-row" }, simulator, backend);
 }
 
 function squareMatrix(text) {
@@ -1252,7 +1289,6 @@ function slotChips(lane) {
     else if (chosen.id === "save") chips.push(saveChip(chosen));
     else if (chosen.id === "export") chips.push(exportChip(chosen));
     else if (lane.id === "measure") chips.push(measureChip(chosen));
-    else if (lane.id === "backend") chips.push(backendChip(chosen));
     else if (lane.id !== "simulator") {
       chips.push(blockCard(lane, chosen, { inSlot: true, onRemove: () => clearLane(lane.id) }));
     }
@@ -1269,8 +1305,8 @@ function slotChips(lane) {
   }
   if (lane.id === "simulator") {
     for (const entry of placedSims) {
-      const chip = simulatorChip(entry);
-      if (chip) chips.push(chip);
+      const row = methodRow(entry);
+      if (row) chips.push(row);
     }
     return chips;
   }
@@ -1285,6 +1321,12 @@ function slotChips(lane) {
   return chips;
 }
 
+function slotAcceptsDrag(laneId) {
+  if (!dragging) return false;
+  if (dragging.lane === laneId) return true;
+  return laneId === "simulator" && dragging.lane === "backend";
+}
+
 function slotComponent(lane) {
   const slot = el(
     "section",
@@ -1292,15 +1334,16 @@ function slotComponent(lane) {
       className: `slot tone-${lane.tone}`,
       "data-slot": lane.id,
       ondragover: (event) => {
-        if (!dragging || dragging.lane !== lane.id) return;
+        if (!slotAcceptsDrag(lane.id)) return;
         event.preventDefault();
         slot.classList.add("is-over");
       },
       ondragleave: () => slot.classList.remove("is-over"),
       ondrop: (event) => {
-        if (!dragging || dragging.lane !== lane.id) return;
+        if (!slotAcceptsDrag(lane.id)) return;
         event.preventDefault();
-        place(lane.id, dragging.id);
+        if (dragging.lane === "backend") attachBackend(dragging.id);
+        else place(lane.id, dragging.id);
       },
     },
     el("h2", {}, lane.title),
@@ -1310,7 +1353,44 @@ function slotComponent(lane) {
   return slot;
 }
 
+function methodPalette(lane, onPlace) {
+  const noteText = laneNotes.simulator || laneNotes.backend;
+  const note = noteText ? el("p", { className: "hint" }, noteText) : null;
+  const groups = [
+    ["Classical references", BLOCKS.simulator.filter((block) => block.observables), lane],
+    ["Simulators", BLOCKS.simulator.filter((block) => !block.observables), lane],
+    ["Backends", BLOCKS.backend, { id: "backend", tone: "violet" }],
+  ];
+  return el(
+    "section",
+    { className: "lane", "data-palette": lane.id },
+    el("h2", {}, lane.pick),
+    note,
+    ...groups
+      .filter(([, blocks]) => blocks.length)
+      .map(([title, blocks, cardLane]) =>
+        el(
+          "div",
+          { className: "palette-group" },
+          el("h3", {}, title),
+          el(
+            "div",
+            { className: "cards" },
+            ...blocks.map((block) =>
+              blockCard(cardLane, block, {
+                inSlot: false,
+                blocked: false,
+                onPlace: () => (cardLane.id === "backend" ? attachBackend(block.id) : onPlace(block.id)),
+              }),
+            ),
+          ),
+        ),
+      ),
+  );
+}
+
 function paletteComponent(lane, onPlace) {
+  if (lane.id === "simulator") return methodPalette(lane, onPlace);
   const note = laneNotes[lane.id] ? el("p", { className: "hint" }, laneNotes[lane.id]) : null;
   return el(
     "section",
@@ -1337,7 +1417,6 @@ function summaryComponent() {
   }
   const state = blockById("state", selection.state);
   const model = selection.model === "preexisting" ? chosenFactory() : null;
-  const backend = blockById("backend", selection.backend);
   const actions = thenSummary();
   const qubits = qubitPhrase();
   const total = formatSetting("total");
@@ -1353,7 +1432,6 @@ function summaryComponent() {
     ...modelPhrase,
     " with ",
     ...simulatorSummary(),
-    ...(backend ? [" on ", el("strong", {}, backend.phrase)] : []),
     ", measure ",
     el("strong", {}, measurePhrase()),
     ", then ",
@@ -1431,7 +1509,7 @@ function refreshSummaryAndPreview() {
 
 function statusMessage() {
   if (statusHold) return statusHold;
-  if (!isComplete()) return operatorStatus(false) ?? "Place a block in each slot.";
+  if (!isComplete()) return operatorStatus(false) ?? socketStatus(false) ?? "Place a block in each slot.";
   if (emitterProblem()) return "Enter an emitter count.";
   if (stateInputProblem() === "size") return stateSizeStatus(false);
   if (stateInputProblem() === "basis") return "Enter a basis bit string and total time.";
@@ -1460,7 +1538,7 @@ function statusComponent() {
 function codeBody() {
   const code = previewText();
   if (code) return el("pre", {}, code);
-  let message = operatorStatus(true) ?? "Place a block in each slot to preview the script.";
+  let message = operatorStatus(true) ?? socketStatus(true) ?? "Place a block in each slot to preview the script.";
   if (isComplete()) {
     const numbers = numberProblem(true);
     if (emitterProblem()) message = "Enter an emitter count to preview the script.";
@@ -2003,7 +2081,7 @@ async function startRun() {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        ...selection,
+        ...postedSelection(),
         model: selection.model === "preexisting" ? preexistingId : selection.model,
         qubits: settings.qubits,
         total: settings.total,
@@ -2018,7 +2096,6 @@ async function startRun() {
         thens: [...placedThens],
         save_path: savePath.trim(),
         export_path: exportPath.trim(),
-        shots: shots.trim(),
         terms: postedTerms(),
         ...(selection.model === "preexisting" && preexistingId === "tavis_cummings"
           ? { emitters: emitterCount() }
@@ -2267,8 +2344,16 @@ function thenSummary() {
   return nodes;
 }
 
+function methodPhrase(entry) {
+  const title = blockById("simulator", entry.id)?.title;
+  if (!title) return null;
+  const backend = blockById("backend", entry.backend);
+  if (!isReference(entry) && backend) return `${title} on ${backend.phrase}`;
+  return title;
+}
+
 function simulatorSummary() {
-  const titles = placedSims.map((entry) => blockById("simulator", entry.id)?.title).filter(Boolean);
+  const titles = placedSims.map(methodPhrase).filter(Boolean);
   if (!titles.length) return [];
   if (titles.length === 1) return [el("strong", {}, titles[0])];
   const nodes = [el("strong", {}, titles[0]), ", benchmarked against "];
@@ -2284,7 +2369,15 @@ function place(laneId, blockId) {
   const block = blockById(laneId, blockId);
   if (laneId === "model" && modelChoiceBlocked(block)) return;
   if (laneId === "simulator") {
-    placedSims.push({ id: blockId, key: ++simKey, params: freshParams(blockId), open: true });
+    placedSims.push({
+      id: blockId,
+      key: ++simKey,
+      params: freshParams(blockId),
+      open: true,
+      backend: null,
+      shots: DEFAULT_SHOTS,
+      shotsOpen: false,
+    });
     selection.simulator = placedSims[0].id;
   } else if (laneId === "model" && block?.adds) {
     modelTerms.push({ id: blockId, key: ++modelTermKey, matrix: "", sites: [] });
@@ -2296,9 +2389,6 @@ function place(laneId, blockId) {
   } else if (laneId === "measure") {
     selection.measure = blockId;
     measureOpen = qubitCount() != null;
-  } else if (laneId === "backend") {
-    selection.backend = blockId;
-    shotsOpen = Boolean(block?.shots);
   } else if (laneId === "then") {
     if (!placedThens.includes(blockId)) placedThens.push(blockId);
     selection.then = placedThens[0] ?? null;
@@ -2317,6 +2407,51 @@ function removeThen(id) {
   const index = placedThens.indexOf(id);
   if (index >= 0) placedThens.splice(index, 1);
   selection.then = placedThens[0] ?? null;
+  releaseStatusHold();
+  draw(document.querySelector(".board"));
+}
+
+function postedSelection() {
+  const posted = { ...selection };
+  delete posted.backend;
+  return posted;
+}
+
+function attachBackend(backendId, key) {
+  if (running) return;
+  const backend = blockById("backend", backendId);
+  if (!backend) return;
+  const target =
+    key == null
+      ? placedSims.find((entry) => !isReference(entry) && !entry.backend && backendFits(entry, backendId))
+      : placedSims.find((entry) => entry.key === key);
+  if (!target || isReference(target) || !backendFits(target, backendId)) {
+    const open = placedSims.filter((entry) => !isReference(entry) && (key == null ? !entry.backend : entry.key === key));
+    const blocked = open.find((entry) => blockById("simulator", entry.id)?.samples && !backend.shots);
+    const title = blocked ? blockById("simulator", blocked.id)?.title : null;
+    if (title) statusHold = `${title} needs a backend with a shot budget.`;
+    else if (!placedSims.some((entry) => !isReference(entry))) statusHold = "Place a simulator before its backend.";
+    else statusHold = "Snap a backend onto an open simulator.";
+    dragging = null;
+    draw(document.querySelector(".board"));
+    return;
+  }
+  target.backend = backendId;
+  if (backend.shots) {
+    if (!positiveIntText(String(target.shots ?? "").trim())) target.shots = DEFAULT_SHOTS;
+    target.shotsOpen = true;
+  } else target.shotsOpen = false;
+  dragging = null;
+  releaseStatusHold();
+  draw(document.querySelector(".board"));
+}
+
+function removeBackend(key) {
+  if (running) return;
+  const entry = placedSims.find((item) => item.key === key);
+  if (!entry) return;
+  entry.backend = null;
+  entry.shotsOpen = false;
   releaseStatusHold();
   draw(document.querySelector(".board"));
 }
@@ -2346,7 +2481,6 @@ function clearLane(laneId) {
   if (running) return;
   if (laneId === "simulator") placedSims.splice(0, placedSims.length);
   if (laneId === "then") placedThens.splice(0, placedThens.length);
-  if (laneId === "backend") shotsOpen = false;
   if (laneId === "measure") {
     measureOpen = false;
     measureSites = null;

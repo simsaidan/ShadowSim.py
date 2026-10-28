@@ -732,6 +732,53 @@ def test_two_simulators_form_a_benchmark() -> None:
     assert errors[0]["observables"][0]["linf"] == pytest.approx(0)
 
 
+@pytest.mark.qiskit
+@pytest.mark.pauli_propagation
+def test_benchmark_runs_trotter_on_aer_and_pauli_propagation() -> None:
+    pytest.importorskip("qiskit_aer")
+    from backends.test_pauli_propagation import _pauli_propagation_skip_reason
+
+    reason = _pauli_propagation_skip_reason()
+    if reason is not None:
+        pytest.skip(reason)
+    payload = run_page(
+        _selection(
+            then="plot",
+            simulator="trotterization",
+            time_steps=2,
+            num_steps=1,
+            simulators=[
+                {"simulator": "trotterization", "backend": "aer", "shots": 4},
+                {"simulator": "trotterization", "backend": "paulipropagation"},
+            ],
+        )
+    )
+    assert payload["algorithm"] == "benchmark"
+    series = payload["series"]
+    assert isinstance(series, list)
+    assert [item["name"] for item in series] == ["trotterization#1", "trotterization#2"]
+    for item in series:
+        observables = item["observables"]
+        assert isinstance(observables, list)
+        assert len(observables) == 2
+        assert all(len(curve) == 2 for curve in observables)
+    resources = payload["resources"]
+    assert isinstance(resources, list)
+    assert [item["simulator_id"] for item in resources] == [
+        "trotterization_simulator#1",
+        "trotterization_simulator#2",
+    ]
+    assert resources[0]["shots_per_job"] == 4
+    assert resources[0]["num_jobs"] == 2
+    assert resources[0]["total_shots"] == 8
+    assert resources[1]["shots_per_job"] is None
+    assert resources[1]["num_jobs"] is None
+    assert resources[1]["total_shots"] is None
+    errors = payload["errors"]
+    assert isinstance(errors, list)
+    assert errors[0]["challenger_id"] == "trotterization_simulator#2"
+
+
 @pytest.mark.qutip
 def test_benchmark_requires_one_time_grid() -> None:
     pytest.importorskip("qutip")
@@ -1049,9 +1096,11 @@ def test_listed_simulators_skips_imports_that_fail(monkeypatch: pytest.MonkeyPat
     assert [item["id"] for item in listed] == ["bare", "note"]
     assert listed[0]["detail"] == "Base class for quantum simulation backends."
     assert listed[0]["observables"] is False
+    assert listed[0]["samples"] is False
     assert "BareSimulator" in listed[0]["setup"]
     assert listed[1]["detail"] == "Simulate with a note."
     assert listed[1]["observables"] is True
+    assert listed[1]["samples"] is False
 
 
 def test_describe_simulator_uses_the_title_without_a_docstring(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -1063,6 +1112,7 @@ def test_describe_simulator_uses_the_title_without_a_docstring(monkeypatch: pyte
     described = _describe_simulator(BareSimulator)
     assert described["detail"] == "Bare"
     assert described["observables"] is False
+    assert described["samples"] is False
 
 
 def test_listed_simulators_fail_when_none_import(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -1087,10 +1137,13 @@ def test_listed_simulators_reads_the_package_classes() -> None:
     listed = listed_simulators()
     assert [item["id"] for item in listed] == ["qutip", "splitjmatrix", "trotterization"]
     assert listed[0]["observables"] is True
+    assert listed[0]["samples"] is False
     assert listed[0]["setup"].startswith("{name} = QutipSimulator")
     assert "{total}" in listed[0]["setup"]
     assert listed[1]["observables"] is False
+    assert listed[1]["samples"] is True
     assert "SplitJMatrixSimulator" in listed[1]["setup"]
+    assert listed[2]["samples"] is False
     assert "QuTiP" in listed[0]["detail"]
 
 

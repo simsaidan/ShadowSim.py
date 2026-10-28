@@ -74,8 +74,7 @@ body {
   grid-template-columns:
     minmax(0, 1fr) 14px
     minmax(0, 1fr) 14px
-    minmax(0, 1fr) 14px
-    minmax(0, 1fr) 14px
+    minmax(0, 2fr) 14px
     minmax(0, 1fr) 14px
     minmax(0, 1fr);
   column-gap: 4px;
@@ -410,6 +409,86 @@ body {
   color: var(--muted);
   font-size: 12.5px;
   line-height: 1.35;
+}
+
+.palette-group {
+  margin-top: 14px;
+}
+
+.palette-group h3 {
+  margin: 0 0 8px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+}
+
+.method-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  margin-top: 12px;
+  align-items: stretch;
+}
+
+.method-row.reference {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.method-row .chip,
+.method-row .socket {
+  margin-top: 0;
+  min-width: 0;
+}
+
+.method-row:not(.reference) .simulator {
+  position: relative;
+  z-index: 1;
+  border-top-right-radius: 0;
+  border-bottom-right-radius: 0;
+  border-right-width: 0;
+}
+
+.method-row:not(.reference) .simulator::after {
+  content: "";
+  position: absolute;
+  right: -9px;
+  top: 50%;
+  width: 16px;
+  height: 16px;
+  transform: translateY(-50%);
+  border-radius: 50%;
+  background: var(--tone-soft);
+  border: 1.5px solid var(--tone);
+  z-index: 2;
+}
+
+.method-row:not(.reference) .simulator.is-editing::after {
+  background: #fff;
+}
+
+.method-row .backend,
+.method-row .socket {
+  border-top-left-radius: 0;
+  border-bottom-left-radius: 0;
+  padding-left: 18px;
+}
+
+.socket {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1.5px dashed var(--violet);
+  border-radius: 10px;
+  background: #fff;
+  color: var(--faint);
+  font-size: 12.5px;
+  line-height: 1.35;
+  text-align: center;
+  padding: 10px;
+}
+
+.socket.is-over {
+  background: var(--violet-soft);
 }
 
 .cards {
