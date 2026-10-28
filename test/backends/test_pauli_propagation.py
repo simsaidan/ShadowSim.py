@@ -31,6 +31,12 @@ def test_pauli_propagation_backend_is_exported():
         PauliPropagationBackend(max_weight=-1)
     with pytest.raises(ValueError, match="min_abs_coeff"):
         PauliPropagationBackend(min_abs_coeff=math.inf)
+    with pytest.raises(ValueError, match="max_weight"):
+        PauliPropagationBackend(max_weight=float("nan"))
+    with pytest.raises(TypeError, match="max_weight"):
+        PauliPropagationBackend(max_weight=True)
+    with pytest.raises(TypeError, match="min_abs_coeff"):
+        PauliPropagationBackend(min_abs_coeff="1e-10")
     assert "PauliPropagationBackend" in dir(backends)
 
 

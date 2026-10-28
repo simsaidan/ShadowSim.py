@@ -622,6 +622,32 @@ def test_pauli_propagation_uses_posted_truncation() -> None:
 
 
 @pytest.mark.qiskit
+def test_pauli_propagation_checks_every_posted_truncation() -> None:
+    pytest.importorskip("qiskit")
+    posted = dict(simulator="trotterization", backend="paulipropagation", time_steps=2, num_steps=1)
+    simulator = build_simulator(_selection(**posted, max_weight=4, min_abs_coeff=1e-8))
+    assert simulator.circuit_backend.max_weight == 4
+    assert simulator.circuit_backend.min_abs_coeff == 1e-8
+    unlimited = build_simulator(_selection(**posted, max_weight=" infinity ", min_abs_coeff="0"))
+    assert unlimited.circuit_backend.max_weight == math.inf
+    assert unlimited.circuit_backend.min_abs_coeff == 0.0
+    for overrides, message in (
+        ({"max_weight": ""}, "max weight"),
+        ({"max_weight": "nope"}, "max weight"),
+        ({"min_abs_coeff": "inf"}, "min coefficient"),
+        ({"min_abs_coeff": "nan"}, "min coefficient"),
+    ):
+        with pytest.raises(ValueError, match=message):
+            build_simulator(_selection(**posted, **overrides))
+    for overrides, message in (
+        ({"max_weight": True}, "max weight"),
+        ({"min_abs_coeff": None}, "min coefficient"),
+    ):
+        with pytest.raises(TypeError, match=message):
+            build_simulator(_selection(**posted, **overrides))
+
+
+@pytest.mark.qiskit
 def test_pauli_propagation_rejects_split_j() -> None:
     pytest.importorskip("qiskit")
     with pytest.raises(ValueError, match="shot budget"):
@@ -898,8 +924,17 @@ def test_listed_backends_reads_concrete_classes(monkeypatch: pytest.MonkeyPatch)
         def __init__(self) -> None:
             return None
 
+    class NeededCircuitBackend:
+        """Needs one argument."""
+
+        def __init__(self, qubits: int, shots: int = 1, scale: int = 2) -> None:
+            return None
+
+        def run_counts(self) -> None:
+            return None
+
     BareCircuitBackend.__doc__ = None
-    for cls in (CircuitBackend, AerCircuitBackend, BareCircuitBackend, NoteCircuitBackend):
+    for cls in (CircuitBackend, AerCircuitBackend, BareCircuitBackend, NoteCircuitBackend, NeededCircuitBackend):
         cls.__module__ = module.__name__
         setattr(module, cls.__name__, cls)
 
@@ -942,6 +977,15 @@ def test_listed_backends_reads_concrete_classes(monkeypatch: pytest.MonkeyPatch)
             "setup": "circuit_backend = BareCircuitBackend()",
             "shots": False,
             "fields": [],
+        },
+        {
+            "id": "needed",
+            "title": "Needed",
+            "detail": "Needs one argument.",
+            "phrase": "Needed",
+            "setup": "circuit_backend = NeededCircuitBackend(qubits, shots={shots}, scale={scale})",
+            "shots": True,
+            "fields": [{"name": "scale", "label": "scale", "default": "2", "allow_inf": False}],
         },
     ]
 
