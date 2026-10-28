@@ -24,7 +24,7 @@ from shadowsim.models.catalog import listed_models
 from shadowsim.models.ising import IsingModel
 from shadowsim.models.tavis_cummings import TavisCummingsModel
 from shadowsim.simulators.reducers import expectation_x, expectation_z
-from shadowsim.simulators.result import SimulationResult, save_resource_metrics
+from shadowsim.simulators.result import SimulationResult, _resource_record, save_resource_metrics
 from shadowsim.simulators.simulator import Simulator
 from shadowsim.utils.hermitian import hermitian
 
@@ -134,8 +134,12 @@ def run_page(selection: Mapping[str, object], *, output_root: Path | None = None
     :meth:`~shadowsim.benchmarking.benchmark.Benchmark.save_error_metrics`.
     One simulator writes its runtime and shot budget with
     :func:`~shadowsim.simulators.result.save_resource_metrics`. ``plot`` is drawn by the
-    page. Save and export both run when both are selected. When ``output_root``
-    is set, ``save_path`` and ``export_path`` must resolve under that directory.
+    page. The payload names each observable in ``labels`` and lists wall time and
+    shot budget in ``resources``. A benchmark fills ``resources`` from
+    :meth:`~shadowsim.benchmarking.benchmark.Benchmark.resource_metrics`, and each
+    series names its curves ``{simulator} · {label}``. Save and export both run
+    when both are selected. When ``output_root`` is set, ``save_path`` and
+    ``export_path`` must resolve under that directory.
     A relative path is resolved from the working directory.
 
     Args:
@@ -150,7 +154,7 @@ def run_page(selection: Mapping[str, object], *, output_root: Path | None = None
         return _run_benchmark(selection, entries, directory, export_to)
     simulator = build_simulator(selection)
     result = simulator.simulate()
-    payload = _result_payload(result)
+    payload = _result_payload(result, simulator, selection)
     saved = _write_results(directory, [result])
     if saved:
         payload["saved"] = saved
@@ -160,11 +164,18 @@ def run_page(selection: Mapping[str, object], *, output_root: Path | None = None
     return payload
 
 
-def _result_payload(result: SimulationResult) -> dict[str, object]:
-    """Return the curves and timing the page chart draws."""
+def _result_payload(
+    result: SimulationResult,
+    simulator: Simulator,
+    selection: Mapping[str, object],
+) -> dict[str, object]:
+    """Return the curves, names, and resource record the page chart draws."""
+    sites = _measure_sites(selection, simulator.num_qubits)
     return {
         "times": result.times.tolist(),
         "observables": [curve.tolist() for curve in result.observables],
+        "labels": _observable_labels(_choice(selection, "measure"), sites),
+        "resources": [_resource_record(simulator, result.runtime)],
         "runtime": result.runtime,
         "algorithm": result.algorithm,
     }
@@ -279,7 +290,7 @@ def _run_benchmark(
     directory: Path | None,
     export_to: Path | None,
 ) -> dict[str, object]:
-    """Build each entry, run them on one grid, and return curves plus error metrics."""
+    """Build each entry, run them on one grid, and return curves, names, and resources."""
     simulators: list[Simulator] = []
     for entry in entries:
         if not isinstance(entry, Mapping):
@@ -296,11 +307,17 @@ def _run_benchmark(
             raise ValueError("benchmark did not record a result")
         recorded.append(result)
     resources = benchmark.resource_metrics()
+    labels = _observable_labels(
+        _choice(selection, "measure"),
+        _measure_sites(selection, simulators[0].num_qubits),
+    )
     series: list[dict[str, object]] = []
     for result, resource in zip(recorded, resources, strict=True):
+        name = _series_name(str(resource["simulator_id"]))
         series.append(
             {
-                "name": _series_name(str(resource["simulator_id"])),
+                "name": name,
+                "labels": [f"{name} · {label}" for label in labels],
                 "observables": [curve.tolist() for curve in result.observables],
             }
         )
@@ -310,8 +327,10 @@ def _run_benchmark(
     payload: dict[str, object] = {
         "times": reference.times.tolist(),
         "observables": [curve.tolist() for curve in reference.observables],
+        "labels": labels,
         "series": series,
         "errors": benchmark.error_metrics(),
+        "resources": resources,
         "runtime": float(sum(wall_times)),
         "algorithm": "benchmark",
     }
@@ -664,6 +683,17 @@ def _pauli_expectation_groups(
     groups = [[site + offset] for site in sites]
     reducer = expectation_x if measure_id == "x" else expectation_z
     return groups, [reducer for _ in sites]
+
+
+def _observable_labels(measure_id: str, sites: list[int]) -> list[str]:
+    """Return one chart name per measured qubit.
+
+    ``z`` on qubits 0 and 1 is ``⟨Z⟩ on 0`` and ``⟨Z⟩ on 1``.
+    """
+    if measure_id not in ("x", "z"):
+        raise ValueError("unknown measurement")
+    letter = measure_id.upper()
+    return [f"⟨{letter}⟩ on {site}" for site in sites]
 
 
 def _observables(num_qubits: int, measure_id: str, sites: list[int]) -> list[Operator]:
