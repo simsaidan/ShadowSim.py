@@ -601,6 +601,35 @@ body {
 
 .panel h2 { font-size: 16px; }
 
+.panel-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.copy {
+  appearance: none;
+  border: 1px solid var(--line);
+  background: #fff;
+  color: var(--ink);
+  border-radius: 999px;
+  padding: 4px 10px;
+  font: inherit;
+  font-size: 12.5px;
+  cursor: pointer;
+}
+
+.copy:disabled {
+  color: var(--faint);
+  cursor: default;
+}
+
+.copy:focus-visible {
+  outline: 2px solid var(--blue-ink);
+  outline-offset: 2px;
+}
+
 .panel pre,
 .placeholder {
   margin: 14px 0 0;

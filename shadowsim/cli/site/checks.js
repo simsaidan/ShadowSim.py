@@ -626,12 +626,46 @@
     return ["result = sim.simulate()"];
   }
 
+  function encodingImport() {
+    const names = {
+      basis: "ComputationalBasisEncoding",
+      gray: "GrayEncoding",
+      angle: "AngleEncoding",
+      amplitude: "AmplitudeEncoding",
+    };
+    const name = names[page.selection.state];
+    return name ? `from shadowsim.encoding import ${name}` : "";
+  }
+
+  function simulatorClass(entry) {
+    const block = blockById("simulator", entry.id);
+    if (!block) return "";
+    if (block.observables) return "QutipSimulator";
+    return entry.id === "trotterization" ? "TrotterizationSimulator" : "SplitJMatrixSimulator";
+  }
+
+  function simulatorImport() {
+    const names = [];
+    let circuit = false;
+    page.placedSims.forEach((entry) => {
+      const className = simulatorClass(entry);
+      if (!className) return;
+      if (!names.includes(className)) names.push(className);
+      if (!blockById("simulator", entry.id)?.observables) circuit = true;
+    });
+    if (circuit) names.push(page.selection.measure === "x" ? "expectation_x" : "expectation_z");
+    return names.length ? `from shadowsim.simulators import ${names.join(", ")}` : "";
+  }
+
   function previewText() {
     if (!runAllowed()) return "";
-    const lines = ["import numpy as np", "from shadowsim.encoding import *"];
+    const lines = ["import numpy as np"];
+    const encoding = encodingImport();
+    if (encoding) lines.push(encoding);
     if (page.selection.model === "preexisting") lines.push(`from shadowsim.models import ${page.preexistingId}`);
     else if (page.selection.model) lines.push(`from shadowsim.models import ${page.selection.model}`);
-    lines.push("from shadowsim.simulators import *");
+    const simulators = simulatorImport();
+    if (simulators) lines.push(simulators);
     const benchmark = page.placedSims.length >= 2;
     if (!benchmark && hasThen("export")) lines.push("from shadowsim.simulators.result import save_resource_metrics");
     const backendClasses = [];
