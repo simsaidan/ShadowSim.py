@@ -104,6 +104,7 @@ let saveOpen = false;
 const DEFAULT_EXPORT_PATH = "results";
 let exportPath = DEFAULT_EXPORT_PATH;
 let exportOpen = false;
+let stateOpen = false;
 let measureOpen = false;
 let measureSites = null;
 const DEFAULT_SHOTS = "256";
@@ -576,6 +577,7 @@ function refreshStateChip(id) {
 }
 
 function stateChip(options) {
+  const open = stateOpen;
   const input = el("input", {
     type: "text",
     inputmode: options.bits ? "numeric" : "decimal",
@@ -588,11 +590,22 @@ function stateChip(options) {
   });
   return el(
     "div",
-    { className: `chip tone-gold ${options.id} is-editing` },
+    { className: `chip tone-gold ${options.id}${open ? " is-editing" : ""}` },
     el(
       "div",
       { className: "basis-head" },
-      el("div", {}, el("strong", {}, options.title), el("span", { className: "basis-detail" }, stateDetail(options.id))),
+      el(
+        "div",
+        {
+          onclick: () => {
+            if (stateOpen) return;
+            stateOpen = true;
+            draw(document.querySelector(".board"));
+          },
+        },
+        el("strong", {}, options.title),
+        el("span", { className: "basis-detail" }, stateDetail(options.id)),
+      ),
       el(
         "div",
         { className: "basis-actions" },
@@ -607,6 +620,20 @@ function stateChip(options) {
           },
           "!",
         ),
+        open
+          ? el(
+              "button",
+              {
+                className: "done",
+                type: "button",
+                onclick: () => {
+                  stateOpen = false;
+                  draw(document.querySelector(".board"));
+                },
+              },
+              "Done",
+            )
+          : null,
         el(
           "button",
           {
@@ -622,7 +649,7 @@ function stateChip(options) {
         ),
       ),
     ),
-    el("label", { className: "basis-field" }, options.field, input),
+    open ? el("label", { className: "basis-field" }, options.field, input) : null,
   );
 }
 
@@ -893,13 +920,34 @@ function exportChip(block) {
   });
 }
 
+function backendFieldNumber(field, text) {
+  return check(checks.backendFieldNumber, field, text);
+}
+
+function backendSummary(block, entry) {
+  if (block.shots) {
+    const shotText = String(entry.shots ?? "").trim();
+    return positiveIntText(shotText) ? `${shotText} shots` : block.detail;
+  }
+  const fields = block.fields ?? [];
+  if (!fields.length) return block.detail;
+  const parts = [];
+  for (const field of fields) {
+    const text = String(entry.backendFields?.[field.name] ?? "").trim();
+    if (backendFieldNumber(field, text) == null) return block.detail;
+    parts.push(`${field.label} ${text}`);
+  }
+  return parts.join(", ");
+}
+
 function backendChip(entry) {
   const block = blockById("backend", entry.backend);
   if (!block) return null;
+  const fields = block.fields ?? [];
   const samples = Boolean(block.shots);
-  const editing = samples && entry.shotsOpen;
-  const shotText = String(entry.shots ?? "");
-  const shown = samples && positiveIntText(shotText.trim()) ? `${shotText.trim()} shots` : block.detail;
+  const configurable = samples || fields.length > 0;
+  const editing = samples ? Boolean(entry.shotsOpen) : Boolean(entry.backendOpen) && fields.length > 0;
+  const shown = backendSummary(block, entry);
   return el(
     "div",
     { className: `chip tone-violet backend${editing ? " is-editing" : ""}` },
@@ -910,8 +958,9 @@ function backendChip(entry) {
         "div",
         {
           onclick: () => {
-            if (!samples || editing) return;
-            entry.shotsOpen = true;
+            if (!configurable || editing) return;
+            if (samples) entry.shotsOpen = true;
+            else entry.backendOpen = true;
             draw(document.querySelector(".board"));
           },
         },
@@ -929,6 +978,7 @@ function backendChip(entry) {
                 type: "button",
                 onclick: () => {
                   entry.shotsOpen = false;
+                  entry.backendOpen = false;
                   draw(document.querySelector(".board"));
                 },
               },
@@ -950,7 +1000,7 @@ function backendChip(entry) {
         ),
       ),
     ),
-    editing
+    editing && samples
       ? el(
           "label",
           { className: "backend-field" },
@@ -959,17 +1009,46 @@ function backendChip(entry) {
             type: "text",
             inputmode: "numeric",
             "aria-label": "Shots",
-            value: shotText,
+            value: String(entry.shots ?? ""),
             spellcheck: "false",
             oninput: (event) => {
               const next = event.target.value.replace(/\D/g, "");
               if (event.target.value !== next) event.target.value = next;
               entry.shots = next;
               const detail = event.target.closest(".chip")?.querySelector(".backend-detail");
-              if (detail) detail.textContent = positiveIntText(next.trim()) ? `${next.trim()} shots` : block.detail;
+              if (detail) detail.textContent = backendSummary(block, entry);
               refreshSummaryAndPreview();
             },
           }),
+        )
+      : null,
+    editing && !samples
+      ? el(
+          "div",
+          { className: "backend-fields" },
+          ...fields.map((field) =>
+            el(
+              "label",
+              {},
+              field.label,
+              el("input", {
+                type: "text",
+                inputmode: "decimal",
+                "aria-label": field.label,
+                value: String(entry.backendFields?.[field.name] ?? ""),
+                spellcheck: "false",
+                autocomplete: "off",
+                oninput: (event) => {
+                  const next = event.target.value.replace(/[^0-9.eE+\-infity]/gi, "");
+                  if (event.target.value !== next) event.target.value = next;
+                  entry.backendFields[field.name] = next;
+                  const detail = event.target.closest(".chip")?.querySelector(".backend-detail");
+                  if (detail) detail.textContent = backendSummary(block, entry);
+                  refreshSummaryAndPreview();
+                },
+              }),
+            ),
+          ),
         )
       : null,
   );
@@ -1522,6 +1601,7 @@ function statusMessage() {
   if (!sameTimeGrid()) return "Use the same number of time steps for every simulator.";
   if (!measureSitesReady()) return "Pick at least one qubit.";
   if (!shotsReady()) return "Enter a shot count.";
+  if (!check(checks.backendFieldsReady)) return "Enter a max weight and a minimum coefficient.";
   if (!savePathReady()) return pathMessage(false);
   return "Ready to run.";
 }
@@ -1554,6 +1634,9 @@ function codeBody() {
     else if (!sameTimeGrid()) message = "Use the same number of time steps to preview the script.";
     else if (!measureSitesReady()) message = "Pick at least one qubit to preview the script.";
     else if (!shotsReady()) message = "Enter a shot count to preview the script.";
+    else if (!check(checks.backendFieldsReady)) {
+      message = "Enter a max weight and a minimum coefficient to preview the script.";
+    }
     else message = pathMessage(true);
   }
   return el("p", { className: "placeholder" }, message);
@@ -2386,6 +2469,9 @@ function place(laneId, blockId) {
     selection.model = "preexisting";
     if (!preexistingId) preexistingId = modelFactories[0]?.id ?? null;
     preexistingOpen = true;
+  } else if (laneId === "state") {
+    selection.state = blockId;
+    stateOpen = true;
   } else if (laneId === "measure") {
     selection.measure = blockId;
     measureOpen = qubitCount() != null;
@@ -2440,7 +2526,18 @@ function attachBackend(backendId, key) {
   if (backend.shots) {
     if (!positiveIntText(String(target.shots ?? "").trim())) target.shots = DEFAULT_SHOTS;
     target.shotsOpen = true;
-  } else target.shotsOpen = false;
+    target.backendOpen = false;
+  } else if (backend.fields?.length) {
+    target.backendFields = { ...(target.backendFields ?? {}) };
+    for (const field of backend.fields) {
+      if (!String(target.backendFields[field.name] ?? "").trim()) target.backendFields[field.name] = field.default;
+    }
+    target.shotsOpen = false;
+    target.backendOpen = true;
+  } else {
+    target.shotsOpen = false;
+    target.backendOpen = false;
+  }
   dragging = null;
   releaseStatusHold();
   draw(document.querySelector(".board"));
@@ -2452,6 +2549,7 @@ function removeBackend(key) {
   if (!entry) return;
   entry.backend = null;
   entry.shotsOpen = false;
+  entry.backendOpen = false;
   releaseStatusHold();
   draw(document.querySelector(".board"));
 }
@@ -2481,6 +2579,7 @@ function clearLane(laneId) {
   if (running) return;
   if (laneId === "simulator") placedSims.splice(0, placedSims.length);
   if (laneId === "then") placedThens.splice(0, placedThens.length);
+  if (laneId === "state") stateOpen = false;
   if (laneId === "measure") {
     measureOpen = false;
     measureSites = null;

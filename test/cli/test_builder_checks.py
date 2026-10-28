@@ -190,11 +190,18 @@ def test_preview_names_a_backend_for_each_circuit_row() -> None:
             "id": "paulipropagation",
             "phrase": "PauliPropagation",
             "shots": False,
-            "setup": "circuit_backend = PauliPropagationBackend()",
+            "setup": (
+                "circuit_backend = PauliPropagationBackend(max_weight={max_weight}, min_abs_coeff={min_abs_coeff})"
+            ),
+            "fields": [
+                {"name": "max_weight", "label": "Max weight", "default": "inf", "allow_inf": True},
+                {"name": "min_abs_coeff", "label": "Min coefficient", "default": "1e-10", "allow_inf": False},
+            ],
         }
     )
     first = page["placedSims"][0]
     first["backend"] = "paulipropagation"
+    first["backendFields"] = {"max_weight": "inf", "min_abs_coeff": "1e-10"}
     second = {
         "id": "splitjmatrix",
         "params": dict(first["params"]),
@@ -205,12 +212,17 @@ def test_preview_names_a_backend_for_each_circuit_row() -> None:
     text = _call("previewText", page)
     assert isinstance(text, str)
     assert "from shadowsim.backends import PauliPropagationBackend, AerCircuitBackend" in text
-    assert "circuit_backend_1 = PauliPropagationBackend()" in text
+    assert 'circuit_backend_1 = PauliPropagationBackend(max_weight=float("inf"), min_abs_coeff=1e-10)' in text
     assert "circuit_backend_2 = AerCircuitBackend(shots=128)" in text
     assert "circuit_backend=circuit_backend_1" in text
     assert "circuit_backend=circuit_backend_2" in text
     assert _call("entryBody", page, first)["backend"] == "paulipropagation"
+    assert _call("entryBody", page, first)["max_weight"] == "inf"
+    assert _call("entryBody", page, first)["min_abs_coeff"] == "1e-10"
     assert "shots" not in _call("entryBody", page, first)
+    first["backendFields"] = {"max_weight": "", "min_abs_coeff": "1e-10"}
+    assert _call("backendFieldsReady", page) is False
+    assert _call("runAllowed", page) is False
     assert _call("entryBody", page, second) == {
         "simulator": "splitjmatrix",
         "time_steps": "11",

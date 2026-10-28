@@ -590,7 +590,35 @@ def test_pauli_propagation_builds_a_trotter_run() -> None:
         )
     )
     assert simulator.circuit_backend.name == "pauli_propagation"
+    assert simulator.circuit_backend.max_weight == math.inf
+    assert simulator.circuit_backend.min_abs_coeff == 1e-10
     assert not hasattr(simulator.circuit_backend, "shots")
+
+
+@pytest.mark.qiskit
+def test_pauli_propagation_uses_posted_truncation() -> None:
+    pytest.importorskip("qiskit")
+    simulator = build_simulator(
+        _selection(
+            simulator="trotterization",
+            backend="paulipropagation",
+            time_steps=2,
+            num_steps=1,
+            max_weight="4",
+            min_abs_coeff="1e-8",
+        )
+    )
+    assert simulator.circuit_backend.max_weight == 4
+    assert simulator.circuit_backend.min_abs_coeff == 1e-8
+    with pytest.raises(ValueError, match="max weight"):
+        build_simulator(
+            _selection(
+                simulator="trotterization",
+                backend="paulipropagation",
+                time_steps=2,
+                max_weight="-1",
+            )
+        )
 
 
 @pytest.mark.qiskit
@@ -904,6 +932,7 @@ def test_listed_backends_reads_concrete_classes(monkeypatch: pytest.MonkeyPatch)
             "phrase": "Aer",
             "setup": "circuit_backend = AerCircuitBackend()",
             "shots": False,
+            "fields": [],
         },
         {
             "id": "bare",
@@ -912,6 +941,7 @@ def test_listed_backends_reads_concrete_classes(monkeypatch: pytest.MonkeyPatch)
             "phrase": "Bare",
             "setup": "circuit_backend = BareCircuitBackend()",
             "shots": False,
+            "fields": [],
         },
     ]
 
@@ -945,8 +975,14 @@ def test_listed_backends_matches_the_circuit_module() -> None:
     assert listed[0]["setup"] == "circuit_backend = AerCircuitBackend(shots={shots})"
     assert listed[0]["shots"] is True
     assert "Aer" in listed[0]["detail"]
-    assert listed[1]["setup"] == "circuit_backend = PauliPropagationBackend()"
+    assert listed[1]["setup"] == (
+        "circuit_backend = PauliPropagationBackend(max_weight={max_weight}, min_abs_coeff={min_abs_coeff})"
+    )
     assert listed[1]["shots"] is False
+    assert listed[1]["fields"] == [
+        {"name": "max_weight", "label": "Max weight", "default": "inf", "allow_inf": True},
+        {"name": "min_abs_coeff", "label": "Min coefficient", "default": "1e-10", "allow_inf": False},
+    ]
     assert "Pauli" in listed[1]["detail"]
 
 

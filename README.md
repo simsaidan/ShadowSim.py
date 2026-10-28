@@ -98,7 +98,7 @@ jl.seval("using Pkg")
 jl.seval('Pkg.add(url="https://github.com/SparqleSim/PauliPropagation.jl", rev="6e8c1ae")')
 ```
 
-`readqasm` on that revision accepts OpenQASM 2 / `qelib1` gates, skips `barrier` and `id`, and rejects `measure`, `reset`, and unknown gates. Qubit indexes are 0-based, and each method returns one float per index in that order. `shots` and `seed` are accepted and ignored. `max_weight` truncates Pauli weight when set, and `min_abs_coeff` defaults to `1e-10`.
+`readqasm` on that revision accepts OpenQASM 2 / `qelib1` gates, skips `barrier` and `id`, and rejects `measure`, `reset`, and unknown gates. Qubit indexes are 0-based, and each method returns one float per index in that order. `shots` and `seed` are accepted and ignored. `max_weight` defaults to `inf`, so every Pauli weight is kept, and `min_abs_coeff` defaults to `1e-10`. The builder card edits both before a run.
 
 ```python
 from qiskit import QuantumCircuit

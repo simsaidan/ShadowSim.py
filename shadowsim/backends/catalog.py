@@ -1,11 +1,26 @@
 """List the concrete circuit backends for the builder page."""
 
 import inspect
+import math
 from types import ModuleType
 from typing import TypedDict
 
 from shadowsim._optional import import_optional
 from shadowsim.backends import _EXPORTS
+
+_FIELD_LABELS = {
+    "max_weight": "Max weight",
+    "min_abs_coeff": "Min coefficient",
+}
+
+
+class ListedField(TypedDict):
+    """One constructor setting the builder page can edit."""
+
+    name: str
+    label: str
+    default: str
+    allow_inf: bool
 
 
 class ListedBackend(TypedDict):
@@ -17,6 +32,7 @@ class ListedBackend(TypedDict):
     phrase: str
     setup: str
     shots: bool
+    fields: list[ListedField]
 
 
 def listed_backends() -> list[ListedBackend]:
@@ -26,7 +42,8 @@ def listed_backends() -> list[ListedBackend]:
     that module. ``CircuitBackend`` is a protocol, so it is omitted. Each
     record uses the class name and the first line of its docstring. Required
     constructor arguments appear in ``setup``. A ``shots`` parameter is written
-    as ``{shots}`` so the page can fill the shot budget.
+    as ``{shots}`` so the page can fill the shot budget. Any other parameter
+    with a default is a field the page can edit, written as ``{name}``.
 
     Returns:
         Backends the builder page can offer.
@@ -68,11 +85,7 @@ def _describe_backends(module: ModuleType) -> list[ListedBackend]:
         document = inspect.getdoc(value)
         detail = title if document is None else document.split("\n", 1)[0].replace("``", "")
         parameters = list(inspect.signature(value).parameters.values())
-        arguments = [
-            "shots={shots}" if parameter.name == "shots" else parameter.name
-            for parameter in parameters
-            if parameter.name == "shots" or parameter.default is inspect.Parameter.empty
-        ]
+        arguments, fields = _backend_arguments(parameters)
         listed.append(
             {
                 "id": title.lower(),
@@ -81,6 +94,31 @@ def _describe_backends(module: ModuleType) -> list[ListedBackend]:
                 "phrase": title,
                 "setup": f"circuit_backend = {value.__name__}({', '.join(arguments)})",
                 "shots": any(parameter.name == "shots" for parameter in parameters),
+                "fields": fields,
             }
         )
     return listed
+
+
+def _backend_arguments(parameters: list[inspect.Parameter]) -> tuple[list[str], list[ListedField]]:
+    """Return setup arguments and the editable fields among ``parameters``."""
+    arguments: list[str] = []
+    fields: list[ListedField] = []
+    for parameter in parameters:
+        if parameter.name == "shots":
+            arguments.append("shots={shots}")
+            continue
+        if parameter.default is inspect.Parameter.empty:
+            arguments.append(parameter.name)
+            continue
+        arguments.append(f"{parameter.name}={{{parameter.name}}}")
+        default = parameter.default
+        fields.append(
+            {
+                "name": parameter.name,
+                "label": _FIELD_LABELS.get(parameter.name, parameter.name),
+                "default": "inf" if isinstance(default, float) and math.isinf(default) else format(default, ".12g"),
+                "allow_inf": isinstance(default, float) and math.isinf(default),
+            }
+        )
+    return arguments, fields

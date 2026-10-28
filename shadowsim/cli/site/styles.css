@@ -273,6 +273,23 @@ body {
   font-size: 12.5px;
 }
 
+.backend-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--line);
+}
+
+.backend-fields label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  color: var(--muted);
+  font-size: 12.5px;
+}
+
 .sim-fields {
   display: flex;
   flex-direction: column;
@@ -314,6 +331,7 @@ body {
 .save-field input,
 .export-field input,
 .backend-field input,
+.backend-fields input,
 .sim-fields input,
 .sim-fields select {
   width: 100%;
