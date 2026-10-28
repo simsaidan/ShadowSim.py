@@ -20,7 +20,6 @@ _LANES = [
     {"id": "state"},
     {"id": "model"},
     {"id": "simulator"},
-    {"id": "backend"},
     {"id": "measure"},
     {"id": "then"},
 ]
@@ -105,7 +104,6 @@ def _circuit_page() -> dict[str, Any]:
     page = _qutip_page()
     page["blocks"]["simulator"] = [{"id": "trotterization", "title": "Trotterization", "observables": False}]
     page["selection"]["simulator"] = "trotterization"
-    page["selection"]["backend"] = "aer"
     page["placedSims"] = [
         {
             "id": "trotterization",
@@ -116,6 +114,8 @@ def _circuit_page() -> dict[str, Any]:
                 "seed": "0",
                 "order": "1",
             },
+            "backend": "aer",
+            "shots": "256",
         }
     ]
     return page
@@ -145,8 +145,96 @@ def test_qutip_without_a_backend_is_ready() -> None:
 def test_circuit_simulator_without_a_backend_is_not_ready() -> None:
     page = _circuit_page()
     assert _call("runAllowed", page) is True
-    page["selection"]["backend"] = None
+    page["placedSims"][0]["backend"] = None
     assert _call("runAllowed", page) is False
+    assert _call("socketStatus", page, False) == "Snap a backend onto each simulator."
+
+
+def test_circuit_row_without_shots_is_not_ready() -> None:
+    page = _circuit_page()
+    page["placedSims"][0]["shots"] = ""
+    assert _call("shotsReady", page) is False
+    assert _call("runAllowed", page) is False
+
+
+def test_split_j_rejects_a_backend_without_shots() -> None:
+    page = _circuit_page()
+    page["blocks"]["simulator"] = [
+        {"id": "splitjmatrix", "title": "SplitJMatrix", "observables": False, "samples": True},
+        {"id": "trotterization", "title": "Trotterization", "observables": False, "samples": False},
+    ]
+    page["blocks"]["backend"].append(
+        {
+            "id": "paulipropagation",
+            "phrase": "PauliPropagation",
+            "shots": False,
+            "setup": "circuit_backend = PauliPropagationBackend()",
+        }
+    )
+    split_j = {"id": "splitjmatrix"}
+    trotter = {"id": "trotterization"}
+    assert _call("backendFits", page, split_j, "paulipropagation") is False
+    assert _call("backendFits", page, split_j, "aer") is True
+    assert _call("backendFits", page, trotter, "paulipropagation") is True
+    assert _call("backendFits", page, {"id": "qutip"}, "aer") is False
+
+
+def test_preview_names_a_backend_for_each_circuit_row() -> None:
+    page = _circuit_page()
+    page["blocks"]["simulator"] = [
+        {"id": "trotterization", "title": "Trotterization", "observables": False, "samples": False},
+        {"id": "splitjmatrix", "title": "SplitJMatrix", "observables": False, "samples": True},
+    ]
+    page["blocks"]["backend"].append(
+        {
+            "id": "paulipropagation",
+            "phrase": "PauliPropagation",
+            "shots": False,
+            "setup": "circuit_backend = PauliPropagationBackend()",
+        }
+    )
+    first = page["placedSims"][0]
+    first["backend"] = "paulipropagation"
+    second = {
+        "id": "splitjmatrix",
+        "params": dict(first["params"]),
+        "backend": "aer",
+        "shots": "128",
+    }
+    page["placedSims"] = [first, second]
+    text = _call("previewText", page)
+    assert isinstance(text, str)
+    assert "from shadowsim.backends import PauliPropagationBackend, AerCircuitBackend" in text
+    assert "circuit_backend_1 = PauliPropagationBackend()" in text
+    assert "circuit_backend_2 = AerCircuitBackend(shots=128)" in text
+    assert "circuit_backend=circuit_backend_1" in text
+    assert "circuit_backend=circuit_backend_2" in text
+    assert _call("entryBody", page, first)["backend"] == "paulipropagation"
+    assert "shots" not in _call("entryBody", page, first)
+    assert _call("entryBody", page, second) == {
+        "simulator": "splitjmatrix",
+        "time_steps": "11",
+        "num_steps": "4",
+        "trotter_depth": "1",
+        "seed": "0",
+        "order": "1",
+        "backend": "aer",
+        "shots": "128",
+    }
+
+
+def test_preview_numbers_a_backend_with_its_row() -> None:
+    page = _circuit_page()
+    page["blocks"]["simulator"].insert(0, {"id": "qutip", "title": "QuTiP", "observables": True})
+    page["placedSims"].insert(0, {"id": "qutip", "params": {"timeSteps": "11"}})
+    page["selection"]["simulator"] = "qutip"
+    text = _call("previewText", page)
+    assert isinstance(text, str)
+    assert "circuit_backend_1" not in text
+    assert "circuit_backend_2 = AerCircuitBackend(shots=256)" in text
+    assert "circuit_backend=circuit_backend_2" in text
+    qutip = _call("entryBody", page, page["placedSims"][0])
+    assert qutip == {"simulator": "qutip", "time_steps": "11"}
 
 
 def test_single_export_includes_the_metrics_call() -> None:

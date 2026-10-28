@@ -91,7 +91,6 @@ function resetPage() {
 function fillIsing(qubits, total) {
   resetPage();
   BLOCKS.simulator = [{ id: "qutip", observables: true }];
-  BLOCKS.backend = [{ id: "statevector", setup: "" }];
   modelFactories = [{
     id: "ising",
     title: "Ising",
@@ -102,7 +101,6 @@ function fillIsing(qubits, total) {
   selection.state = "basis";
   selection.model = "preexisting";
   selection.simulator = "qutip";
-  selection.backend = "statevector";
   selection.measure = "z";
   selection.then = "plot";
   basisBits = "00";
