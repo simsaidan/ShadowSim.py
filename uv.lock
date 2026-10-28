@@ -545,14 +545,14 @@ wheels = [
 
 [[package]]
 name = "juliacall"
-version = "0.9.36"
+version = "0.9.37"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "juliapkg" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/a8/99/90195276278570b6cbcddc073c23e74dece3f532197b5d76e9707661070e/juliacall-0.9.36.tar.gz", hash = "sha256:75abfe60fffc48161f5b4b3619ee0e2299df75c738aa88da4302ec718c6c9c7d", size = 499998, upload-time = "2026-09-18T22:00:56.065Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/e4/8e/bf4fdb7bcb077747ba0031bea51023e559476c0ab7fc8ba8ea0d59a608eb/juliacall-0.9.37.tar.gz", hash = "sha256:246db2ec648cd50dcd446d02323e0b187949a2ab50e06e32fe6db1a4323eba75", size = 502805, upload-time = "2026-10-19T19:03:30.597Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/34/f4/a3b1e086a91ecfe6ac8d5617963d594714e9a5cfa824128f238eb4110f3d/juliacall-0.9.36-py3-none-any.whl", hash = "sha256:9dc27dbe9da5a78e8d402ffebe0470708ebca4b5fcf7890017819e7dc1a2b85b", size = 12751, upload-time = "2026-09-18T22:00:54.01Z" },
+    { url = "https://files.pythonhosted.org/packages/d2/fc/97ba79312c411bb25e31ea460b7080b2da932c884086967e5d06ddf80107/juliacall-0.9.37-py3-none-any.whl", hash = "sha256:e8413f2081e77c04a4ba379bdb93620c0753bd7bc335127773c318ce3526b1b9", size = 12774, upload-time = "2026-10-19T19:03:29.144Z" },
 ]
 
 [[package]]
@@ -1856,7 +1856,7 @@ types = [
 
 [package.metadata]
 requires-dist = [
-    { name = "juliacall", marker = "extra == 'pauli-propagation'", specifier = "==0.9.36" },
+    { name = "juliacall", marker = "extra == 'pauli-propagation'", specifier = "==0.9.37" },
     { name = "matplotlib", marker = "extra == 'viz'" },
     { name = "numpy", specifier = ">=2.0" },
     { name = "qiskit", marker = "extra == 'qiskit'" },
