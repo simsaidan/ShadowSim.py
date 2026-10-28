@@ -274,6 +274,28 @@ def test_benchmark_export_includes_save_error_metrics() -> None:
     assert 'benchmark.save_error_metrics(path="results/metrics.json")' in text
 
 
+def test_preview_imports_are_explicit() -> None:
+    qutip = _call("previewText", _qutip_page())
+    assert isinstance(qutip, str)
+    assert "from shadowsim.encoding import ComputationalBasisEncoding" in qutip
+    assert "from shadowsim.simulators import QutipSimulator\n" in qutip
+    assert "expectation_z" not in qutip
+    assert "import *" not in qutip
+
+    circuit = _call("previewText", _circuit_page())
+    assert isinstance(circuit, str)
+    assert "from shadowsim.simulators import TrotterizationSimulator, expectation_z" in circuit
+    assert "import *" not in circuit
+
+    measured = _circuit_page()
+    measured["selection"]["measure"] = "x"
+    measured["blocks"]["measure"].append({"id": "x", "title": "X expectation", "phrase": "X expectation on each qubit"})
+    text = _call("previewText", measured)
+    assert isinstance(text, str)
+    assert "from shadowsim.simulators import TrotterizationSimulator, expectation_x" in text
+    assert "expectation_z" not in text
+
+
 def test_hamiltonian_problems_use_different_messages() -> None:
     page = _qutip_page()
     page["settings"]["qubits"] = "1"

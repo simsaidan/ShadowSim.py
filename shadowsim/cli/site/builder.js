@@ -111,6 +111,11 @@ const DEFAULT_SHOTS = "256";
 
 let dragging = null;
 let running = false;
+const BOARD_KEY = "shadowsim.builder.board";
+const BOARD_VERSION = 1;
+let boardReady = false;
+let serverSession = null;
+let copyTimer = 0;
 let statusHold = null;
 let runStartedAt = 0;
 let runTimer = null;
@@ -1559,12 +1564,22 @@ function settingsComponent() {
       field("qubits", "Qubits", "numeric"),
       field("total", "Total time", "decimal"),
     ),
-    el("button", {
-      className: "run",
-      type: "button",
-      disabled: !running && !runAllowed(),
-      onclick: () => void (running ? cancelRun() : startRun()),
-    }, running ? "Cancel" : "Run simulation"),
+    el(
+      "div",
+      { className: "settings-actions" },
+      el("button", {
+        className: "clear",
+        type: "button",
+        disabled: running,
+        onclick: () => emptyBoard(),
+      }, "Clear"),
+      el("button", {
+        className: "run",
+        type: "button",
+        disabled: !running && !runAllowed(),
+        onclick: () => void (running ? cancelRun() : startRun()),
+      }, running ? "Cancel" : "Run simulation"),
+    ),
   );
 }
 
@@ -1583,7 +1598,9 @@ function refreshSummaryAndPreview() {
   const panel = document.querySelector('.panel[aria-label="Code preview"]');
   const body = panel?.querySelector("pre, .placeholder");
   if (body) body.replaceWith(codeBody());
+  syncCopyButton();
   syncRunButton();
+  rememberBoard();
 }
 
 function statusMessage() {
@@ -1612,6 +1629,53 @@ function statusComponent() {
     "p",
     { className: ready ? "status ready" : "status", role: "status" },
     statusMessage(),
+  );
+}
+
+function syncCopyButton() {
+  const copy = document.querySelector('.panel[aria-label="Code preview"] .copy');
+  if (!copy) return;
+  const enabled = Boolean(previewText());
+  copy.disabled = !enabled;
+  if (enabled) {
+    if (typeof copy.removeAttribute === "function") copy.removeAttribute("disabled");
+    return;
+  }
+  copy.setAttribute("disabled", "");
+  copy.textContent = "Copy";
+}
+
+function showCopied(button) {
+  button.textContent = "Copied";
+  if (copyTimer) clearTimeout(copyTimer);
+  copyTimer = setTimeout(() => {
+    copyTimer = 0;
+    if (button.isConnected === false) return;
+    button.textContent = "Copy";
+  }, 1500);
+}
+
+function copyPreview(event) {
+  const code = previewText();
+  if (!code) return;
+  const pending = navigator.clipboard?.writeText?.(code);
+  if (!pending || typeof pending.then !== "function") return;
+  const button = event?.currentTarget;
+  pending.then(() => {
+    if (button) showCopied(button);
+  }, () => {});
+}
+
+function copyButton() {
+  return el(
+    "button",
+    {
+      className: "copy",
+      type: "button",
+      disabled: !previewText(),
+      onclick: (event) => copyPreview(event),
+    },
+    "Copy",
   );
 }
 
@@ -2139,6 +2203,8 @@ function setRunButton(label) {
   if (!button) return;
   button.textContent = label;
   button.disabled = label !== "Cancel" && !runAllowed();
+  const clear = document.querySelector(".clear");
+  if (clear) clear.disabled = label === "Cancel";
 }
 
 async function cancelRun() {
@@ -2217,7 +2283,7 @@ function panelsComponent() {
     el(
       "section",
       { className: "panel", "aria-label": "Code preview" },
-      el("h2", {}, "Code preview"),
+      el("div", { className: "panel-head" }, el("h2", {}, "Code preview"), copyButton()),
       codeBody(),
     ),
     el(
@@ -2257,6 +2323,7 @@ function draw(board) {
     statusComponent(),
     panelsComponent(),
   );
+  rememberBoard();
 }
 
 function termSummary() {
@@ -2598,6 +2665,248 @@ function clearLane(laneId) {
   draw(document.querySelector(".board"));
 }
 
+function copyStrings(value) {
+  const copy = {};
+  if (!value || typeof value !== "object") return copy;
+  for (const [key, item] of Object.entries(value)) {
+    if (typeof item === "string") copy[key] = item;
+  }
+  return copy;
+}
+
+function storedText(value, fallback) {
+  return typeof value === "string" ? value : fallback;
+}
+
+function storedSites(value) {
+  if (!Array.isArray(value)) return null;
+  return value.filter((site) => Number.isInteger(site));
+}
+
+function knownBlock(laneId, blockId) {
+  return typeof blockId === "string" && Boolean(blockById(laneId, blockId));
+}
+
+function boardSnapshot() {
+  return {
+    version: BOARD_VERSION,
+    server: serverSession,
+    selection: {
+      state: selection.state,
+      model: selection.model,
+      simulator: selection.simulator,
+      backend: selection.backend,
+      measure: selection.measure,
+      then: selection.then,
+    },
+    settings: { qubits: settings.qubits, total: settings.total },
+    basisBits,
+    grayBits,
+    angleText,
+    amplitudeText,
+    qubitsSource,
+    preexistingId,
+    emitterText,
+    modelTerms: modelTerms.map((term) => ({
+      id: term.id,
+      matrix: typeof term.matrix === "string" ? term.matrix : "",
+      sites: Array.isArray(term.sites) ? term.sites.filter((site) => Number.isInteger(site)) : [],
+    })),
+    placedSims: placedSims.map((entry) => ({
+      id: entry.id,
+      params: copyStrings(entry.params),
+      backend: entry.backend ?? null,
+      shots: typeof entry.shots === "string" ? entry.shots : DEFAULT_SHOTS,
+      backendFields: entry.backendFields ? copyStrings(entry.backendFields) : null,
+    })),
+    placedThens: [...placedThens],
+    savePath,
+    exportPath,
+    measureSites: Array.isArray(measureSites) ? [...measureSites] : null,
+  };
+}
+
+function applyBoard(snapshot) {
+  if (!snapshot || typeof snapshot !== "object" || snapshot.version !== BOARD_VERSION) return false;
+  if (!snapshot.selection || typeof snapshot.selection !== "object") return false;
+  if (!snapshot.settings || typeof snapshot.settings !== "object") return false;
+
+  let nextPreexisting = typeof snapshot.preexistingId === "string" ? snapshot.preexistingId : null;
+  if (nextPreexisting && !modelFactories.some((item) => item.id === nextPreexisting)) nextPreexisting = null;
+  let nextModel = null;
+  if (snapshot.selection.model === "preexisting") nextModel = nextPreexisting ? "preexisting" : null;
+  else if (typeof snapshot.selection.model === "string" && snapshot.selection.model) nextModel = snapshot.selection.model;
+
+  const nextTerms = [];
+  if (nextModel !== "preexisting" && Array.isArray(snapshot.modelTerms)) {
+    for (const term of snapshot.modelTerms) {
+      if (!term || !knownBlock("model", term.id) || !blockById("model", term.id)?.adds) continue;
+      nextTerms.push({
+        id: term.id,
+        matrix: typeof term.matrix === "string" ? term.matrix : "",
+        sites: storedSites(term.sites) ?? [],
+      });
+    }
+  }
+
+  const nextSims = [];
+  if (Array.isArray(snapshot.placedSims)) {
+    for (const entry of snapshot.placedSims) {
+      if (!entry || !knownBlock("simulator", entry.id)) continue;
+      const params = copyStrings(entry.params);
+      const row = {
+        id: entry.id,
+        params: Object.keys(params).length ? params : freshParams(entry.id),
+        open: false,
+        backend: null,
+        shots: storedText(entry.shots, DEFAULT_SHOTS),
+        shotsOpen: false,
+        backendOpen: false,
+      };
+      if (typeof entry.backend === "string" && backendFits(row, entry.backend)) {
+        row.backend = entry.backend;
+        if (entry.backendFields && typeof entry.backendFields === "object" && !Array.isArray(entry.backendFields)) {
+          row.backendFields = copyStrings(entry.backendFields);
+        }
+      }
+      nextSims.push(row);
+    }
+  }
+
+  const nextThens = [];
+  if (Array.isArray(snapshot.placedThens)) {
+    for (const id of snapshot.placedThens) {
+      if (knownBlock("then", id) && !nextThens.includes(id)) nextThens.push(id);
+    }
+  }
+
+  const sources = ["user", "state", "hamiltonian", "model"];
+  selection.state = knownBlock("state", snapshot.selection.state) ? snapshot.selection.state : null;
+  selection.model = nextModel;
+  selection.simulator = nextSims[0]?.id ?? null;
+  selection.backend = null;
+  selection.measure = knownBlock("measure", snapshot.selection.measure) ? snapshot.selection.measure : null;
+  selection.then = nextThens[0] ?? null;
+  settings.qubits = storedText(snapshot.settings.qubits, "");
+  settings.total = storedText(snapshot.settings.total, "");
+  basisBits = storedText(snapshot.basisBits, "");
+  grayBits = storedText(snapshot.grayBits, "");
+  angleText = storedText(snapshot.angleText, "");
+  amplitudeText = storedText(snapshot.amplitudeText, "");
+  qubitsSource = sources.includes(snapshot.qubitsSource) ? snapshot.qubitsSource : null;
+  preexistingId = nextPreexisting;
+  emitterText = storedText(snapshot.emitterText, "1");
+  modelTerms.splice(
+    0,
+    modelTerms.length,
+    ...nextTerms.map((term) => ({ ...term, key: ++modelTermKey })),
+  );
+  placedSims.splice(
+    0,
+    placedSims.length,
+    ...nextSims.map((entry) => ({ ...entry, key: ++simKey })),
+  );
+  placedThens.splice(0, placedThens.length, ...nextThens);
+  savePath = storedText(snapshot.savePath, DEFAULT_SAVE_PATH);
+  exportPath = storedText(snapshot.exportPath, DEFAULT_EXPORT_PATH);
+  measureSites = storedSites(snapshot.measureSites);
+  stateOpen = false;
+  measureOpen = false;
+  saveOpen = false;
+  exportOpen = false;
+  preexistingOpen = false;
+  return true;
+}
+
+function forgetBoard() {
+  try {
+    localStorage.removeItem(BOARD_KEY);
+  } catch {
+    // Storage can be unavailable.
+  }
+}
+
+function restoreBoard() {
+  let raw = null;
+  try {
+    raw = localStorage.getItem(BOARD_KEY);
+  } catch {
+    return;
+  }
+  if (!raw || !serverSession) {
+    if (raw) forgetBoard();
+    return;
+  }
+  try {
+    const snapshot = JSON.parse(raw);
+    if (!snapshot || snapshot.server !== serverSession) {
+      forgetBoard();
+      return;
+    }
+    applyBoard(snapshot);
+  } catch {
+    forgetBoard();
+  }
+}
+
+function rememberBoard() {
+  if (!boardReady || !serverSession) return;
+  try {
+    localStorage.setItem(BOARD_KEY, JSON.stringify(boardSnapshot()));
+  } catch {
+    // Storage can be unavailable. The page still runs.
+  }
+}
+
+function emptyBoard() {
+  if (running) return;
+  selection.state = null;
+  selection.model = null;
+  selection.simulator = null;
+  selection.backend = null;
+  selection.measure = null;
+  selection.then = null;
+  settings.qubits = "";
+  settings.total = "";
+  basisBits = "";
+  grayBits = "";
+  angleText = "";
+  amplitudeText = "";
+  qubitsSource = null;
+  preexistingId = null;
+  emitterText = "1";
+  modelTerms.splice(0, modelTerms.length);
+  placedSims.splice(0, placedSims.length);
+  placedThens.splice(0, placedThens.length);
+  savePath = DEFAULT_SAVE_PATH;
+  exportPath = DEFAULT_EXPORT_PATH;
+  measureSites = null;
+  stateOpen = false;
+  measureOpen = false;
+  saveOpen = false;
+  exportOpen = false;
+  preexistingOpen = false;
+  releaseStatusHold();
+  const board = document.querySelector(".board");
+  if (board) draw(board);
+}
+
+async function loadSession() {
+  try {
+    const response = await fetch("/session");
+    let payload = {};
+    try {
+      payload = await response.json();
+    } catch {
+      payload = {};
+    }
+    if (!response.ok || typeof payload.id !== "string" || !payload.id) return null;
+    return payload.id;
+  } catch {
+    return null;
+  }
+}
+
 function mount(root) {
   const board = el("section", { className: "board" });
   root.append(board);
@@ -2648,5 +2957,11 @@ if (builder) {
     loadLane("/models", "model", "models"),
     loadLane("/simulators", "simulator", "simulators"),
     loadLane("/backends", "backend", "backends"),
-  ]).then(() => mount(builder));
+    loadSession(),
+  ]).then((results) => {
+    serverSession = results[3];
+    restoreBoard();
+    boardReady = true;
+    mount(builder);
+  });
 }

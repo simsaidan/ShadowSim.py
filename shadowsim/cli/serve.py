@@ -69,11 +69,26 @@ _slot = _Slot()
 
 
 class HTTPServer(ThreadingMixIn, _HTTPServer):
-    """Serve each request on a daemon thread so one run does not block the page."""
+    """Serve each request on a daemon thread so one run does not block the page.
+
+    ``session`` is a new id for this process. The builder keeps a saved board only
+    while that id still matches, so launching the server again starts empty.
+    """
 
     daemon_threads = True
     token: str | None = None
     output_root: Path | None = None
+    session: str
+
+    def __init__(
+        self,
+        server_address: tuple[str, int],
+        request_handler_class: type[BaseHTTPRequestHandler],
+        bind_and_activate: bool = True,
+    ) -> None:
+        """Bind the server and assign this process its board id."""
+        super().__init__(server_address, request_handler_class, bind_and_activate)
+        self.session = secrets.token_urlsafe(16)
 
 
 def _site_asset(url_path: str) -> tuple[Path, str] | None:
@@ -99,14 +114,22 @@ class _Handler(BaseHTTPRequestHandler):
     """Serve the builder page, list package choices, and run a posted selection."""
 
     def do_GET(self) -> None:
-        """Return a site asset or a package catalog, or 404 for every other path.
+        """Return a site asset, a package catalog, or this process id.
 
         ``GET /`` is the one route that honors ``?token=``. A matching token is
         exchanged for a cookie and the browser is sent to ``/``. When the server
-        has a token, any other ``GET /`` needs that cookie.
+        has a token, any other ``GET /`` needs that cookie. ``GET /session``
+        returns the id created when this process started.
         """
         path = urlsplit(self.path).path
         if path == "/" and not _authorize_page(self):
+            return
+        if path == "/session":
+            session = getattr(self.server, "session", None)
+            if not isinstance(session, str) or not session:
+                self.send_error(404)
+                return
+            _send_json(self, 200, {"id": session})
             return
         key = _CATALOGS.get(path)
         if key is not None:
