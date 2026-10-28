@@ -80,7 +80,9 @@ def build_simulator(selection: Mapping[str, object], *, time_steps: int = 101) -
             Shot-based simulators also read ``num_steps``, ``trotter_depth``,
             ``order`` (1 or 2), ``shots``, and ``seed``. ``shots`` is the Aer
             backend's shot budget; the page collects it on that backend.
-            PauliPropagation ignores ``shots`` and runs a closed Trotter circuit.
+            PauliPropagation ignores ``shots``. It reads ``max_weight`` (default
+            ``inf``) and ``min_abs_coeff`` (default ``1e-10``) and runs a closed
+            Trotter circuit.
             Missing shot-based values use the page budget.
         time_steps: Points on the QuTiP solver grid when ``selection`` omits
             ``time_steps``. Defaults to the page preview.
@@ -394,7 +396,10 @@ def _circuit_simulator(
     groups, reducers = _pauli_expectation_groups(simulator_id, sites, measure_id)
     if backend == "paulipropagation":
         pauli = import_optional("shadowsim.backends.pauli_propagation", extra="pauli_propagation")
-        circuit_backend = pauli.PauliPropagationBackend()
+        circuit_backend = pauli.PauliPropagationBackend(
+            max_weight=_selection_nonnegative(selection, "max_weight", math.inf, "max weight", allow_inf=True),
+            min_abs_coeff=_selection_nonnegative(selection, "min_abs_coeff", 1e-10, "min coefficient", allow_inf=False),
+        )
     else:
         shots = _selection_positive_int(selection, "shots", _CIRCUIT_SHOTS, "shots")
         aer = import_optional("shadowsim.backends.aer", extra="qiskit")
@@ -426,6 +431,36 @@ def _circuit_simulator(
         circuit_backend=circuit_backend,
         **({"x_qubits": sites} if measure_id == "x" else {}),
     )
+
+
+def _selection_nonnegative(
+    selection: Mapping[str, object],
+    key: str,
+    default: float,
+    name: str,
+    *,
+    allow_inf: bool,
+) -> float:
+    """Return a non-negative number from ``selection``, or ``default`` when the key is absent."""
+    if key not in selection:
+        return default
+    value = selection[key]
+    if isinstance(value, str):
+        text = value.strip().lower()
+        if text == "":
+            raise ValueError(f"{name} must be a non-negative number")
+        if allow_inf and text in {"inf", "infinity"}:
+            return math.inf
+        try:
+            value = float(text)
+        except ValueError as exc:
+            raise ValueError(f"{name} must be a non-negative number") from exc
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise TypeError(f"{name} must be a non-negative number")
+    number = float(value)
+    if math.isnan(number) or number < 0 or (math.isinf(number) and not allow_inf):
+        raise ValueError(f"{name} must be a non-negative number")
+    return number
 
 
 def _selection_positive_int(selection: Mapping[str, object], key: str, default: int, name: str) -> int:

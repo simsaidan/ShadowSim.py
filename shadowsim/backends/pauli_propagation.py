@@ -1,5 +1,6 @@
 """Estimate single-qubit Pauli expectations with PauliPropagation.jl."""
 
+import math
 import tempfile
 from collections.abc import Sequence
 from pathlib import Path
@@ -13,6 +14,9 @@ from shadowsim._optional import import_optional
 
 # OpenQASMInterface exists on this revision, not on the package's current main branch.
 _QASM_REVISION = 'Pkg.add(url="https://github.com/SparqleSim/PauliPropagation.jl", rev="6e8c1ae")'
+# Same defaults as ``PauliPropagation.propagate``: keep every weight, drop tiny coefficients.
+_MAX_WEIGHT = math.inf
+_MIN_ABS_COEFF = 1e-10
 _julia_modules: list[Any] = []
 # Gates ``OpenQASMInterface.readqasm`` translates. ``u`` covers one qubit, and
 # ``cx`` / ``rxx`` / ``rzz`` cover a general two-qubit unitary after transpilation.
@@ -53,11 +57,24 @@ class PauliPropagationBackend:
 
     Attributes:
         name: ``"pauli_propagation"``. Stored on simulation result metadata.
+        max_weight: Largest Pauli weight kept during propagation. ``inf`` keeps every weight.
+        min_abs_coeff: Smallest coefficient magnitude kept during propagation.
     """
 
-    def __init__(self) -> None:
-        """Record the PauliPropagation backend name."""
+    def __init__(self, *, max_weight: float = _MAX_WEIGHT, min_abs_coeff: float = _MIN_ABS_COEFF) -> None:
+        """Record the PauliPropagation backend name and truncation settings.
+
+        Args:
+            max_weight: Largest Pauli weight kept during propagation. ``inf`` keeps every weight.
+            min_abs_coeff: Smallest coefficient magnitude kept during propagation.
+
+        Raises:
+            TypeError: A setting is not a real number.
+            ValueError: A setting is negative, or ``min_abs_coeff`` is not finite.
+        """
         self.name = "pauli_propagation"
+        self.max_weight = _nonnegative_real(max_weight, "max_weight", allow_inf=True)
+        self.min_abs_coeff = _nonnegative_real(min_abs_coeff, "min_abs_coeff", allow_inf=False)
 
     def run_counts(self, circuit: QuantumCircuit, *, shots: int, seed: int | None) -> dict[str, int]:
         """Reject a request for shot counts.
@@ -80,18 +97,16 @@ class PauliPropagationBackend:
         *,
         shots: int,
         seed: int | None,
-        max_weight: float | None = None,
-        min_abs_coeff: float = 1e-10,
     ) -> list[float]:
         """Return ``⟨Z⟩`` for each qubit in ``qubits``.
+
+        Truncation uses ``max_weight`` and ``min_abs_coeff`` stored on this backend.
 
         Args:
             circuit: Circuit to propagate, without measurements or resets.
             qubits: 0-based indexes in ``circuit.qubits``. The result follows this order.
             shots: Unused. The value is not estimated from shots.
             seed: Unused.
-            max_weight: Largest Pauli weight kept during propagation. Omit it to keep every weight.
-            min_abs_coeff: Smallest coefficient magnitude kept during propagation.
 
         Returns:
             One expectation per entry of ``qubits``.
@@ -102,7 +117,7 @@ class PauliPropagationBackend:
             ImportError: The ``pauli_propagation`` extra is not installed.
         """
         del shots, seed
-        return _expectations(circuit, qubits, "Z", max_weight=max_weight, min_abs_coeff=min_abs_coeff)
+        return _expectations(self, circuit, qubits, "Z")
 
     def x_expectations(
         self,
@@ -111,18 +126,16 @@ class PauliPropagationBackend:
         *,
         shots: int,
         seed: int | None,
-        max_weight: float | None = None,
-        min_abs_coeff: float = 1e-10,
     ) -> list[float]:
         """Return ``⟨X⟩`` for each qubit in ``qubits``.
+
+        Truncation uses ``max_weight`` and ``min_abs_coeff`` stored on this backend.
 
         Args:
             circuit: Circuit to propagate, without measurements or resets.
             qubits: 0-based indexes in ``circuit.qubits``. The result follows this order.
             shots: Unused. The value is not estimated from shots.
             seed: Unused.
-            max_weight: Largest Pauli weight kept during propagation. Omit it to keep every weight.
-            min_abs_coeff: Smallest coefficient magnitude kept during propagation.
 
         Returns:
             One expectation per entry of ``qubits``.
@@ -133,16 +146,14 @@ class PauliPropagationBackend:
             ImportError: The ``pauli_propagation`` extra is not installed.
         """
         del shots, seed
-        return _expectations(circuit, qubits, "X", max_weight=max_weight, min_abs_coeff=min_abs_coeff)
+        return _expectations(self, circuit, qubits, "X")
 
 
 def _expectations(
+    backend: PauliPropagationBackend,
     circuit: QuantumCircuit,
     qubits: Sequence[int],
     pauli: Literal["Z", "X"],
-    *,
-    max_weight: float | None,
-    min_abs_coeff: float,
 ) -> list[float]:
     """Return one propagated expectation for each index in ``qubits``."""
     indexes = _qubit_indexes(circuit, qubits)
@@ -159,11 +170,21 @@ def _expectations(
             thetas,
             pauli,
             index + 1,
-            max_weight=max_weight,
-            min_abs_coeff=min_abs_coeff,
+            max_weight=backend.max_weight,
+            min_abs_coeff=backend.min_abs_coeff,
         )
         for index in indexes
     ]
+
+
+def _nonnegative_real(value: object, name: str, *, allow_inf: bool) -> float:
+    """Return ``value`` as a non-negative float, allowing ``inf`` only when requested."""
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise TypeError(f"{name} must be a non-negative number")
+    number = float(value)
+    if math.isnan(number) or number < 0 or (math.isinf(number) and not allow_inf):
+        raise ValueError(f"{name} must be a non-negative number")
+    return number
 
 
 def _qubit_indexes(circuit: QuantumCircuit, qubits: Sequence[int]) -> tuple[int, ...]:

@@ -19,8 +19,24 @@ from shadowsim.backends.pauli_propagation import PauliPropagationBackend
 
 
 def test_pauli_propagation_backend_is_exported():
+    backend = PauliPropagationBackend()
     assert backends.PauliPropagationBackend is PauliPropagationBackend
-    assert PauliPropagationBackend().name == "pauli_propagation"
+    assert backend.name == "pauli_propagation"
+    assert backend.max_weight == math.inf
+    assert backend.min_abs_coeff == 1e-10
+    tuned = PauliPropagationBackend(max_weight=4, min_abs_coeff=1e-8)
+    assert tuned.max_weight == 4
+    assert tuned.min_abs_coeff == 1e-8
+    with pytest.raises(ValueError, match="max_weight"):
+        PauliPropagationBackend(max_weight=-1)
+    with pytest.raises(ValueError, match="min_abs_coeff"):
+        PauliPropagationBackend(min_abs_coeff=math.inf)
+    with pytest.raises(ValueError, match="max_weight"):
+        PauliPropagationBackend(max_weight=float("nan"))
+    with pytest.raises(TypeError, match="max_weight"):
+        PauliPropagationBackend(max_weight=True)
+    with pytest.raises(TypeError, match="min_abs_coeff"):
+        PauliPropagationBackend(min_abs_coeff="1e-10")
     assert "PauliPropagationBackend" in dir(backends)
 
 
@@ -315,7 +331,7 @@ def test_expectations_reuse_the_julia_module(monkeypatch):
         def propagate(self, gates, observable, thetas, **options):
             assert gates == ["gate"]
             assert thetas == [0.4, 0.2]
-            assert options["min_abs_coeff"] == 1e-10
+            assert options == {"min_abs_coeff": 1e-10, "max_weight": math.inf}
             return observable
 
         def overlapwithzero(self, propagated):

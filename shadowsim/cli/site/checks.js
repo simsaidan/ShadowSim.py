@@ -283,6 +283,29 @@
     });
   }
 
+  function backendFieldNumber(field, text) {
+    const raw = String(text ?? "").trim();
+    if (field?.allow_inf && /^inf(?:inity)?$/i.test(raw)) return Infinity;
+    if (!/^(?:\d+(?:\.\d+)?|\.\d+)(?:e[+-]?\d+)?$/i.test(raw)) return null;
+    const number = Number(raw);
+    if (!Number.isFinite(number) || number < 0) return null;
+    return number;
+  }
+
+  function backendFieldsReady() {
+    return page.placedSims.every((entry) => {
+      const fields = blockById("backend", entry.backend)?.fields ?? [];
+      return fields.every((field) => backendFieldNumber(field, entry.backendFields?.[field.name]) != null);
+    });
+  }
+
+  function pyBackendNumber(field, text) {
+    const number = backendFieldNumber(field, text);
+    if (number == null) return "";
+    if (number === Infinity) return 'float("inf")';
+    return pyFloat(number);
+  }
+
   function measureSitesReady() {
     const count = qubitCount();
     if (!page.selection.measure || count == null) return true;
@@ -333,6 +356,7 @@
       savePathReady() &&
       measureSitesReady() &&
       shotsReady() &&
+      backendFieldsReady() &&
       !emitterProblem() &&
       (!usingAddedOperators() || operatorsReady())
     );
@@ -356,14 +380,18 @@
     return "";
   }
 
-  function fillSetup(block, name, shots = "") {
+  function fillSetup(block, name, shots = "", fields = {}) {
     const qubits = settingNumber("qubits");
     const total = settingNumber("total");
-    return block.setup
+    let setup = block.setup
       .replaceAll("{name}", name)
       .replaceAll("{qubits}", qubits == null ? "" : String(Math.round(qubits)))
       .replaceAll("{total}", total == null ? "" : pyFloat(total))
       .replaceAll("{shots}", String(shots ?? "").trim());
+    for (const field of block.fields ?? []) {
+      setup = setup.replaceAll(`{${field.name}}`, pyBackendNumber(field, fields[field.name]));
+    }
+    return setup;
   }
 
   function modelLine() {
@@ -505,6 +533,9 @@
     if (entry.backend) body.backend = entry.backend;
     const backend = blockById("backend", entry.backend);
     if (backend?.shots) body.shots = String(entry.shots ?? "").trim();
+    for (const field of backend?.fields ?? []) {
+      body[field.name] = String(entry.backendFields?.[field.name] ?? "").trim();
+    }
     return body;
   }
 
@@ -543,10 +574,10 @@
     return setup.match(/circuit_backend = ([A-Za-z0-9_]+)/)?.[1] ?? "";
   }
 
-  function backendSetup(backendId, variable, shots) {
+  function backendSetup(backendId, variable, shots, fields) {
     const block = blockById("backend", backendId);
     if (!block) return "";
-    return fillSetup(block, "", shots).replace(/^circuit_backend =/, `${variable} =`);
+    return fillSetup(block, "", shots, fields).replace(/^circuit_backend =/, `${variable} =`);
   }
 
   function metricsTarget() {
@@ -620,7 +651,7 @@
     const beforeSimulator = ["", stateLine(), "", modelLine(), ...termLines(), ""];
     page.placedSims.forEach((entry, index) => {
       if (isReference(entry)) return;
-      const setup = backendSetup(entry.backend, `circuit_backend_${index + 1}`, entry.shots);
+      const setup = backendSetup(entry.backend, `circuit_backend_${index + 1}`, entry.shots, entry.backendFields);
       if (setup) beforeSimulator.push(setup, "");
     });
     if (page.placedSims.some((entry) => blockById("simulator", entry.id)?.observables)) {
@@ -808,6 +839,8 @@
     fixedFactoryQubits: bind(fixedFactoryQubits),
     formatSetting: bind(formatSetting),
     hamiltonianProblem: bind(hamiltonianProblem),
+    backendFieldNumber: bind(backendFieldNumber),
+    backendFieldsReady: bind(backendFieldsReady),
     backendFits: bind(backendFits),
     inspectMatrix: bind(inspectMatrix),
     isComplete: bind(isComplete),
