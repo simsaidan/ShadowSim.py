@@ -1930,7 +1930,7 @@ function resourceLine(resources) {
     if (!record || typeof record !== "object") continue;
     const time = formatSeconds(record.wall_time_s);
     const shots = shotBudget(record);
-    const body = [time, shots].filter(Boolean).join(", ");
+    const body = [time, shots, circuitMetrics(record)].filter(Boolean).join(", ");
     if (!body) continue;
     if (!several) {
       clauses.push(body);
@@ -1953,6 +1953,22 @@ function shotBudget(record) {
   const jobs = record.num_jobs;
   if (!Number.isInteger(shots) || !Number.isInteger(jobs)) return "";
   return `${shots} shots × ${jobs}`;
+}
+
+function circuitMetrics(record) {
+  const fields = [
+    ["depth", "depth"],
+    ["width", "width"],
+    ["gate_count", "gates"],
+    ["t_count", "T"],
+    ["toffoli_count", "Toffoli"],
+  ];
+  return fields.map(([key, label]) => `${label} ${formatCircuitMetric(record[key])}`).join(", ");
+}
+
+function formatCircuitMetric(value) {
+  if (typeof value === "number" && Number.isInteger(value)) return String(value);
+  return "N/A";
 }
 
 function savedNote(payload) {

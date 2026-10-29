@@ -520,7 +520,91 @@ def test_save_resource_metrics_writes_runtime_and_shots(tmp_path: Path) -> None:
         "shots_per_job": 4,
         "num_jobs": 2,
         "total_shots": 8,
+        "depth": "N/A",
+        "width": "N/A",
+        "gate_count": "N/A",
+        "t_count": "N/A",
+        "toffoli_count": "N/A",
     }
+
+
+def test_save_resource_metrics_records_circuit_metrics(tmp_path: Path) -> None:
+    class Counting:
+        shots = 4
+
+        def depth(self, circuit: object) -> int:
+            del circuit
+            return 3
+
+        def width(self, circuit: object) -> int:
+            del circuit
+            return 2
+
+        def gate_count(self, circuit: object) -> int:
+            del circuit
+            return 5
+
+        def t_count(self, circuit: object) -> int:
+            del circuit
+            return 1
+
+        def toffoli_count(self, circuit: object) -> int:
+            del circuit
+            return 0
+
+    class Recorded:
+        id = "trotterization_simulator"
+        tlist = [0.0, 0.5]
+        circuit_backend = Counting()
+
+        def metrics_circuit(self) -> str:
+            return "final"
+
+    record = json.loads(save_resource_metrics(Recorded(), 1.5, path=tmp_path / "metrics.json").read_text())
+    assert record["resources"][0]["depth"] == 3
+    assert record["resources"][0]["width"] == 2
+    assert record["resources"][0]["gate_count"] == 5
+    assert record["resources"][0]["t_count"] == 1
+    assert record["resources"][0]["toffoli_count"] == 0
+
+
+def test_save_resource_metrics_marks_unsupported_circuit_metrics(tmp_path: Path) -> None:
+    class Raising:
+        def depth(self, circuit: object) -> int:
+            del circuit
+            raise NotImplementedError("circuit metrics")
+
+        def width(self, circuit: object) -> int:
+            del circuit
+            return 2
+
+        def gate_count(self, circuit: object) -> int:
+            del circuit
+            return 5
+
+        def t_count(self, circuit: object) -> int:
+            del circuit
+            return 1
+
+        def toffoli_count(self, circuit: object) -> int:
+            del circuit
+            return 0
+
+    class Recorded:
+        id = "pauli"
+        tlist = [0.0]
+        circuit_backend = Raising()
+
+        def metrics_circuit(self) -> str:
+            return "final"
+
+    record = json.loads(save_resource_metrics(Recorded(), None, path=tmp_path / "metrics.json").read_text())
+    metrics = record["resources"][0]
+    assert metrics["depth"] == "N/A"
+    assert metrics["width"] == "N/A"
+    assert metrics["gate_count"] == "N/A"
+    assert metrics["t_count"] == "N/A"
+    assert metrics["toffoli_count"] == "N/A"
 
 
 def test_save_resource_metrics_timestamps_a_directory(tmp_path: Path) -> None:
@@ -537,3 +621,5 @@ def test_save_resource_metrics_timestamps_a_directory(tmp_path: Path) -> None:
     assert record["shots_per_job"] is None
     assert record["num_jobs"] is None
     assert record["total_shots"] is None
+    assert record["depth"] == "N/A"
+    assert record["toffoli_count"] == "N/A"

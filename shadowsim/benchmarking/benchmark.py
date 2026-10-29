@@ -10,6 +10,7 @@ import numpy as np
 import numpy.typing as npt
 
 from shadowsim._optional import import_optional
+from shadowsim.simulators.result import _circuit_metric_fields
 from shadowsim.simulators.simulator import Simulator, _Trace, _Traces
 
 
@@ -109,7 +110,9 @@ class Benchmark:
         Requires ``run()`` first. Shot fields are ``None`` when neither the circuit
         backend nor the simulator stores an integer ``shots`` count (for example
         QuTiP). Otherwise ``num_jobs`` is ``len(tlist)`` and ``total_shots`` is
-        ``shots_per_job * num_jobs``.
+        ``shots_per_job * num_jobs``. ``depth``, ``width``, ``gate_count``,
+        ``t_count``, and ``toffoli_count`` come from the final-time circuit.
+        Each is ``"N/A"`` when the backend cannot measure that circuit.
 
         ``simulator_id`` is that simulator's id. When the same id appears more
         than once, it is reported as ``id#1``, ``id#2``, and so on, in benchmark
@@ -138,6 +141,7 @@ class Benchmark:
                     "shots_per_job": shots_per_job,
                     "num_jobs": num_jobs,
                     "total_shots": total_shots,
+                    **_circuit_metric_fields(simulator),
                 }
             )
         return metrics

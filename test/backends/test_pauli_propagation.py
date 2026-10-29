@@ -47,6 +47,14 @@ def test_run_counts_is_not_supported():
         PauliPropagationBackend().run_counts(circuit, shots=1, seed=None)
 
 
+@pytest.mark.parametrize("method", ["depth", "width", "gate_count", "t_count", "toffoli_count"])
+def test_circuit_metrics_are_not_supported(method: str):
+    circuit = QuantumCircuit(1)
+
+    with pytest.raises(NotImplementedError, match="circuit metrics"):
+        getattr(PauliPropagationBackend(), method)(circuit)
+
+
 def test_expectations_require_the_pauli_propagation_extra(monkeypatch):
     def missing(module: str, *, extra: str) -> object:
         raise ImportError(f"{module} requires the {extra} extra")

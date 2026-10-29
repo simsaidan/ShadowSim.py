@@ -15,7 +15,9 @@ class AerCircuitBackend:
 
     A set ``seed`` is passed to ``AerSimulator`` as ``seed_simulator``.
     ``z_expectations`` and ``x_expectations`` estimate Pauli expectations from
-    those counts.
+    those counts. ``depth``, ``width``, ``gate_count``, ``t_count``, and
+    ``toffoli_count`` read the circuit after ``transpile`` for ``AerSimulator``.
+    That pass leaves named gates Aer accepts, including ``t``, ``ccx``, and ``ccz``.
 
     Attributes:
         name: ``"aer"``. Stored on simulation result metadata.
@@ -107,6 +109,74 @@ class AerCircuitBackend:
                 instruction the program cannot record.
         """
         return _expectations(self, circuit, qubits, shots=shots, seed=seed, basis="x")
+
+    def depth(self, circuit: QuantumCircuit) -> int:
+        """Return the depth of ``circuit`` after transpilation for Aer.
+
+        Args:
+            circuit: Circuit to measure. It is transpiled for ``AerSimulator``.
+
+        Returns:
+            Length of the critical path on the transpiled circuit.
+        """
+        return int(_compiled(circuit).depth())
+
+    def width(self, circuit: QuantumCircuit) -> int:
+        """Return the qubit count of ``circuit`` after transpilation for Aer.
+
+        Args:
+            circuit: Circuit to measure. It is transpiled for ``AerSimulator``.
+
+        Returns:
+            Number of qubits on the transpiled circuit. Classical bits are not included.
+        """
+        return int(_compiled(circuit).num_qubits)
+
+    def gate_count(self, circuit: QuantumCircuit) -> int:
+        """Return the instruction count of ``circuit`` after transpilation for Aer.
+
+        Args:
+            circuit: Circuit to measure. It is transpiled for ``AerSimulator``.
+
+        Returns:
+            Total number of instructions on the transpiled circuit, including
+            measurements when ``circuit`` contains them.
+        """
+        return int(_compiled(circuit).size())
+
+    def t_count(self, circuit: QuantumCircuit) -> int:
+        """Return the number of ``t`` gates after transpilation for Aer.
+
+        ``tdg`` is not included. A multi-qubit unitary stays one instruction, so
+        a circuit built only from unitaries reports zero.
+
+        Args:
+            circuit: Circuit to measure. It is transpiled for ``AerSimulator``.
+
+        Returns:
+            Count of instructions named ``t``.
+        """
+        return int(_compiled(circuit).count_ops().get("t", 0))
+
+    def toffoli_count(self, circuit: QuantumCircuit) -> int:
+        """Return the number of ``ccx`` and ``ccz`` gates after transpilation for Aer.
+
+        A multi-qubit unitary stays one instruction, so a circuit built only
+        from unitaries reports zero.
+
+        Args:
+            circuit: Circuit to measure. It is transpiled for ``AerSimulator``.
+
+        Returns:
+            Sum of ``ccx`` and ``ccz`` instructions.
+        """
+        counts = _compiled(circuit).count_ops()
+        return int(counts.get("ccx", 0)) + int(counts.get("ccz", 0))
+
+
+def _compiled(circuit: QuantumCircuit) -> QuantumCircuit:
+    """Transpile ``circuit`` for Aer, leaving named gates that Aer accepts."""
+    return transpile(circuit, AerSimulator())
 
 
 def _expectations(

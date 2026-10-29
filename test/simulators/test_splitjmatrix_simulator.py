@@ -190,6 +190,59 @@ def test_trace_qubits_accepts_single_int_index():
     assert _trace_qubits({"01": 3, "11": 2}, 1) == {"1": 5}
 
 
+def _instruction_signature(circuit: object) -> list[tuple[str, tuple[int, ...], tuple[bytes, ...]]]:
+    """Return gate names, qubit indexes, and parameter bytes, ignoring register names."""
+    rows: list[tuple[str, tuple[int, ...], tuple[bytes, ...]]] = []
+    for instruction in circuit.data:  # type: ignore[attr-defined]
+        qubits = tuple(int(circuit.find_bit(qubit).index) for qubit in instruction.qubits)  # type: ignore[attr-defined]
+        params = tuple(np.asarray(param).tobytes() for param in instruction.operation.params)
+        rows.append((instruction.operation.name, qubits, params))
+    return rows
+
+
+def test_metrics_circuit_matches_the_final_executed_circuit() -> None:
+    class Recording:
+        name = "recording"
+        shots = 1
+
+        def __init__(self) -> None:
+            self.circuit = None
+
+        def run_counts(self, circuit: object, *, shots: int, seed: int | None) -> dict[str, int]:
+            del shots, seed
+            self.circuit = circuit
+            return {"0": 1}
+
+    backend = Recording()
+    sim = SplitJMatrixSimulator(
+        [LocalHamiltonian(Z, [0])],
+        [],
+        State(np.array([1.0, 0.0]), 1),
+        num_qubits=1,
+        total_time=0.4,
+        time_steps=3,
+        num_steps=2,
+        circuit_backend=backend,  # type: ignore[arg-type]
+        x_qubits=[0],
+    )
+    _split_jmatrix(
+        sim.hamiltonians,
+        sim.lindblads,
+        sim.initial_state,
+        sim.num_qubits,
+        float(sim.tlist[-1]),
+        sim.num_steps,
+        sim.trotter_depth,
+        order=sim.order,
+        verbose=sim.verbose,
+        shots=1,
+        seed=sim.seed,
+        circuit_backend=backend,  # type: ignore[arg-type]
+        x_qubits=sim.x_qubits,
+    )
+    assert _instruction_signature(sim.metrics_circuit()) == _instruction_signature(backend.circuit)
+
+
 def test_split_j_rotates_the_body_qubit_for_x() -> None:
     class Recording:
         name = "recording"

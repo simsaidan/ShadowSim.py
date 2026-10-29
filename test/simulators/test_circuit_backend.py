@@ -263,6 +263,23 @@ def test_backends_reject_a_gate_without_a_matrix_before_running(monkeypatch):
         AerCircuitBackend().run_counts(circuit, shots=1, seed=1)
 
 
+def test_aer_circuit_metrics_count_the_transpiled_circuit():
+    circuit = QuantumCircuit(3)
+    circuit.t(0)
+    circuit.tdg(1)
+    circuit.ccx(0, 1, 2)
+    circuit.ccz(0, 1, 2)
+    compiled = transpile(circuit, AerSimulator())
+    backend = AerCircuitBackend()
+
+    assert backend.depth(circuit) == compiled.depth()
+    assert backend.width(circuit) == compiled.num_qubits == 3
+    assert backend.gate_count(circuit) == compiled.size()
+    assert backend.t_count(circuit) == 1
+    assert compiled.count_ops()["tdg"] == 1
+    assert backend.toffoli_count(circuit) == 2
+
+
 def test_aer_backend_rejects_a_nonpositive_shot_budget():
     with pytest.raises(ValueError, match="shots must be a positive integer"):
         AerCircuitBackend(shots=0)

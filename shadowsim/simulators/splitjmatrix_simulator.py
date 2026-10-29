@@ -92,6 +92,61 @@ def _make_J_gate(L: _Matrix, t: float, N: int) -> UnitaryGate:
     return UnitaryGate(scipy.linalg.expm(-1j * gate * np.sqrt(t / N)))
 
 
+def _split_jmatrix_circuit(
+    H: List[LocalHamiltonian],
+    Lindblads: List[LocalOperator],
+    initial_state: State,
+    num_qubits: int,
+    t: float,
+    num_steps: int,
+    trotter_depth: int = 1,
+    order: Literal[1, 2] = 1,
+    verbose: bool = False,
+    x_qubits: list[int] | None = None,
+) -> QuantumCircuit:
+    """Return one Split JMatrix circuit, including the final measurement.
+
+    Each step applies every Lindblad jump once, then ``trotter_depth`` Hamiltonian
+    slices. ``order=1`` applies each local term for time
+    ``t / (num_steps * trotter_depth)``. ``order=2`` is one Strang step per slice.
+    Either order covers coherent time ``t``.
+    """
+    if trotter_depth <= 0:
+        raise ValueError("trotter_depth must be a positive integer")
+    _check_order(order)
+    if H:
+        delta = t / (num_steps * trotter_depth)
+        h_gates = [(UnitaryGate(matrix), sites) for matrix, sites in _trotter_slice_unitaries(H, delta, order)]
+    else:
+        h_gates = []
+    j_gates = [_make_J_gate(L_i.matrix, t, num_steps) for L_i in Lindblads]
+    ancilla = QuantumRegister(1)
+    body = QuantumRegister(num_qubits)
+    circ = QuantumCircuit(ancilla, body)
+
+    psi0 = initial_state.to_numpy()
+
+    circ.initialize(psi0, list(reversed(body)))
+    circ.barrier()
+    for i in range(num_steps):
+        # Split-J step: every Lindblad jump once, then ``trotter_depth`` Hamiltonian slices.
+        circ.reset(ancilla[0])
+        if verbose and i % 10 == 0:
+            print(f"Working on iteration {i} out of {num_steps}")
+        for gate, L_i in zip(j_gates, Lindblads, strict=True):
+            circ.append(gate, reversed([ancilla[0]] + [body[j] for j in L_i.sites]))
+            circ.reset(ancilla[0])
+        circ.barrier()
+        for _ in range(trotter_depth):
+            for gate, sites in h_gates:
+                circ.append(gate, reversed([body[j] for j in sites]))
+
+    circ.barrier()
+    _hadamards(circ, body, x_qubits, num_qubits)
+    circ.measure_all()
+    return circ
+
+
 def _split_jmatrix(
     H: List[LocalHamiltonian],
     Lindblads: List[LocalOperator],
@@ -109,48 +164,25 @@ def _split_jmatrix(
 ) -> dict[str, Any]:
     """Run one Split JMatrix circuit and return counts.
 
-    Each step applies every Lindblad jump once, then ``trotter_depth`` Hamiltonian
-    slices. ``order=1`` applies each local term for time
-    ``t / (num_steps * trotter_depth)``. ``order=2`` is one Strang step per slice.
-    Either order covers coherent time ``t``.
+    The circuit is :func:`_split_jmatrix_circuit`. ``circuit_backend`` executes
+    it. Omitting that backend uses :class:`AerCircuitBackend`.
     """
     if shots <= 0:
         raise ValueError("shots must be a positive integer")
     if seed is not None and not isinstance(seed, int):
         raise TypeError("seed must be an int or None")
-    if trotter_depth <= 0:
-        raise ValueError("trotter_depth must be a positive integer")
-    _check_order(order)
-    if H:
-        delta = t / (num_steps * trotter_depth)
-        h_gates = [(UnitaryGate(matrix), sites) for matrix, sites in _trotter_slice_unitaries(H, delta, order)]
-    else:
-        h_gates = []
-    Jgates = [_make_J_gate(L_i.matrix, t, num_steps) for L_i in Lindblads]
-    ancilla = QuantumRegister(1)
-    body = QuantumRegister(num_qubits)
-    circ = QuantumCircuit(ancilla, body)
-
-    psi0 = initial_state.to_numpy()
-
-    circ.initialize(psi0, list(reversed(body)))
-    circ.barrier()
-    for i in range(num_steps):
-        # Split-J step: every Lindblad jump once, then ``trotter_depth`` Hamiltonian slices.
-        circ.reset(ancilla[0])
-        if verbose and i % 10 == 0:
-            print(f"Working on iteration {i} out of {num_steps}")
-        for gate, L_i in zip(Jgates, Lindblads):
-            circ.append(gate, reversed([ancilla[0]] + [body[j] for j in L_i.sites]))
-            circ.reset(ancilla[0])
-        circ.barrier()
-        for _ in range(trotter_depth):
-            for gate, sites in h_gates:
-                circ.append(gate, reversed([body[j] for j in sites]))
-
-    circ.barrier()
-    _hadamards(circ, body, x_qubits, num_qubits)
-    circ.measure_all()
+    circ = _split_jmatrix_circuit(
+        H,
+        Lindblads,
+        initial_state,
+        num_qubits,
+        t,
+        num_steps,
+        trotter_depth,
+        order=order,
+        verbose=verbose,
+        x_qubits=x_qubits,
+    )
     counts_backend = circuit_backend if circuit_backend is not None else AerCircuitBackend()
     return counts_backend.run_counts(circ, shots=shots, seed=seed)
 
@@ -338,6 +370,21 @@ class SplitJMatrixSimulator(Simulator):
         )
         width = len(self.measurement_groups)
         return [[samples[j] for samples in samples_by_time] for j in range(width)]
+
+    def metrics_circuit(self) -> QuantumCircuit:
+        """Return the circuit executed at the final time, including measurement."""
+        return _split_jmatrix_circuit(
+            cast(list[LocalHamiltonian], self.hamiltonians),
+            cast(list[LocalOperator], self.lindblads),
+            self.initial_state,
+            self.num_qubits,
+            float(self.tlist[-1]),
+            self.num_steps,
+            self.trotter_depth,
+            order=self.order,
+            verbose=False,
+            x_qubits=self.x_qubits,
+        )
 
     def simulate(self) -> SimulationResult:
         """Evolve the system with Split JMatrix and store reduced traces."""

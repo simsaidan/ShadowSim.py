@@ -91,6 +91,81 @@ class CircuitBackend(Protocol):
         """
         ...
 
+    def depth(self, circuit: QuantumCircuit) -> int:
+        """Return the depth of ``circuit`` after transpilation for this backend.
+
+        Args:
+            circuit: Circuit to measure. Implementations transpile it for their target.
+
+        Returns:
+            Length of the critical path on the transpiled circuit.
+
+        Raises:
+            NotImplementedError: This backend does not expose gate counts.
+        """
+        ...
+
+    def width(self, circuit: QuantumCircuit) -> int:
+        """Return the number of qubits on ``circuit`` after transpilation.
+
+        Args:
+            circuit: Circuit to measure. Implementations transpile it for their target.
+
+        Returns:
+            Qubit count of the transpiled circuit. Classical bits are not included.
+
+        Raises:
+            NotImplementedError: This backend does not expose gate counts.
+        """
+        ...
+
+    def gate_count(self, circuit: QuantumCircuit) -> int:
+        """Return the instruction count of ``circuit`` after transpilation.
+
+        Args:
+            circuit: Circuit to measure. Implementations transpile it for their target.
+
+        Returns:
+            Total number of instructions on the transpiled circuit, including
+            measurements when ``circuit`` contains them.
+
+        Raises:
+            NotImplementedError: This backend does not expose gate counts.
+        """
+        ...
+
+    def t_count(self, circuit: QuantumCircuit) -> int:
+        """Return the number of ``t`` gates on ``circuit`` after transpilation.
+
+        ``tdg`` is not included.
+
+        Args:
+            circuit: Circuit to measure. Implementations transpile it for their target.
+
+        Returns:
+            Count of instructions named ``t``.
+
+        Raises:
+            NotImplementedError: This backend does not expose gate counts.
+        """
+        ...
+
+    def toffoli_count(self, circuit: QuantumCircuit) -> int:
+        """Return the number of Toffoli gates on ``circuit`` after transpilation.
+
+        A Toffoli is ``ccx`` or ``ccz``.
+
+        Args:
+            circuit: Circuit to measure. Implementations transpile it for their target.
+
+        Returns:
+            Sum of ``ccx`` and ``ccz`` instructions.
+
+        Raises:
+            NotImplementedError: This backend does not expose gate counts.
+        """
+        ...
+
 
 def backend_samples(backend: object) -> bool:
     """Return whether ``backend`` stores a shot budget.

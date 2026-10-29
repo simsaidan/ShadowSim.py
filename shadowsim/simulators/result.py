@@ -2,7 +2,7 @@
 
 import json
 import zipfile
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from datetime import datetime
 from importlib.metadata import PackageNotFoundError, version
@@ -242,8 +242,43 @@ class SimulationResult:
         )
 
 
+_CIRCUIT_METRIC_NAMES = ("depth", "width", "gate_count", "t_count", "toffoli_count")
+
+
+def _circuit_metric_fields(simulator: object) -> dict[str, int | str]:
+    """Return transpiled circuit metrics for ``simulator``.
+
+    The circuit is the one ``metrics_circuit`` builds, measured by the methods
+    of the same names on ``circuit_backend``. Every field is ``"N/A"`` when
+    that backend or circuit is missing, a method is missing, a method raises
+    ``NotImplementedError``, or a method returns a non-integer.
+    """
+    unavailable: dict[str, int | str] = {name: "N/A" for name in _CIRCUIT_METRIC_NAMES}
+    backend = getattr(simulator, "circuit_backend", None)
+    build = getattr(simulator, "metrics_circuit", None)
+    if backend is None or not callable(build):
+        return unavailable
+    methods: list[Callable[[object], object]] = []
+    for name in _CIRCUIT_METRIC_NAMES:
+        method = getattr(backend, name, None)
+        if not callable(method):
+            return unavailable
+        methods.append(method)
+    try:
+        circuit = build()
+        values = [method(circuit) for method in methods]
+    except NotImplementedError:
+        return unavailable
+    counted: list[int] = []
+    for value in values:
+        if isinstance(value, bool) or not isinstance(value, int):
+            return unavailable
+        counted.append(value)
+    return dict(zip(_CIRCUIT_METRIC_NAMES, counted, strict=True))
+
+
 def _resource_record(simulator: object, wall_time: float | None) -> dict[str, object]:
-    """Return one simulator's runtime and shot budget."""
+    """Return one simulator's runtime, shot budget, and circuit metrics."""
     backend = getattr(simulator, "circuit_backend", None)
     shots_per_job = getattr(simulator if backend is None else backend, "shots", None)
     if isinstance(shots_per_job, bool) or not isinstance(shots_per_job, int):
@@ -259,6 +294,7 @@ def _resource_record(simulator: object, wall_time: float | None) -> dict[str, ob
         "shots_per_job": shots_per_job,
         "num_jobs": num_jobs,
         "total_shots": total_shots,
+        **_circuit_metric_fields(simulator),
     }
 
 
@@ -278,7 +314,9 @@ def save_resource_metrics(
     The payload is ``{"resources": [record]}``. Shot fields are ``None`` when
     neither the circuit backend nor the simulator stores an integer ``shots``
     count. Otherwise ``num_jobs`` is ``len(tlist)`` and ``total_shots`` is
-    ``shots_per_job * num_jobs``.
+    ``shots_per_job * num_jobs``. ``depth``, ``width``, ``gate_count``,
+    ``t_count``, and ``toffoli_count`` are integers when the backend can
+    measure ``metrics_circuit``. Each is ``"N/A"`` when it cannot.
     """
     if path is None:
         stamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")

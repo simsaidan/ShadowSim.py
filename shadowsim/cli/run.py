@@ -134,10 +134,12 @@ def run_page(selection: Mapping[str, object], *, output_root: Path | None = None
     ``sim_2``, and so on inside it. ``export`` writes metrics JSON under
     ``export_path``, or ``results/`` when that key is missing. A benchmark uses
     :meth:`~shadowsim.benchmarking.benchmark.Benchmark.save_error_metrics`.
-    One simulator writes its runtime and shot budget with
+    One simulator writes its runtime, shot budget, and circuit metrics with
     :func:`~shadowsim.simulators.result.save_resource_metrics`. ``plot`` is drawn by the
-    page. The payload names each observable in ``labels`` and lists wall time and
-    shot budget in ``resources``. A benchmark fills ``resources`` from
+    page. The payload names each observable in ``labels`` and lists wall time,
+    shot budget, and circuit metrics in ``resources``. Circuit metrics are
+    ``"N/A"`` when the backend cannot measure the final-time circuit. A benchmark
+    fills ``resources`` from
     :meth:`~shadowsim.benchmarking.benchmark.Benchmark.resource_metrics`, and each
     series names its curves ``{simulator} · {label}``. Save and export both run
     when both are selected. When ``output_root`` is set, ``save_path`` and

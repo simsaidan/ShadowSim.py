@@ -421,6 +421,26 @@ class TrotterizationSimulator(Simulator):
         width = len(self.measurement_groups)
         return [[samples[j] for samples in samples_by_time] for j in range(width)]
 
+    def metrics_circuit(self) -> QuantumCircuit:
+        """Return the circuit executed at the final time.
+
+        A sampling backend includes the computational-basis measurement.
+        """
+        circuit = _trotter_circuit(
+            cast(list[LocalHamiltonian], self.hamiltonians),
+            self.initial_state,
+            self.num_qubits,
+            float(self.tlist[-1]),
+            self.num_steps,
+            self.trotter_depth,
+            order=self.order,
+            verbose=False,
+            x_qubits=self.x_qubits,
+        )
+        if backend_samples(self.circuit_backend):
+            circuit.measure_all()
+        return circuit
+
     def simulate(self) -> SimulationResult:
         """Evolve the closed system with Trotterization and store reduced traces."""
         started = perf_counter()
