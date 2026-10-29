@@ -195,6 +195,10 @@ def test_tavis_cummings_hubbard_sizes_from_cavities_and_hopping() -> None:
         ({"cavities": 0}, "cavities must be an integer of at least 1"),
         ({"cavities": True}, "cavities must be an integer of at least 1"),
         ({"nu": "nope"}, "hopping must be a real number"),
+        ({"nu": True}, "hopping must be a real number"),
+        ({"nu": []}, "hopping must be a real number"),
+        ({"nu": "  "}, "hopping must be a real number"),
+        ({"nu": float("inf")}, "hopping must be a real number"),
         ({"cavities": 2, "emitters": 6}, "at most 15 qubits"),
     ],
 )
@@ -220,6 +224,10 @@ def test_jaynes_cummings_hubbard_sizes_from_cavities_and_hopping() -> None:
         ({"cavities": 0}, "cavities must be an integer of at least 1"),
         ({"cavities": True}, "cavities must be an integer of at least 1"),
         ({"nu": "nope"}, "hopping must be a real number"),
+        ({"nu": True}, "hopping must be a real number"),
+        ({"nu": []}, "hopping must be a real number"),
+        ({"nu": "  "}, "hopping must be a real number"),
+        ({"nu": float("inf")}, "hopping must be a real number"),
         ({"cavities": 6}, "at most 15 qubits"),
     ],
 )

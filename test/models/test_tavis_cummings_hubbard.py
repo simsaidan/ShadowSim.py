@@ -140,6 +140,7 @@ def test_pair_sequence_skips_zero_and_orders_pairs():
         ({"n_cavities": 0}, "n_cavities"),
         ({"n_cavities": True}, "n_cavities"),
         ({"n_cavities": 2, "nu": [1.0, 2.0]}, "nu must be"),
+        ({"n_cavities": 2, "nu": [True]}, "nu must be"),
         ({"n_cavities": 2, "nu": "1"}, "nu must be"),
     ],
 )
