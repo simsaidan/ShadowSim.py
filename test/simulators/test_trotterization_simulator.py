@@ -339,6 +339,65 @@ def test_trotterization_simulator_verbose_prints(monkeypatch, capsys):
     assert "Working on time step 1.0" in out
 
 
+def _instruction_signature(circuit: object) -> list[tuple[str, tuple[int, ...], tuple[bytes, ...]]]:
+    """Return gate names, qubit indexes, and parameter bytes, ignoring register names."""
+    rows: list[tuple[str, tuple[int, ...], tuple[bytes, ...]]] = []
+    for instruction in circuit.data:  # type: ignore[attr-defined]
+        qubits = tuple(int(circuit.find_bit(qubit).index) for qubit in instruction.qubits)  # type: ignore[attr-defined]
+        params = tuple(np.asarray(param).tobytes() for param in instruction.operation.params)
+        rows.append((instruction.operation.name, qubits, params))
+    return rows
+
+
+def test_metrics_circuit_matches_the_final_sampling_circuit() -> None:
+    class Recording:
+        name = "recording"
+        shots = 1
+
+        def __init__(self) -> None:
+            self.circuit = None
+
+        def run_counts(self, circuit: object, *, shots: int, seed: int | None) -> dict[str, int]:
+            del shots, seed
+            self.circuit = circuit
+            return {"0": 1}
+
+    backend = Recording()
+    sim = _tiny(circuit_backend=backend, time_steps=3, total_time=0.4, x_qubits=[0])
+    _trotter_circuit_counts(
+        sim.hamiltonians,
+        sim.initial_state,
+        sim.num_qubits,
+        float(sim.tlist[-1]),
+        sim.num_steps,
+        sim.trotter_depth,
+        order=sim.order,
+        shots=1,
+        seed=sim.seed,
+        circuit_backend=backend,  # type: ignore[arg-type]
+        x_qubits=sim.x_qubits,
+    )
+    assert _instruction_signature(sim.metrics_circuit()) == _instruction_signature(backend.circuit)
+
+
+def test_metrics_circuit_omits_measurement_without_a_shot_budget() -> None:
+    class Bare:
+        name = "bare"
+
+    sim = TrotterizationSimulator(
+        [LocalHamiltonian(Z, [0])],
+        [],
+        State(np.array([1.0, 0.0], dtype=np.complex128), 1),
+        num_qubits=1,
+        total_time=0.4,
+        time_steps=3,
+        num_steps=1,
+        circuit_backend=Bare(),  # type: ignore[arg-type]
+    )
+    names = [instruction.operation.name for instruction in sim.metrics_circuit().data]
+    assert "measure" not in names
+
+
 def test_trotter_circuit_rotates_x_qubits_before_measurement() -> None:
     class Recording:
         name = "recording"

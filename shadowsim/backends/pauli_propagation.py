@@ -148,6 +148,67 @@ class PauliPropagationBackend:
         del shots, seed
         return _expectations(self, circuit, qubits, "X")
 
+    def depth(self, circuit: QuantumCircuit) -> int:
+        """Reject a request for transpiled circuit depth.
+
+        Args:
+            circuit: Unused. PauliPropagation does not count gates.
+
+        Raises:
+            NotImplementedError: PauliPropagation does not support circuit metrics.
+        """
+        _reject_circuit_metric(circuit)
+
+    def width(self, circuit: QuantumCircuit) -> int:
+        """Reject a request for transpiled qubit count.
+
+        Args:
+            circuit: Unused. PauliPropagation does not count gates.
+
+        Raises:
+            NotImplementedError: PauliPropagation does not support circuit metrics.
+        """
+        _reject_circuit_metric(circuit)
+
+    def gate_count(self, circuit: QuantumCircuit) -> int:
+        """Reject a request for a transpiled instruction count.
+
+        Args:
+            circuit: Unused. PauliPropagation does not count gates.
+
+        Raises:
+            NotImplementedError: PauliPropagation does not support circuit metrics.
+        """
+        _reject_circuit_metric(circuit)
+
+    def t_count(self, circuit: QuantumCircuit) -> int:
+        """Reject a request for a transpiled ``t`` count.
+
+        Args:
+            circuit: Unused. PauliPropagation does not count gates.
+
+        Raises:
+            NotImplementedError: PauliPropagation does not support circuit metrics.
+        """
+        _reject_circuit_metric(circuit)
+
+    def toffoli_count(self, circuit: QuantumCircuit) -> int:
+        """Reject a request for a transpiled Toffoli count.
+
+        Args:
+            circuit: Unused. PauliPropagation does not count gates.
+
+        Raises:
+            NotImplementedError: PauliPropagation does not support circuit metrics.
+        """
+        _reject_circuit_metric(circuit)
+
+
+def _reject_circuit_metric(circuit: QuantumCircuit) -> NoReturn:
+    """Raise because PauliPropagation does not count gates."""
+    del circuit
+    raise NotImplementedError("PauliPropagation does not support circuit metrics")
+
 
 def _expectations(
     backend: PauliPropagationBackend,

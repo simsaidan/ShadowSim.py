@@ -1418,6 +1418,16 @@ function slotChips(lane) {
   return chips;
 }
 
+function laneColumn(lane) {
+  return String(1 + LANES.indexOf(lane) * 2);
+}
+
+function placeOnGrid(node, lane, row) {
+  node.style.gridColumn = laneColumn(lane);
+  node.style.gridRow = row;
+  return node;
+}
+
 function slotAcceptsDrag(laneId) {
   if (!dragging) return false;
   if (dragging.lane === laneId) return true;
@@ -1447,7 +1457,7 @@ function slotComponent(lane) {
     el("p", { className: "hint" }, lane.hint),
     ...slotChips(lane),
   );
-  return slot;
+  return placeOnGrid(slot, lane, "1");
 }
 
 function methodPalette(lane, onPlace) {
@@ -1458,53 +1468,61 @@ function methodPalette(lane, onPlace) {
     ["Simulators", BLOCKS.simulator.filter((block) => !block.observables), lane],
     ["Backends", BLOCKS.backend, { id: "backend", tone: "violet" }],
   ];
-  return el(
-    "section",
-    { className: "lane", "data-palette": lane.id },
-    el("h2", {}, lane.pick),
-    note,
-    ...groups
-      .filter(([, blocks]) => blocks.length)
-      .map(([title, blocks, cardLane]) =>
-        el(
-          "div",
-          { className: "palette-group" },
-          el("h3", {}, title),
+  return placeOnGrid(
+    el(
+      "section",
+      { className: "lane", "data-palette": lane.id },
+      el("h2", {}, lane.pick),
+      note,
+      ...groups
+        .filter(([, blocks]) => blocks.length)
+        .map(([title, blocks, cardLane]) =>
           el(
             "div",
-            { className: "cards" },
-            ...blocks.map((block) =>
-              blockCard(cardLane, block, {
-                inSlot: false,
-                blocked: false,
-                onPlace: () => (cardLane.id === "backend" ? attachBackend(block.id) : onPlace(block.id)),
-              }),
+            { className: "palette-group" },
+            el("h3", {}, title),
+            el(
+              "div",
+              { className: "cards" },
+              ...blocks.map((block) =>
+                blockCard(cardLane, block, {
+                  inSlot: false,
+                  blocked: false,
+                  onPlace: () => (cardLane.id === "backend" ? attachBackend(block.id) : onPlace(block.id)),
+                }),
+              ),
             ),
           ),
         ),
-      ),
+    ),
+    lane,
+    "2",
   );
 }
 
 function paletteComponent(lane, onPlace) {
   if (lane.id === "simulator") return methodPalette(lane, onPlace);
   const note = laneNotes[lane.id] ? el("p", { className: "hint" }, laneNotes[lane.id]) : null;
-  return el(
-    "section",
-    { className: "lane", "data-palette": lane.id },
-    el("h2", {}, lane.pick),
-    note,
+  return placeOnGrid(
     el(
-      "div",
-      { className: "cards" },
-      ...BLOCKS[lane.id].map((block) =>
-        blockCard(lane, block, {
-          inSlot: false,
-          blocked: lane.id === "model" && modelChoiceBlocked(block),
-          onPlace: () => onPlace(block.id),
-        }),
+      "section",
+      { className: "lane", "data-palette": lane.id },
+      el("h2", {}, lane.pick),
+      note,
+      el(
+        "div",
+        { className: "cards" },
+        ...BLOCKS[lane.id].map((block) =>
+          blockCard(lane, block, {
+            inSlot: false,
+            blocked: lane.id === "model" && modelChoiceBlocked(block),
+            onPlace: () => onPlace(block.id),
+          }),
+        ),
       ),
     ),
+    lane,
+    "2",
   );
 }
 
@@ -1930,7 +1948,7 @@ function resourceLine(resources) {
     if (!record || typeof record !== "object") continue;
     const time = formatSeconds(record.wall_time_s);
     const shots = shotBudget(record);
-    const body = [time, shots].filter(Boolean).join(", ");
+    const body = [time, shots, circuitMetrics(record)].filter(Boolean).join(", ");
     if (!body) continue;
     if (!several) {
       clauses.push(body);
@@ -1953,6 +1971,22 @@ function shotBudget(record) {
   const jobs = record.num_jobs;
   if (!Number.isInteger(shots) || !Number.isInteger(jobs)) return "";
   return `${shots} shots × ${jobs}`;
+}
+
+function circuitMetrics(record) {
+  const fields = [
+    ["depth", "depth"],
+    ["width", "width"],
+    ["gate_count", "gates"],
+    ["t_count", "T"],
+    ["toffoli_count", "Toffoli"],
+  ];
+  return fields.map(([key, label]) => `${label} ${formatCircuitMetric(record[key])}`).join(", ");
+}
+
+function formatCircuitMetric(value) {
+  if (typeof value === "number" && Number.isInteger(value)) return String(value);
+  return "N/A";
 }
 
 function savedNote(payload) {
@@ -2345,13 +2379,8 @@ function panelsComponent() {
 function layoutComponent() {
   const layout = el("div", { className: "layout" });
   LANES.forEach((lane, index) => {
-    const column = String(1 + index * 2);
     const slot = slotComponent(lane);
-    slot.style.gridColumn = column;
-    slot.style.gridRow = "1";
     const palette = paletteComponent(lane, (blockId) => place(lane.id, blockId));
-    palette.style.gridColumn = column;
-    palette.style.gridRow = "2";
     layout.append(slot, palette);
     if (index === LANES.length - 1) return;
     const chevron = el("div", { className: "chevron", "aria-hidden": "true" }, ">");

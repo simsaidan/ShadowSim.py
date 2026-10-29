@@ -382,6 +382,11 @@ def _benchmark() -> dict[str, Any]:
                 "shots_per_job": None,
                 "num_jobs": None,
                 "total_shots": None,
+                "depth": "N/A",
+                "width": "N/A",
+                "gate_count": "N/A",
+                "t_count": "N/A",
+                "toffoli_count": "N/A",
             },
             {
                 "simulator_id": "aer_simulator",
@@ -389,6 +394,11 @@ def _benchmark() -> dict[str, Any]:
                 "shots_per_job": 256,
                 "num_jobs": 11,
                 "total_shots": 2816,
+                "depth": 4,
+                "width": 2,
+                "gate_count": 9,
+                "t_count": 1,
+                "toffoli_count": 2,
             },
         ],
     }
@@ -410,12 +420,17 @@ def test_one_simulator_has_no_switch() -> None:
                     "shots_per_job": None,
                     "num_jobs": None,
                     "total_shots": None,
+                    "depth": "N/A",
+                    "width": "N/A",
+                    "gate_count": "N/A",
+                    "t_count": "N/A",
+                    "toffoli_count": "N/A",
                 }
             ],
         }
     )
     assert _buttons(timed) == []
-    assert _node_text(_by_class(timed, "resources")) == "0.42 s"
+    assert _node_text(_by_class(timed, "resources")) == ("0.42 s, depth N/A, width N/A, gates N/A, T N/A, Toffoli N/A")
     sampled = _results(
         {
             "times": [0, 1],
@@ -428,11 +443,18 @@ def test_one_simulator_has_no_switch() -> None:
                     "shots_per_job": 256,
                     "num_jobs": 101,
                     "total_shots": 25856,
+                    "depth": 6,
+                    "width": 2,
+                    "gate_count": 14,
+                    "t_count": 0,
+                    "toffoli_count": 0,
                 }
             ],
         }
     )
-    assert _node_text(_by_class(sampled, "resources")) == "1.2 s, 256 shots × 101"
+    assert _node_text(_by_class(sampled, "resources")) == (
+        "1.2 s, 256 shots × 101, depth 6, width 2, gates 14, T 0, Toffoli 0"
+    )
 
 
 def test_error_switch_replaces_the_curves_and_keeps_the_resource_line() -> None:
@@ -450,7 +472,10 @@ def test_error_switch_replaces_the_curves_and_keeps_the_resource_line() -> None:
     assert _pressed(curves) == ["All", "Curves"]
     assert _legend(curves) == ["qutip#1 · ⟨Z⟩ on 0", "qutip#1 · ⟨Z⟩ on 1", "qutip#2 · ⟨Z⟩ on 0", "qutip#2 · ⟨Z⟩ on 1"]
     assert _node_text(_by_class(curves, "hint")) == "Saved to results/run1"
-    resources = "qutip#1 0.41 s · aer 1.2 s, 256 shots × 11"
+    resources = (
+        "qutip#1 0.41 s, depth N/A, width N/A, gates N/A, T N/A, Toffoli N/A"
+        " · aer 1.2 s, 256 shots × 11, depth 4, width 2, gates 9, T 1, Toffoli 2"
+    )
     assert _node_text(_by_class(curves, "resources")) == resources
 
     error = _results(payload, click="Error")
@@ -484,7 +509,10 @@ def test_observable_switch_shows_one_chart_at_a_time() -> None:
     assert _pressed(error) == ["⟨Z⟩ on 1", "Error"]
     assert _legend(error) == ["qutip#2 · ⟨Z⟩ on 1: max 1, RMSE 0.5"]
     assert _line_titles(error) == ["qutip#2 · ⟨Z⟩ on 1"]
-    assert _node_text(_by_class(error, "resources")) == "qutip#1 0.41 s · aer 1.2 s, 256 shots × 11"
+    assert _node_text(_by_class(error, "resources")) == (
+        "qutip#1 0.41 s, depth N/A, width N/A, gates N/A, T N/A, Toffoli N/A"
+        " · aer 1.2 s, 256 shots × 11, depth 4, width 2, gates 9, T 1, Toffoli 2"
+    )
 
     restored = _results(payload, clicks=["⟨Z⟩ on 1", "All"])
     assert _pressed(restored) == ["All", "Curves"]

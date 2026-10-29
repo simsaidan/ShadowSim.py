@@ -360,6 +360,71 @@ def test_resource_metrics_reads_shots_from_the_circuit_backend():
     assert resources[1]["shots_per_job"] is None
 
 
+def test_resource_metrics_records_circuit_metrics():
+    class Counting:
+        def depth(self, circuit: object) -> int:
+            del circuit
+            return 8
+
+        def width(self, circuit: object) -> int:
+            del circuit
+            return 2
+
+        def gate_count(self, circuit: object) -> int:
+            del circuit
+            return 11
+
+        def t_count(self, circuit: object) -> int:
+            del circuit
+            return 0
+
+        def toffoli_count(self, circuit: object) -> int:
+            del circuit
+            return 4
+
+    class Raising:
+        def depth(self, circuit: object) -> int:
+            del circuit
+            raise NotImplementedError("circuit metrics")
+
+        def width(self, circuit: object) -> int:
+            del circuit
+            return 1
+
+        def gate_count(self, circuit: object) -> int:
+            del circuit
+            return 1
+
+        def t_count(self, circuit: object) -> int:
+            del circuit
+            return 1
+
+        def toffoli_count(self, circuit: object) -> int:
+            del circuit
+            return 1
+
+    counted = StubSimulator(id="counted", time_steps=2)
+    counted.circuit_backend = Counting()
+    counted.metrics_circuit = lambda: "final"
+    unsupported = StubSimulator(id="unsupported", time_steps=2)
+    unsupported.circuit_backend = Raising()
+    unsupported.metrics_circuit = lambda: "final"
+    benchmark = Benchmark(counted, unsupported)
+    benchmark.run()
+
+    resources = benchmark.resource_metrics()
+    assert resources[0]["depth"] == 8
+    assert resources[0]["width"] == 2
+    assert resources[0]["gate_count"] == 11
+    assert resources[0]["t_count"] == 0
+    assert resources[0]["toffoli_count"] == 4
+    assert resources[1]["depth"] == "N/A"
+    assert resources[1]["width"] == "N/A"
+    assert resources[1]["gate_count"] == "N/A"
+    assert resources[1]["t_count"] == "N/A"
+    assert resources[1]["toffoli_count"] == "N/A"
+
+
 def test_resource_metrics_requires_run():
     a, b = _pair()
     benchmark = Benchmark(a, b)

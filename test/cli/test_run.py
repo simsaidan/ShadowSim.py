@@ -21,6 +21,7 @@ from shadowsim.cli.serve import _Handler
 from shadowsim.models.catalog import _describe_models, listed_model_terms, listed_models
 from shadowsim.simulators.catalog import _describe_simulator, listed_simulators
 from shadowsim.simulators.reducers import expectation_x, expectation_z
+from shadowsim.simulators.result import _resource_record
 
 
 def _selection(**overrides: object) -> dict[str, object]:
@@ -402,6 +403,11 @@ def test_export_writes_resource_metrics(tmp_path: Path) -> None:
     assert record["shots_per_job"] is None
     assert record["num_jobs"] is None
     assert record["total_shots"] is None
+    assert record["depth"] == "N/A"
+    assert record["width"] == "N/A"
+    assert record["gate_count"] == "N/A"
+    assert record["t_count"] == "N/A"
+    assert record["toffoli_count"] == "N/A"
 
 
 @pytest.mark.qutip
@@ -513,6 +519,13 @@ def test_export_counts_shots_for_a_circuit_simulator(tmp_path: Path) -> None:
     assert record["shots_per_job"] == 4
     assert record["num_jobs"] == 2
     assert record["total_shots"] == 8
+    assert record["width"] == 2
+    assert isinstance(record["depth"], int)
+    assert isinstance(record["gate_count"], int)
+    assert record["depth"] > 0
+    assert record["gate_count"] > 0
+    assert record["t_count"] == 0
+    assert record["toffoli_count"] == 0
     assert payload["resources"] == [record]
     assert payload["labels"] == ["⟨Z⟩ on 0", "⟨Z⟩ on 1"]
 
@@ -593,6 +606,12 @@ def test_pauli_propagation_builds_a_trotter_run() -> None:
     assert simulator.circuit_backend.max_weight == math.inf
     assert simulator.circuit_backend.min_abs_coeff == 1e-10
     assert not hasattr(simulator.circuit_backend, "shots")
+    record = _resource_record(simulator, 0.2)
+    assert record["depth"] == "N/A"
+    assert record["width"] == "N/A"
+    assert record["gate_count"] == "N/A"
+    assert record["t_count"] == "N/A"
+    assert record["toffoli_count"] == "N/A"
 
 
 @pytest.mark.qiskit
@@ -828,6 +847,16 @@ def test_benchmark_runs_trotter_on_aer_and_pauli_propagation() -> None:
     assert resources[1]["shots_per_job"] is None
     assert resources[1]["num_jobs"] is None
     assert resources[1]["total_shots"] is None
+    assert isinstance(resources[0]["depth"], int)
+    assert resources[0]["width"] == 2
+    assert isinstance(resources[0]["gate_count"], int)
+    assert resources[0]["t_count"] == 0
+    assert resources[0]["toffoli_count"] == 0
+    assert resources[1]["depth"] == "N/A"
+    assert resources[1]["width"] == "N/A"
+    assert resources[1]["gate_count"] == "N/A"
+    assert resources[1]["t_count"] == "N/A"
+    assert resources[1]["toffoli_count"] == "N/A"
     errors = payload["errors"]
     assert isinstance(errors, list)
     assert errors[0]["challenger_id"] == "trotterization_simulator#2"

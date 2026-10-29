@@ -294,9 +294,12 @@ To easily compare results, we initialize a benchmark with a reference simulator
 and one or more challengers. All simulators must share the same time grid.
 We run the benchmark, which runs the underlying simulations. Numeric L∞ / L2 /
 MAE / RMSE error metrics vs the reference are available via `error_metrics`.
-Wall-clock time and shot budget (when the circuit backend stores `shots`) are available
-via `resource_metrics`. Both are exported together by `save_error_metrics` as
-`{"errors": ..., "resources": ...}`. `save_result_plot` saves a plot per
+Wall-clock time, shot budget (when the circuit backend stores `shots`), and
+circuit metrics are available via `resource_metrics`. Those metrics are the
+depth, qubit width, gate count, T count, and Toffoli count of the final-time
+circuit after the backend transpiles it. Each is `N/A` when the backend cannot
+report it, including QuTiP and Pauli propagation. Error and resource rows are
+exported together by `save_error_metrics` as `{"errors": ..., "resources": ...}`. `save_result_plot` saves a plot per
 simulator and an absolute-difference plot vs the reference for each challenger.
 The third figure below shows L∞, MAE, and RMSE from `error_metrics`. Those
 three share a per-time-point scale.
