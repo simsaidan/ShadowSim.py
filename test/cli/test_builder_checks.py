@@ -223,6 +223,10 @@ def test_preview_names_a_backend_for_each_circuit_row() -> None:
     first["backendFields"] = {"max_weight": "", "min_abs_coeff": "1e-10"}
     assert _call("backendFieldsReady", page) is False
     assert _call("runAllowed", page) is False
+    assert _call("backendFieldStatus", page, False) == "Enter a max weight and a minimum coefficient."
+    assert _call("backendFieldStatus", page, True) == (
+        "Enter a max weight and a minimum coefficient to preview the script."
+    )
     assert _call("entryBody", page, second) == {
         "simulator": "splitjmatrix",
         "time_steps": "11",
@@ -233,6 +237,55 @@ def test_preview_names_a_backend_for_each_circuit_row() -> None:
         "backend": "aer",
         "shots": "128",
     }
+
+
+def _with_aer_gates(page: dict[str, Any]) -> dict[str, Any]:
+    """Give the Aer block a small gate list and start that field blank."""
+    aer = page["blocks"]["backend"][0]
+    aer["setup"] = "circuit_backend = AerCircuitBackend(shots={shots}, basis_gates={basis_gates})"
+    aer["fields"] = [
+        {
+            "name": "basis_gates",
+            "label": "Gates",
+            "default": "",
+            "allow_inf": False,
+            "kind": "gates",
+            "choices": ["cx", "rx", "ry", "rz", "u"],
+        }
+    ]
+    page["placedSims"][0]["backendFields"] = {"basis_gates": ""}
+    return page
+
+
+def test_blank_aer_gates_preview_as_none() -> None:
+    page = _with_aer_gates(_circuit_page())
+    assert _call("backendFieldsReady", page) is True
+    assert _call("runAllowed", page) is True
+    text = _call("previewText", page)
+    assert isinstance(text, str)
+    assert "circuit_backend_1 = AerCircuitBackend(shots=256, basis_gates=None)" in text
+    assert _call("entryBody", page, page["placedSims"][0])["basis_gates"] == ""
+
+
+def test_typed_aer_gates_are_previewed_and_posted() -> None:
+    page = _with_aer_gates(_circuit_page())
+    page["placedSims"][0]["backendFields"] = {"basis_gates": "RX, ry, rx, cx"}
+    text = _call("previewText", page)
+    assert isinstance(text, str)
+    assert 'basis_gates=["rx", "ry", "cx"]' in text
+    assert _call("entryBody", page, page["placedSims"][0])["basis_gates"] == "RX, ry, rx, cx"
+
+
+def test_unknown_aer_gates_block_the_run_and_the_preview() -> None:
+    page = _with_aer_gates(_circuit_page())
+    page["placedSims"][0]["backendFields"] = {"basis_gates": "foo"}
+    assert _call("backendFieldsReady", page) is False
+    assert _call("runAllowed", page) is False
+    assert _call("previewText", page) == ""
+    assert _call("backendFieldStatus", page, False) == "Unknown gate foo."
+    assert _call("backendFieldStatus", page, True) == "Unknown gate foo to preview the script."
+    page["placedSims"][0]["backendFields"] = {"basis_gates": ",,,"}
+    assert _call("backendFieldStatus", page, False) == "Enter gate names separated by commas."
 
 
 def test_preview_numbers_a_backend_with_its_row() -> None:

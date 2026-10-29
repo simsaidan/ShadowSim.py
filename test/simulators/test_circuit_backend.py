@@ -344,6 +344,85 @@ def test_aer_x_expectation_of_plus_is_one():
     assert AerCircuitBackend().x_expectations(circuit, [0], shots=5, seed=2) == [1.0]
 
 
+def test_aer_basis_gates_normalizes_names() -> None:
+    assert AerCircuitBackend().basis_gates is None
+    backend = AerCircuitBackend(basis_gates=["RX", "rx", " CX ", "  "])
+    assert backend.basis_gates == ("rx", "cx")
+
+
+def test_aer_basis_gates_rejects_an_unknown_or_empty_set() -> None:
+    with pytest.raises(ValueError, match=r"^Unknown gate foo\.$"):
+        AerCircuitBackend(basis_gates=["foo"])
+    with pytest.raises(ValueError, match=r"^Unknown gate store\.$"):
+        AerCircuitBackend(basis_gates=["store"])
+    with pytest.raises(ValueError, match=r"^Enter at least one gate\.$"):
+        AerCircuitBackend(basis_gates=[])
+    with pytest.raises(ValueError, match=r"^Enter at least one gate\.$"):
+        AerCircuitBackend(basis_gates=["  "])
+    with pytest.raises(ValueError, match="sequence of gate names"):
+        AerCircuitBackend(basis_gates="cx")  # type: ignore[arg-type]
+    with pytest.raises(ValueError, match="sequence of gate names"):
+        AerCircuitBackend(basis_gates=["cx", 1])  # type: ignore[list-item]
+
+
+def test_aer_passes_basis_gates_to_the_simulator(monkeypatch: pytest.MonkeyPatch) -> None:
+    ctor_kwargs: list[dict[str, object]] = []
+
+    class FakeResult:
+        def get_counts(self) -> dict[str, int]:
+            return {"0": 1}
+
+    class FakeJob:
+        def result(self) -> FakeResult:
+            return FakeResult()
+
+    class FakeBackend:
+        def __init__(self, **kwargs: object) -> None:
+            ctor_kwargs.append(kwargs)
+
+        def run(self, compiled: QuantumCircuit, shots: int) -> FakeJob:
+            del compiled, shots
+            return FakeJob()
+
+    monkeypatch.setattr(aer_backend_module, "AerSimulator", FakeBackend)
+    monkeypatch.setattr(aer_backend_module, "transpile", lambda circ, backend: circ)
+    circuit = QuantumCircuit(1, 1)
+    circuit.h(0)
+    circuit.measure(0, 0)
+
+    AerCircuitBackend(basis_gates=["rx", "cx"]).run_counts(circuit, shots=1, seed=7)
+
+    assert ctor_kwargs == [{"seed_simulator": 7, "basis_gates": ["rx", "cx"]}]
+
+
+def test_aer_basis_gates_drop_t_when_the_basis_has_no_t() -> None:
+    circuit = QuantumCircuit(1)
+    circuit.t(0)
+
+    assert AerCircuitBackend(basis_gates=["u", "cx"]).t_count(circuit) == 0
+
+
+def test_aer_basis_gates_reports_a_basis_that_cannot_compile() -> None:
+    circuit = QuantumCircuit(1)
+    circuit.t(0)
+    backend = AerCircuitBackend(basis_gates=["x", "y", "z"])
+
+    with pytest.raises(ValueError, match=r"^Cannot compile t into x, y, and z\.$"):
+        backend.t_count(circuit)
+
+    entangling = QuantumCircuit(2)
+    entangling.h(0)
+    entangling.cx(0, 1)
+    with pytest.raises(ValueError, match=r"^Cannot compile cx and h into x, y, and z\.$"):
+        backend.depth(entangling)
+
+    measured = QuantumCircuit(1, 1)
+    measured.h(0)
+    measured.measure(0, 0)
+    with pytest.raises(ValueError, match=r"^Cannot compile h into x, y, and z\.$"):
+        backend.run_counts(measured, shots=1, seed=1)
+
+
 def test_aer_expectations_reject_an_index_outside_the_circuit():
     circuit = QuantumCircuit(1)
 

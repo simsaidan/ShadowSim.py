@@ -3,12 +3,13 @@
 import inspect
 import math
 from types import ModuleType
-from typing import TypedDict
+from typing import NotRequired, TypedDict
 
 from shadowsim._optional import import_optional
 from shadowsim.backends import _EXPORTS
 
 _FIELD_LABELS = {
+    "basis_gates": "Gates",
     "max_weight": "Max weight",
     "min_abs_coeff": "Min coefficient",
 }
@@ -21,6 +22,8 @@ class ListedField(TypedDict):
     label: str
     default: str
     allow_inf: bool
+    kind: NotRequired[str]
+    choices: NotRequired[list[str]]
 
 
 class ListedBackend(TypedDict):
@@ -42,8 +45,10 @@ def listed_backends() -> list[ListedBackend]:
     that module. ``CircuitBackend`` is a protocol, so it is omitted. Each
     record uses the class name and the first line of its docstring. Required
     constructor arguments appear in ``setup``. A ``shots`` parameter is written
-    as ``{shots}`` so the page can fill the shot budget. Any other parameter
-    with a default is a field the page can edit, written as ``{name}``.
+    as ``{shots}`` so the page can fill the shot budget. ``basis_gates``, when
+    its default is ``None``, is a gate list written as ``{basis_gates}``. Its
+    choices are the class attribute ``BASIS_GATE_NAMES``. Any other parameter
+    with a default is a numeric field the page can edit, written as ``{name}``.
 
     Returns:
         Backends the builder page can offer.
@@ -85,7 +90,7 @@ def _describe_backends(module: ModuleType) -> list[ListedBackend]:
         document = inspect.getdoc(value)
         detail = title if document is None else document.split("\n", 1)[0].replace("``", "")
         parameters = list(inspect.signature(value).parameters.values())
-        arguments, fields = _backend_arguments(parameters)
+        arguments, fields = _backend_arguments(value, parameters)
         listed.append(
             {
                 "id": title.lower(),
@@ -100,13 +105,17 @@ def _describe_backends(module: ModuleType) -> list[ListedBackend]:
     return listed
 
 
-def _backend_arguments(parameters: list[inspect.Parameter]) -> tuple[list[str], list[ListedField]]:
+def _backend_arguments(owner: type, parameters: list[inspect.Parameter]) -> tuple[list[str], list[ListedField]]:
     """Return setup arguments and the editable fields among ``parameters``."""
     arguments: list[str] = []
     fields: list[ListedField] = []
     for parameter in parameters:
         if parameter.name == "shots":
             arguments.append("shots={shots}")
+            continue
+        if parameter.name == "basis_gates" and parameter.default is None:
+            arguments.append("basis_gates={basis_gates}")
+            fields.append(_gate_field(owner))
             continue
         if parameter.default is inspect.Parameter.empty:
             arguments.append(parameter.name)
@@ -122,3 +131,17 @@ def _backend_arguments(parameters: list[inspect.Parameter]) -> tuple[list[str], 
             }
         )
     return arguments, fields
+
+
+def _gate_field(owner: type) -> ListedField:
+    """Return the gate-list field published by ``owner``."""
+    published = getattr(owner, "BASIS_GATE_NAMES", ())
+    choices = [name for name in published if isinstance(name, str)]
+    return {
+        "name": "basis_gates",
+        "label": _FIELD_LABELS["basis_gates"],
+        "default": "",
+        "allow_inf": False,
+        "kind": "gates",
+        "choices": choices,
+    }

@@ -594,6 +594,38 @@ if (request.action === "roundtrip") {
     hDefault: paramText(hParam),
     request: runRequest().factory,
   };
+} else if (request.action === "gates") {
+  fillCircuit();
+  BLOCKS.backend[0].setup = "circuit_backend = AerCircuitBackend(shots={shots}, basis_gates={basis_gates})";
+  BLOCKS.backend[0].fields = [{
+    name: "basis_gates",
+    label: "Gates",
+    default: "",
+    allow_inf: false,
+    kind: "gates",
+    choices: ["cx", "h", "rx", "ry", "rz"],
+  }];
+  const board = document.createElement("section");
+  board.className = "board";
+  document.documentElement.append(board);
+  draw(board);
+  const chip = openChip(board, "backend");
+  const gates = labeled(board, "Gates");
+  const blankPreview = previewText();
+  const blankStatus = statusMessage();
+  typeInto(gates, "RX, ry, RX");
+  const detail = chip.querySelector(".backend-detail");
+  result = {
+    shots: Boolean(labeled(board, "Shots")),
+    blankPreview,
+    blankStatus,
+    typedPreview: previewText(),
+    typedDetail: detail.textContent,
+    typedValue: placedSims[0].backendFields.basis_gates,
+    unknownStatus: (typeInto(gates, "foo"), statusMessage()),
+    unknownPreview: previewText(),
+    commaStatus: (typeInto(gates, ",,,"), statusMessage()),
+  };
 } else {
   throw new Error("unknown action");
 }
@@ -715,6 +747,19 @@ def test_unknown_blocks_are_dropped() -> None:
         {"id": "trotterization", "backend": None, "shots": "256"},
         {"id": "trotterization", "backend": "aer", "shots": "128"},
     ]
+
+
+def test_aer_card_edits_gates_beside_shots() -> None:
+    page = _call("gates")
+    assert page["shots"] is True
+    assert page["blankStatus"] == "Ready to run."
+    assert "basis_gates=None" in page["blankPreview"]
+    assert page["typedValue"] == "rx, ry, rx"
+    assert page["typedDetail"] == "256 shots, rx, ry"
+    assert 'basis_gates=["rx", "ry"]' in page["typedPreview"]
+    assert page["unknownStatus"] == "Unknown gate foo."
+    assert page["unknownPreview"] == ""
+    assert page["commaStatus"] == "Enter gate names separated by commas."
 
 
 def test_edits_keep_the_chart_until_the_run_changes() -> None:

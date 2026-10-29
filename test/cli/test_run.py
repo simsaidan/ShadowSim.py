@@ -905,6 +905,56 @@ def test_pauli_propagation_rejects_split_j() -> None:
 
 
 @pytest.mark.qiskit
+def test_aer_uses_posted_basis_gates() -> None:
+    pytest.importorskip("qiskit_aer")
+    posted = {"simulator": "trotterization", "time_steps": 2, "num_steps": 1}
+    assert build_simulator(_selection(**posted)).circuit_backend.basis_gates is None
+    assert build_simulator(_selection(**posted, basis_gates="  ")).circuit_backend.basis_gates is None
+    named = build_simulator(_selection(**posted, basis_gates="RX, ry, rx, cx"))
+    assert named.circuit_backend.basis_gates == ("rx", "ry", "cx")
+    listed = build_simulator(_selection(**posted, basis_gates=["u", "cx"]))
+    assert listed.circuit_backend.basis_gates == ("u", "cx")
+    with pytest.raises(ValueError, match=r"^Unknown gate foo\.$"):
+        build_simulator(_selection(**posted, basis_gates="foo"))
+    with pytest.raises(ValueError, match=r"^Enter at least one gate\.$"):
+        build_simulator(_selection(**posted, basis_gates=",,,"))
+    with pytest.raises(ValueError, match="sequence of gate names"):
+        build_simulator(_selection(**posted, basis_gates=1))
+    with pytest.raises(ValueError, match="sequence of gate names"):
+        build_simulator(_selection(**posted, basis_gates=["cx", 1]))
+
+
+@pytest.mark.qiskit
+def test_aer_posted_basis_that_cannot_compile_is_a_value_error() -> None:
+    pytest.importorskip("qiskit")
+    pytest.importorskip("qiskit_aer")
+    from qiskit import QuantumCircuit
+
+    simulator = build_simulator(
+        _selection(simulator="trotterization", time_steps=2, num_steps=1, basis_gates="x, y, z")
+    )
+    circuit = QuantumCircuit(1)
+    circuit.t(0)
+    with pytest.raises(ValueError, match=r"^Cannot compile t into x, y, and z\.$"):
+        simulator.circuit_backend.t_count(circuit)
+
+
+@pytest.mark.qiskit
+def test_pauli_propagation_ignores_basis_gates() -> None:
+    pytest.importorskip("qiskit")
+    simulator = build_simulator(
+        _selection(
+            simulator="trotterization",
+            backend="paulipropagation",
+            time_steps=2,
+            num_steps=1,
+            basis_gates="foo",
+        )
+    )
+    assert simulator.circuit_backend.name == "pauli_propagation"
+
+
+@pytest.mark.qiskit
 @pytest.mark.parametrize("simulator_id", ["trotterization", "splitjmatrix"])
 def test_circuit_simulator_runs_ising_on_aer(simulator_id: str) -> None:
     pytest.importorskip("qiskit_aer")
@@ -1276,8 +1326,22 @@ def test_listed_backends_matches_the_circuit_module() -> None:
     pytest.importorskip("qiskit_aer")
     listed = listed_backends()
     assert [item["id"] for item in listed] == ["aer", "paulipropagation"]
-    assert listed[0]["setup"] == "circuit_backend = AerCircuitBackend(shots={shots})"
+    from shadowsim.backends.aer import AerCircuitBackend
+
+    assert listed[0]["setup"] == "circuit_backend = AerCircuitBackend(shots={shots}, basis_gates={basis_gates})"
     assert listed[0]["shots"] is True
+    assert listed[0]["fields"] == [
+        {
+            "name": "basis_gates",
+            "label": "Gates",
+            "default": "",
+            "allow_inf": False,
+            "kind": "gates",
+            "choices": list(AerCircuitBackend.BASIS_GATE_NAMES),
+        }
+    ]
+    assert "store" not in listed[0]["fields"][0]["choices"]
+    assert "cx" in listed[0]["fields"][0]["choices"]
     assert "Aer" in listed[0]["detail"]
     assert listed[1]["setup"] == (
         "circuit_backend = PauliPropagationBackend(max_weight={max_weight}, min_abs_coeff={min_abs_coeff})"
