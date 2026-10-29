@@ -920,6 +920,8 @@ def test_aer_uses_posted_basis_gates() -> None:
         build_simulator(_selection(**posted, basis_gates=",,,"))
     with pytest.raises(ValueError, match="sequence of gate names"):
         build_simulator(_selection(**posted, basis_gates=1))
+    with pytest.raises(ValueError, match="sequence of gate names"):
+        build_simulator(_selection(**posted, basis_gates=["cx", 1]))
 
 
 @pytest.mark.qiskit

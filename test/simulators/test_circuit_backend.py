@@ -361,6 +361,8 @@ def test_aer_basis_gates_rejects_an_unknown_or_empty_set() -> None:
         AerCircuitBackend(basis_gates=["  "])
     with pytest.raises(ValueError, match="sequence of gate names"):
         AerCircuitBackend(basis_gates="cx")  # type: ignore[arg-type]
+    with pytest.raises(ValueError, match="sequence of gate names"):
+        AerCircuitBackend(basis_gates=["cx", 1])  # type: ignore[list-item]
 
 
 def test_aer_passes_basis_gates_to_the_simulator(monkeypatch: pytest.MonkeyPatch) -> None:
