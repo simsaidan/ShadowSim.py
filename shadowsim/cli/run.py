@@ -1,6 +1,7 @@
 """Build a simulator from a builder-page selection."""
 
 import math
+import re
 from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
@@ -20,7 +21,7 @@ from shadowsim.encoding.amplitude import AmplitudeEncoding
 from shadowsim.encoding.angle import AngleEncoding
 from shadowsim.encoding.computational_basis import ComputationalBasisEncoding
 from shadowsim.encoding.gray import GrayEncoding
-from shadowsim.models.catalog import listed_models
+from shadowsim.models.catalog import ListedParam, listed_models
 from shadowsim.models.ising import IsingModel
 from shadowsim.models.tavis_cummings import TavisCummingsModel
 from shadowsim.simulators.reducers import expectation_x, expectation_z
@@ -74,6 +75,11 @@ def build_simulator(selection: Mapping[str, object], *, time_steps: int = 101) -
             ``cavities * (2 + emitters)``, at most 15. Jaynes–Cummings–Hubbard
             reads ``cavities`` and real ``nu``, with one emitter per cavity, so
             its qubit count is ``3 * cavities``, at most 15.
+            ``factory`` supplies the remaining chip arguments. A missing
+            ``factory`` keeps each model's defaults. Numbers are finite reals
+            or numeric text. A per-emitter value is a scalar or a sequence
+            whose length is the emitter count. ``edges`` is empty, dash pairs
+            such as ``0-1, 1-2``, or a list of pairs.
             A basis or Gray code state reads ``basis`` or ``gray``, a string of 0
             and 1 whose length is the qubit count, at most 15 characters. Angle
             reads ``angles``, one finite real number per qubit. Amplitude reads
@@ -122,6 +128,7 @@ def build_simulator(selection: Mapping[str, object], *, time_steps: int = 101) -
             selection.get("emitters"),
             selection.get("cavities"),
             selection.get("nu"),
+            selection.get("factory"),
         )
     state = _initial_state(state_id, model.num_qubits, _state_data(selection, state_id))
     measure_id = _choice(selection, "measure")
@@ -720,12 +727,134 @@ def _hopping(value: object) -> float:
     return number
 
 
+_REAL_TEXT = re.compile(r"^-?(?:\d+\.?\d*|\.\d+)(?:e[+-]?\d+)?$", re.IGNORECASE)
+_EDGE_PAIR = re.compile(r"^(\d+)-(\d+)$")
+_EDGE_PAREN = re.compile(r"\(\s*(\d+)\s*,\s*(\d+)\s*\)")
+
+
+def _factory_kwargs(params: list[ListedParam], payload: object, *, n_emitters: int | None) -> dict[str, object]:
+    """Return factory keyword arguments posted by the chip.
+
+    A missing payload keeps every default. An empty ``edges`` value is omitted
+    so the chain preset stays in place.
+    """
+    if payload is None:
+        return {}
+    if not isinstance(payload, Mapping):
+        raise ValueError("factory arguments must be an object")
+    kwargs: dict[str, object] = {}
+    for param in params:
+        name = param["name"]
+        if name not in payload or payload[name] is None:
+            continue
+        kind = param["kind"]
+        value = payload[name]
+        if kind == "edges":
+            edges = _factory_edges(value)
+            if edges is None:
+                continue
+            kwargs[name] = edges
+        elif kind == "choice":
+            kwargs[name] = _factory_choice(name, param.get("choices"), value)
+        elif kind == "number_or_list":
+            kwargs[name] = _factory_sequence(name, value, n_emitters)
+        else:
+            kwargs[name] = _factory_real(name, value)
+    return kwargs
+
+
+def _factory_real(name: str, value: object) -> float:
+    """Return one finite real chip argument."""
+    if isinstance(value, bool):
+        raise ValueError(f"{name} must be a real number")
+    if isinstance(value, int | float):
+        number = float(value)
+    elif isinstance(value, str):
+        text = value.strip()
+        if _REAL_TEXT.fullmatch(text) is None:
+            raise ValueError(f"{name} must be a real number")
+        number = float(text)
+    else:
+        raise ValueError(f"{name} must be a real number")
+    if not math.isfinite(number):
+        raise ValueError(f"{name} must be a real number")
+    return number
+
+
+def _factory_sequence(name: str, value: object, n_emitters: int | None) -> float | list[float]:
+    """Return a scalar or one number per emitter."""
+    if isinstance(value, str) and "," in value:
+        parts = [part.strip() for part in value.split(",")]
+        if not parts or any(part == "" for part in parts):
+            raise ValueError(f"{name} must be a real number")
+        numbers = [_factory_real(name, part) for part in parts]
+    elif isinstance(value, list):
+        numbers = [_factory_real(name, item) for item in value]
+    else:
+        return _factory_real(name, value)
+    if n_emitters is not None and len(numbers) != n_emitters:
+        raise ValueError(f"{name} must be a scalar or a sequence of length {n_emitters}, got length {len(numbers)}")
+    return numbers
+
+
+def _factory_choice(name: str, choices: list[str] | None, value: object) -> str:
+    """Return a chip choice that the factory accepts."""
+    allowed = choices or []
+    if isinstance(value, str) and value.strip() in allowed:
+        return value.strip()
+    rendered = ", ".join(allowed)
+    raise ValueError(f"{name} must be one of {rendered}")
+
+
+def _factory_edges(value: object) -> list[tuple[int, int]] | None:
+    """Return posted edges. Blank text means the chain preset."""
+    if isinstance(value, str):
+        return _edge_text(value)
+    if not isinstance(value, list):
+        raise ValueError("edges must be pairs such as 0-1, 1-2")
+    pairs: list[tuple[int, int]] = []
+    for item in value:
+        if (
+            isinstance(item, list | tuple)
+            and len(item) == 2
+            and all(isinstance(part, int) and not isinstance(part, bool) for part in item)
+        ):
+            pairs.append((item[0], item[1]))
+            continue
+        raise ValueError("edges must be pairs such as 0-1, 1-2")
+    return pairs
+
+
+def _edge_text(text: str) -> list[tuple[int, int]] | None:
+    """Parse ``0-1, 1-2`` or ``(0, 1), (1, 2)``."""
+    trimmed = text.strip()
+    if not trimmed:
+        return None
+    if "(" in trimmed or ")" in trimmed:
+        pairs = [(int(left), int(right)) for left, right in _EDGE_PAREN.findall(trimmed)]
+        rest = re.sub(r"[,\s]", "", _EDGE_PAREN.sub("", trimmed))
+        if rest or not pairs:
+            raise ValueError("edges must be pairs such as 0-1, 1-2")
+        return pairs
+    tokens = [token for token in re.split(r"[\s,]+", trimmed) if token]
+    if not tokens:
+        raise ValueError("edges must be pairs such as 0-1, 1-2")
+    pairs = []
+    for token in tokens:
+        match = _EDGE_PAIR.fullmatch(token)
+        if match is None:
+            raise ValueError("edges must be pairs such as 0-1, 1-2")
+        pairs.append((int(match.group(1)), int(match.group(2))))
+    return pairs
+
+
 def _model(
     model_id: str,
     qubits: object,
     emitters: object = None,
     cavities: object = None,
     nu: object = None,
+    factory: object = None,
 ) -> IsingModel | TavisCummingsModel:
     """Build the selected factory.
 
@@ -733,29 +862,36 @@ def _model(
     reads ``emitters`` and uses two cavity qubits plus one qubit per emitter.
     Tavis–Cummings–Hubbard repeats that block once per cavity and reads ``nu``.
     Jaynes–Cummings–Hubbard is that model with one emitter per cavity.
+    ``factory`` adds the chip arguments. A missing value keeps the defaults.
     """
     record = next((item for item in listed_models() if item["id"] == model_id), None)
     if record is None:
         raise ValueError("unknown model")
-    factory = getattr(models, record["id"])
+    build = getattr(models, record["id"])
     if model_id == "tavis_cummings_hubbard":
         emitter_count = _emitter_count(emitters)
         cavity_count = _cavity_count(cavities)
         qubit_count = cavity_count * (2 + emitter_count)
         if qubit_count > 15:
             raise ValueError("cavities and emitters must use at most 15 qubits")
-        built = factory(n_emitters=emitter_count, n_cavities=cavity_count, nu=_hopping(nu))
+        kwargs = _factory_kwargs(record["params"], factory, n_emitters=emitter_count)
+        built = build(n_emitters=emitter_count, n_cavities=cavity_count, nu=_hopping(nu), **kwargs)
     elif model_id == "jaynes_cummings_hubbard":
         cavity_count = _cavity_count(cavities)
         if cavity_count * 3 > 15:
             raise ValueError("cavities must use at most 15 qubits")
-        built = factory(n_cavities=cavity_count, nu=_hopping(nu))
+        kwargs = _factory_kwargs(record["params"], factory, n_emitters=1)
+        built = build(n_cavities=cavity_count, nu=_hopping(nu), **kwargs)
     elif model_id == "tavis_cummings":
-        built = factory(n_emitters=_emitter_count(emitters))
+        emitter_count = _emitter_count(emitters)
+        kwargs = _factory_kwargs(record["params"], factory, n_emitters=emitter_count)
+        built = build(n_emitters=emitter_count, **kwargs)
     elif record["qubits"]:
-        built = factory(n_qubits=_integer(qubits))
+        kwargs = _factory_kwargs(record["params"], factory, n_emitters=None)
+        built = build(n_qubits=_integer(qubits), **kwargs)
     else:
-        built = factory()
+        kwargs = _factory_kwargs(record["params"], factory, n_emitters=1)
+        built = build(**kwargs)
     return cast(IsingModel | TavisCummingsModel, built)
 
 

@@ -374,3 +374,123 @@ def test_hamiltonian_problems_use_different_messages() -> None:
     assert nonhermitian == "Matrix must be Hermitian."
     assert wrong_size == "Must be 4\u00d74 for 2 qubits."
     assert nonhermitian != wrong_size
+
+
+_ISING_PARAMS = [
+    {"name": "J", "label": "J", "kind": "number", "default": "1"},
+    {"name": "h", "label": "h", "kind": "number", "default": "0"},
+    {
+        "name": "field",
+        "label": "field",
+        "kind": "choice",
+        "default": "transverse",
+        "choices": ["classical", "transverse"],
+    },
+    {"name": "topology", "label": "topology", "kind": "choice", "default": "chain", "choices": ["chain"]},
+    {
+        "name": "boundary",
+        "label": "boundary",
+        "kind": "choice",
+        "default": "open",
+        "choices": ["open", "periodic"],
+    },
+    {"name": "edges", "label": "edges", "kind": "edges", "default": ""},
+]
+
+
+def test_ising_preview_includes_factory_arguments() -> None:
+    page = _qutip_page()
+    page["modelFactories"][0]["params"] = _ISING_PARAMS
+    text = _call("previewText", page)
+    assert isinstance(text, str)
+    assert 'model = ising(n_qubits=2, J=1.0, h=0.0, field="transverse", topology="chain", boundary="open")' in text
+    assert "edges=" not in text
+
+    page["settings"]["qubits"] = "4"
+    page["basisBits"] = "0000"
+    page["factoryText"] = {"J": "0.5", "edges": "0-1, 1-2"}
+    edited = _call("previewText", page)
+    assert isinstance(edited, str)
+    assert "J=0.5" in edited
+    assert "edges=[(0, 1), (1, 2)]" in edited
+    assert 'boundary="open"' in edited
+
+
+def test_bad_ising_arguments_block_the_run() -> None:
+    page = _qutip_page()
+    page["modelFactories"][0]["params"] = _ISING_PARAMS
+    page["factoryText"] = {"J": "0", "h": "0"}
+    assert _call("factoryAlert", page) == "J and h cannot both be zero"
+    assert _call("runAllowed", page) is False
+
+    page["factoryText"] = {"edges": "nope"}
+    assert _call("factoryAlert", page) == "Enter edges as pairs such as 0-1, 1-2"
+    assert _call("runAllowed", page) is False
+
+    page["settings"]["qubits"] = "4"
+    page["basisBits"] = "0000"
+    page["factoryText"] = {"boundary": "periodic", "edges": "0-1"}
+    assert _call("factoryAlert", page) == "Edges use the chain preset. Set topology to chain and boundary to open"
+    assert _call("runAllowed", page) is False
+
+    page["settings"]["qubits"] = "2"
+    page["basisBits"] = "00"
+    page["factoryText"] = {"boundary": "periodic"}
+    assert _call("factoryAlert", page) == "Periodic boundary needs at least 3 qubits"
+    assert _call("runAllowed", page) is False
+
+
+def test_per_emitter_list_must_match_the_emitter_count() -> None:
+    page = _qutip_page()
+    page["preexistingId"] = "tavis_cummings"
+    page["emitterText"] = "2"
+    page["basisBits"] = "0000"
+    page["modelFactories"] = [
+        {
+            "id": "tavis_cummings",
+            "title": "Tavis-Cummings",
+            "qubits": False,
+            "setup": "model = tavis_cummings()",
+            "params": [
+                {"name": "omega_c", "label": "omega_c", "kind": "number", "default": "245000"},
+                {"name": "omega_e", "label": "omega_e", "kind": "number_or_list", "default": "245000"},
+                {"name": "kappa", "label": "kappa", "kind": "number", "default": "1"},
+                {"name": "gamma", "label": "gamma", "kind": "number_or_list", "default": "1"},
+                {"name": "g", "label": "g", "kind": "number_or_list", "default": "100"},
+            ],
+        }
+    ]
+    page["factoryText"] = {"g": "10, 20"}
+    text = _call("previewText", page)
+    assert isinstance(text, str)
+    assert "model = tavis_cummings(n_emitters=2, omega_c=245000.0" in text
+    assert "g=[10.0, 20.0]" in text
+
+    page["factoryText"] = {"g": "1, 2, 3"}
+    assert _call("factoryAlert", page) == "Enter 2 numbers for g"
+    assert _call("runAllowed", page) is False
+
+
+def test_hubbard_preview_keeps_structure_and_factory_arguments() -> None:
+    page = _qutip_page()
+    page["preexistingId"] = "tavis_cummings_hubbard"
+    page["cavityText"] = "2"
+    page["emitterText"] = "1"
+    page["hoppingText"] = "1.5"
+    page["basisBits"] = "000000"
+    page["factoryText"] = {"omega_c": "10"}
+    page["modelFactories"] = [
+        {
+            "id": "tavis_cummings_hubbard",
+            "title": "Tavis-Cummings-Hubbard",
+            "qubits": False,
+            "setup": "model = tavis_cummings_hubbard()",
+            "params": [
+                {"name": "omega_c", "label": "omega_c", "kind": "number", "default": "245000"},
+                {"name": "g", "label": "g", "kind": "number_or_list", "default": "100"},
+            ],
+        }
+    ]
+    text = _call("previewText", page)
+    assert isinstance(text, str)
+    assert "model = tavis_cummings_hubbard(n_cavities=2, n_emitters=1, nu=1.5, omega_c=10.0, g=100.0)" in text

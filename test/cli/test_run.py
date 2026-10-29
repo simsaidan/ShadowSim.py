@@ -8,16 +8,24 @@ import threading
 import types
 import urllib.error
 import urllib.request
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from http.server import HTTPServer
 from pathlib import Path
-from typing import Protocol
+from typing import Literal, Protocol, Union
 
+import numpy as np
 import pytest
 
 from shadowsim.backends import listed_backends
 from shadowsim.cli.run import _initial_state, _observable_labels, _series_name, build_simulator, run_page
 from shadowsim.cli.serve import _Handler
+from shadowsim.models import (
+    ising,
+    jaynes_cummings,
+    jaynes_cummings_hubbard,
+    tavis_cummings,
+    tavis_cummings_hubbard,
+)
 from shadowsim.models.catalog import _describe_models, listed_model_terms, listed_models
 from shadowsim.simulators.catalog import _describe_simulator, listed_simulators
 from shadowsim.simulators.reducers import expectation_x, expectation_z
@@ -164,6 +172,167 @@ def test_jaynes_cummings_ignores_the_qubits_field() -> None:
     simulator = build_simulator(_selection(model="jaynes_cummings", qubits="1", basis="100"), time_steps=2)
     assert simulator.num_qubits == 3
     assert simulator.initial_state.get_num_qubits() == 3
+
+
+def _built_model(monkeypatch: pytest.MonkeyPatch, **overrides: object) -> object:
+    """Return the model ``build_simulator`` would hand to QuTiP."""
+    monkeypatch.setattr("shadowsim.cli.run._qutip_simulator", lambda model, *_args, **_kwargs: model)
+    return build_simulator(_selection(**overrides), time_steps=2)
+
+
+def _same_operators(got: object, expected: object) -> None:
+    """Require two models to carry the same full-space operators."""
+    for name in ("full_hamiltonians", "c_ops_full"):
+        left = getattr(got, name)
+        right = getattr(expected, name)
+        assert len(left) == len(right)
+        for item, reference in zip(left, right, strict=True):
+            assert np.allclose(item.matrix, reference.matrix)
+
+
+def test_factory_arguments_build_the_ising_model(monkeypatch: pytest.MonkeyPatch) -> None:
+    model = _built_model(
+        monkeypatch,
+        qubits="4",
+        basis="0000",
+        factory={
+            "J": "0.5",
+            "h": "0.25",
+            "field": "classical",
+            "boundary": "open",
+            "edges": "0-1, 2-3",
+        },
+    )
+    assert model.J == 0.5
+    assert model.h == 0.25
+    assert model.field == "classical"
+    assert model.edges == [(0, 1), (2, 3)]
+    assert model.topology == "custom"
+
+
+def test_factory_arguments_build_jaynes_cummings(monkeypatch: pytest.MonkeyPatch) -> None:
+    model = _built_model(
+        monkeypatch,
+        model="jaynes_cummings",
+        basis="100",
+        factory={"omega_c": "10", "g": "4"},
+    )
+    _same_operators(model, jaynes_cummings(omega_c=10, g=4))
+
+
+@pytest.mark.parametrize(
+    ("model_id", "reference"),
+    [
+        ("jaynes_cummings_hubbard", jaynes_cummings_hubbard(n_cavities=2, nu=1.5, omega_c=10, g=4)),
+        (
+            "tavis_cummings_hubbard",
+            tavis_cummings_hubbard(n_cavities=2, n_emitters=1, nu=1.5, omega_c=10, g=4),
+        ),
+    ],
+)
+def test_factory_arguments_build_a_hubbard_model(
+    monkeypatch: pytest.MonkeyPatch,
+    model_id: str,
+    reference: object,
+) -> None:
+    model = _built_model(
+        monkeypatch,
+        model=model_id,
+        cavities=2,
+        nu=1.5,
+        basis="000000",
+        factory={"omega_c": "10", "g": "4"},
+    )
+    _same_operators(model, reference)
+
+
+def test_factory_arguments_accept_a_per_emitter_list(monkeypatch: pytest.MonkeyPatch) -> None:
+    model = _built_model(
+        monkeypatch,
+        model="tavis_cummings",
+        emitters=2,
+        basis="0000",
+        factory={"omega_c": "10", "g": "4, 5"},
+    )
+    _same_operators(model, tavis_cummings(n_emitters=2, omega_c=10, g=[4, 5]))
+
+
+def test_factory_arguments_accept_numbers_lists_and_parenthesized_edges(monkeypatch: pytest.MonkeyPatch) -> None:
+    model = _built_model(
+        monkeypatch,
+        qubits="4",
+        basis="0000",
+        factory={"J": 0.5, "h": 1, "field": " classical ", "edges": "(0, 1), (2, 3)"},
+    )
+    assert model.J == 0.5
+    assert model.h == 1.0
+    assert model.field == "classical"
+    assert model.edges == [(0, 1), (2, 3)]
+
+    listed = _built_model(monkeypatch, qubits="3", basis="000", factory={"edges": [[0, 1], (1, 2)], "J": 1})
+    assert listed.edges == [(0, 1), (1, 2)]
+
+    blank = _built_model(monkeypatch, factory={"edges": "  "})
+    assert blank.edges == ising(n_qubits=2).edges
+
+    cavity = _built_model(
+        monkeypatch,
+        model="tavis_cummings",
+        emitters=2,
+        basis="0000",
+        factory={"g": [4, 5]},
+    )
+    _same_operators(cavity, tavis_cummings(n_emitters=2, g=[4, 5]))
+
+
+def test_missing_factory_keeps_the_model_defaults(monkeypatch: pytest.MonkeyPatch) -> None:
+    ising_model = _built_model(monkeypatch)
+    reference = ising(n_qubits=2)
+    assert ising_model.J == reference.J
+    assert ising_model.h == reference.h
+    assert ising_model.field == reference.field
+    assert ising_model.edges == reference.edges
+
+    cavity = _built_model(monkeypatch, model="jaynes_cummings", basis="100")
+    _same_operators(cavity, jaynes_cummings())
+    emitters = _built_model(monkeypatch, model="tavis_cummings", emitters=2, basis="0000")
+    _same_operators(emitters, tavis_cummings(n_emitters=2))
+
+
+@pytest.mark.parametrize(
+    ("overrides", "match"),
+    [
+        ({"factory": {"J": "0", "h": "0"}}, "cannot both be zero"),
+        ({"factory": {"J": "inf"}}, "real number"),
+        ({"factory": {"J": True}}, "real number"),
+        ({"factory": {"J": float("nan")}}, "real number"),
+        ({"factory": {"J": {"bad": 1}}}, "real number"),
+        ({"factory": {"field": "nope"}}, "one of"),
+        ({"factory": {"edges": 3}}, "pairs"),
+        ({"factory": {"edges": [[0]]}}, "pairs"),
+        ({"factory": {"edges": [0]}}, "pairs"),
+        ({"factory": {"edges": [[True, 1]]}}, "pairs"),
+        ({"factory": {"edges": "(0, 1) junk"}}, "pairs"),
+        ({"factory": {"edges": ",,,"}}, "pairs"),
+        ({"model": "jaynes_cummings", "factory": {"g": "1, 2"}}, "real number"),
+        ({"model": "tavis_cummings", "emitters": 2, "factory": {"g": "4, "}}, "real number"),
+        ({"factory": {"edges": "nope"}}, "pairs"),
+        ({"factory": {"boundary": "periodic", "edges": "0-1"}}, "cannot be combined"),
+        ({"factory": {"boundary": "periodic"}}, "n_qubits >= 3"),
+        ({"factory": []}, "factory arguments must be an object"),
+        (
+            {"model": "tavis_cummings", "emitters": 2, "factory": {"g": "1, 2, 3"}},
+            "sequence of length 2",
+        ),
+    ],
+)
+def test_factory_arguments_are_rejected_before_import(
+    forbid_qutip: None,
+    overrides: dict[str, object],
+    match: str,
+) -> None:
+    with pytest.raises(ValueError, match=match):
+        build_simulator(_selection(**overrides))
 
 
 @pytest.mark.qutip
@@ -1121,6 +1290,35 @@ def test_listed_backends_matches_the_circuit_module() -> None:
     assert "Pauli" in listed[1]["detail"]
 
 
+def test_describe_models_formats_each_default_kind() -> None:
+    module = types.ModuleType("shadowsim.models")
+
+    def varied(
+        *,
+        text: str = "hi",
+        count: int = 3,
+        flag: bool = False,
+        other: object = None,
+        bare: float | Sequence = 1.0,
+        old: Union[float, list[float]] = 1.0,
+        mixed: Literal["a", 1] = "a",
+    ) -> None:
+        """Varied defaults."""
+
+    varied.__module__ = "shadowsim.models.varied"
+    module.__all__ = ["varied"]  # type: ignore[attr-defined]
+    module.varied = varied  # type: ignore[attr-defined]
+    params = {item["name"]: item for item in _describe_models(module)[0]["params"]}
+    assert params["text"]["default"] == "hi"
+    assert params["count"]["default"] == "3"
+    assert params["flag"]["default"] == ""
+    assert params["other"]["default"] == ""
+    assert params["bare"]["kind"] == "number_or_list"
+    assert params["old"]["kind"] == "number"
+    assert params["mixed"]["kind"] == "choice"
+    assert params["mixed"]["choices"] == ["a"]
+
+
 def test_describe_models_reads_factories() -> None:
     module = types.ModuleType("shadowsim.models")
 
@@ -1163,6 +1361,7 @@ def test_describe_models_reads_factories() -> None:
             "phrase": "Ising",
             "setup": "model = ising(n_qubits={qubits})",
             "qubits": True,
+            "params": [{"name": "h", "label": "h", "kind": "number", "default": "0"}],
         },
         {
             "id": "odd",
@@ -1171,6 +1370,7 @@ def test_describe_models_reads_factories() -> None:
             "phrase": "Odd",
             "setup": "model = odd(edges)",
             "qubits": False,
+            "params": [],
         },
         {
             "id": "bare",
@@ -1179,7 +1379,20 @@ def test_describe_models_reads_factories() -> None:
             "phrase": "Bare",
             "setup": "model = bare()",
             "qubits": False,
+            "params": [],
         },
+    ]
+
+
+def _cavity_params(*, sequence: bool) -> list[dict[str, object]]:
+    """Return the shared cavity-emitter chip fields."""
+    varied = "number_or_list" if sequence else "number"
+    return [
+        {"name": "omega_c", "label": "omega_c", "kind": "number", "default": "245000"},
+        {"name": "omega_e", "label": "omega_e", "kind": varied, "default": "245000"},
+        {"name": "kappa", "label": "kappa", "kind": "number", "default": format(math.sqrt(24.5), ".16g")},
+        {"name": "gamma", "label": "gamma", "kind": varied, "default": format(math.sqrt(0.4), ".16g")},
+        {"name": "g", "label": "g", "kind": varied, "default": "100"},
     ]
 
 
@@ -1195,15 +1408,48 @@ def test_listed_models_reads_the_package_factories() -> None:
     assert listed[0]["title"] == "Ising"
     assert listed[0]["qubits"] is True
     assert listed[0]["setup"] == "model = ising(n_qubits={qubits})"
+    assert listed[0]["params"] == [
+        {"name": "J", "label": "J", "kind": "number", "default": "1"},
+        {"name": "h", "label": "h", "kind": "number", "default": "0"},
+        {
+            "name": "field",
+            "label": "field",
+            "kind": "choice",
+            "default": "transverse",
+            "choices": ["classical", "transverse"],
+        },
+        {"name": "topology", "label": "topology", "kind": "choice", "default": "chain", "choices": ["chain"]},
+        {
+            "name": "boundary",
+            "label": "boundary",
+            "kind": "choice",
+            "default": "open",
+            "choices": ["open", "periodic"],
+        },
+        {"name": "edges", "label": "edges", "kind": "edges", "default": ""},
+    ]
+    scalars = _cavity_params(sequence=False)
+    sequences = _cavity_params(sequence=True)
     assert listed[1]["title"] == "Jaynes-Cummings"
     assert listed[1]["qubits"] is False
+    assert listed[1]["params"] == scalars
     assert listed[2]["title"] == "Jaynes-Cummings-Hubbard"
     assert listed[2]["qubits"] is False
     assert listed[2]["setup"] == "model = jaynes_cummings_hubbard()"
+    assert listed[2]["params"] == scalars
     assert listed[3]["setup"] == "model = tavis_cummings()"
+    assert listed[3]["params"] == sequences
     assert listed[4]["title"] == "Tavis-Cummings-Hubbard"
     assert listed[4]["qubits"] is False
     assert listed[4]["setup"] == "model = tavis_cummings_hubbard()"
+    assert listed[4]["params"] == sequences
+    skipped = {"n_qubits", "n_emitters", "n_cavities", "nu", "cavity_levels", "initial_fock"}
+    for item in listed:
+        assert skipped.isdisjoint(param["name"] for param in item["params"])
+    kappa = next(param for param in scalars if param["name"] == "kappa")
+    gamma = next(param for param in scalars if param["name"] == "gamma")
+    assert float(kappa["default"]) == math.sqrt(24.5)
+    assert float(gamma["default"]) == math.sqrt(0.4)
 
 
 def test_listed_model_terms_reads_operator_classes() -> None:
