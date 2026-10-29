@@ -1127,20 +1127,30 @@ function backendFieldNumber(field, text) {
   return check(checks.backendFieldNumber, field, text);
 }
 
+function gateSummary(field, text) {
+  if (check(checks.gateFieldProblem, field, text)) return "";
+  const names = check(checks.gateNames, text);
+  return names.length ? names.join(", ") : "";
+}
+
 function backendSummary(block, entry) {
+  const parts = [];
   if (block.shots) {
     const shotText = String(entry.shots ?? "").trim();
-    return positiveIntText(shotText) ? `${shotText} shots` : block.detail;
+    if (!positiveIntText(shotText)) return block.detail;
+    parts.push(`${shotText} shots`);
   }
-  const fields = block.fields ?? [];
-  if (!fields.length) return block.detail;
-  const parts = [];
-  for (const field of fields) {
+  for (const field of block.fields ?? []) {
     const text = String(entry.backendFields?.[field.name] ?? "").trim();
+    if (field.kind === "gates") {
+      const gates = gateSummary(field, text);
+      if (gates) parts.push(gates);
+      continue;
+    }
     if (backendFieldNumber(field, text) == null) return block.detail;
     parts.push(`${field.label} ${text}`);
   }
-  return parts.join(", ");
+  return parts.length ? parts.join(", ") : block.detail;
 }
 
 function backendChip(entry) {
@@ -1225,7 +1235,7 @@ function backendChip(entry) {
           }),
         )
       : null,
-    editing && !samples
+    editing && fields.length
       ? el(
           "div",
           { className: "backend-fields" },
@@ -1236,14 +1246,18 @@ function backendChip(entry) {
               field.label,
               el("input", {
                 type: "text",
-                inputmode: "decimal",
+                inputmode: field.kind === "gates" ? "text" : "decimal",
                 "aria-label": field.label,
                 value: String(entry.backendFields?.[field.name] ?? ""),
                 spellcheck: "false",
                 autocomplete: "off",
                 oninput: (event) => {
-                  const next = event.target.value.replace(/[^0-9.eE+\-infity]/gi, "");
+                  const gates = field.kind === "gates";
+                  const next = gates
+                    ? event.target.value.toLowerCase().replace(/[^a-z0-9_,\s]/g, "")
+                    : event.target.value.replace(/[^0-9.eE+\-infity]/gi, "");
                   if (event.target.value !== next) event.target.value = next;
+                  entry.backendFields = entry.backendFields ?? {};
                   entry.backendFields[field.name] = next;
                   const detail = event.target.closest(".chip")?.querySelector(".backend-detail");
                   if (detail) detail.textContent = backendSummary(block, entry);
@@ -1834,7 +1848,7 @@ function statusMessage() {
   if (!sameTimeGrid()) return "Use the same number of time steps for every simulator.";
   if (!measureSitesReady()) return "Pick at least one qubit.";
   if (!shotsReady()) return "Enter a shot count.";
-  if (!check(checks.backendFieldsReady)) return "Enter a max weight and a minimum coefficient.";
+  if (!check(checks.backendFieldsReady)) return check(checks.backendFieldStatus, false);
   if (!savePathReady()) return pathMessage(false);
   return "Ready to run.";
 }
@@ -1914,9 +1928,7 @@ function codeBody() {
     else if (!sameTimeGrid()) message = "Use the same number of time steps to preview the script.";
     else if (!measureSitesReady()) message = "Pick at least one qubit to preview the script.";
     else if (!shotsReady()) message = "Enter a shot count to preview the script.";
-    else if (!check(checks.backendFieldsReady)) {
-      message = "Enter a max weight and a minimum coefficient to preview the script.";
-    }
+    else if (!check(checks.backendFieldsReady)) message = check(checks.backendFieldStatus, true);
     else message = pathMessage(true);
   }
   return el("p", { className: "placeholder" }, message);
@@ -2886,15 +2898,17 @@ function attachBackend(backendId, key) {
     return;
   }
   target.backend = backendId;
+  if (backend.fields?.length) {
+    target.backendFields = { ...(target.backendFields ?? {}) };
+    for (const field of backend.fields) {
+      if (!String(target.backendFields[field.name] ?? "").trim()) target.backendFields[field.name] = field.default;
+    }
+  }
   if (backend.shots) {
     if (!positiveIntText(String(target.shots ?? "").trim())) target.shots = DEFAULT_SHOTS;
     target.shotsOpen = true;
     target.backendOpen = false;
   } else if (backend.fields?.length) {
-    target.backendFields = { ...(target.backendFields ?? {}) };
-    for (const field of backend.fields) {
-      if (!String(target.backendFields[field.name] ?? "").trim()) target.backendFields[field.name] = field.default;
-    }
     target.shotsOpen = false;
     target.backendOpen = true;
   } else {

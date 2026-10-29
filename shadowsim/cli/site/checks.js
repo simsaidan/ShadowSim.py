@@ -481,11 +481,55 @@
     return number;
   }
 
-  function backendFieldsReady() {
-    return page.placedSims.every((entry) => {
+  function gateNames(text) {
+    const names = [];
+    for (const token of String(text ?? "").trim().toLowerCase().split(/[\s,]+/)) {
+      if (token && !names.includes(token)) names.push(token);
+    }
+    return names;
+  }
+
+  function gateFieldProblem(field, text) {
+    const raw = String(text ?? "").trim();
+    if (!raw) return null;
+    const names = gateNames(raw);
+    if (!names.length) return "Enter gate names separated by commas.";
+    const choices = Array.isArray(field?.choices) ? field.choices : null;
+    for (const name of names) {
+      const known = choices ? choices.includes(name) : /^[a-z][a-z0-9_]*$/.test(name);
+      if (!known) return `Unknown gate ${name}.`;
+    }
+    return null;
+  }
+
+  function backendFieldIssue() {
+    for (const entry of page.placedSims) {
       const fields = blockById("backend", entry.backend)?.fields ?? [];
-      return fields.every((field) => backendFieldNumber(field, entry.backendFields?.[field.name]) != null);
-    });
+      for (const field of fields) {
+        const text = entry.backendFields?.[field.name];
+        if (field.kind === "gates") {
+          const problem = gateFieldProblem(field, text);
+          if (problem) return problem;
+        } else if (backendFieldNumber(field, text) == null) {
+          return "";
+        }
+      }
+    }
+    return null;
+  }
+
+  function backendFieldsReady() {
+    return backendFieldIssue() == null;
+  }
+
+  function backendFieldStatus(preview) {
+    const issue = backendFieldIssue();
+    if (issue) {
+      const sentence = issue.replace(/\.$/, "");
+      return preview ? `${sentence} to preview the script.` : issue;
+    }
+    const tail = preview ? " to preview the script." : ".";
+    return `Enter a max weight and a minimum coefficient${tail}`;
   }
 
   function pyBackendNumber(field, text) {
@@ -493,6 +537,14 @@
     if (number == null) return "";
     if (number === Infinity) return 'float("inf")';
     return pyFloat(number);
+  }
+
+  function pyBackendValue(field, text) {
+    if (field.kind !== "gates") return pyBackendNumber(field, text);
+    if (gateFieldProblem(field, text)) return "";
+    const names = gateNames(text);
+    if (!names.length) return "None";
+    return `[${names.map(pyString).join(", ")}]`;
   }
 
   function measureSitesReady() {
@@ -578,7 +630,7 @@
       .replaceAll("{total}", total == null ? "" : pyFloat(total))
       .replaceAll("{shots}", String(shots ?? "").trim());
     for (const field of block.fields ?? []) {
-      setup = setup.replaceAll(`{${field.name}}`, pyBackendNumber(field, fields[field.name]));
+      setup = setup.replaceAll(`{${field.name}}`, pyBackendValue(field, fields[field.name]));
     }
     return setup;
   }
@@ -1104,7 +1156,10 @@
     formatSetting: bind(formatSetting),
     hamiltonianProblem: bind(hamiltonianProblem),
     backendFieldNumber: bind(backendFieldNumber),
+    backendFieldStatus: bind(backendFieldStatus),
     backendFieldsReady: bind(backendFieldsReady),
+    gateFieldProblem: bind(gateFieldProblem),
+    gateNames: bind(gateNames),
     backendFits: bind(backendFits),
     inspectMatrix: bind(inspectMatrix),
     isComplete: bind(isComplete),

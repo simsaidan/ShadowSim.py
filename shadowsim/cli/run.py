@@ -2,7 +2,7 @@
 
 import math
 import re
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import cast
@@ -91,9 +91,11 @@ def build_simulator(selection: Mapping[str, object], *, time_steps: int = 101) -
             Shot-based simulators also read ``num_steps``, ``trotter_depth``,
             ``order`` (1 or 2), ``shots``, and ``seed``. ``shots`` is the Aer
             backend's shot budget; the page collects it on that backend.
-            PauliPropagation ignores ``shots``. It reads ``max_weight`` (default
-            ``inf``) and ``min_abs_coeff`` (default ``1e-10``) and runs a closed
-            Trotter circuit.
+            Aer also reads ``basis_gates``. A blank value keeps Aer's own basis.
+            A string is a comma-separated list of gate names, and a sequence of
+            names is used as given. PauliPropagation ignores ``shots`` and
+            ``basis_gates``. It reads ``max_weight`` (default ``inf``) and
+            ``min_abs_coeff`` (default ``1e-10``) and runs a closed Trotter circuit.
             Missing shot-based values use the page budget.
         time_steps: Points on the QuTiP solver grid when ``selection`` omits
             ``time_steps``. Defaults to the page preview.
@@ -165,7 +167,8 @@ def run_page(selection: Mapping[str, object], *, output_root: Path | None = None
     A relative path is resolved from the working directory.
 
     Args:
-        selection: Page ids, settings, and result actions.
+        selection: Page ids, settings, and result actions. An Aer row may include
+            ``basis_gates``, as described on :func:`build_simulator`.
         output_root: Directory that save and export paths must stay under.
             ``None`` leaves those paths unchanged.
     """
@@ -423,7 +426,7 @@ def _circuit_simulator(
     else:
         shots = _selection_positive_int(selection, "shots", _CIRCUIT_SHOTS, "shots")
         aer = import_optional("shadowsim.backends.aer", extra="qiskit")
-        circuit_backend = aer.AerCircuitBackend(shots=shots)
+        circuit_backend = aer.AerCircuitBackend(shots=shots, basis_gates=_selection_basis_gates(selection))
     module_name = (
         "shadowsim.simulators.trotterization_simulator"
         if simulator_id == "trotterization"
@@ -451,6 +454,31 @@ def _circuit_simulator(
         circuit_backend=circuit_backend,
         **({"x_qubits": sites} if measure_id == "x" else {}),
     )
+
+
+def _selection_basis_gates(selection: Mapping[str, object]) -> list[str] | None:
+    """Return Aer gate names, or ``None`` when the page left the field blank.
+
+    A string is split on commas and whitespace. A sequence of strings is used
+    as given. ``AerCircuitBackend`` checks that each name is a gate it can
+    compile into.
+
+    Raises:
+        ValueError: ``basis_gates`` is not text or a sequence of gate names.
+    """
+    if "basis_gates" not in selection or selection["basis_gates"] is None:
+        return None
+    value = selection["basis_gates"]
+    if isinstance(value, str):
+        names = [part for part in re.split(r"[\s,]+", value.strip()) if part]
+        if not value.strip():
+            return None
+        return names
+    if isinstance(value, Sequence) and not isinstance(value, (str, bytes)):
+        names = list(value)
+        if all(isinstance(name, str) for name in names):
+            return names
+    raise ValueError("basis_gates must be a sequence of gate names")
 
 
 def _selection_nonnegative(
