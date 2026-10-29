@@ -10,6 +10,7 @@ Before opening a pull request, always run **tests and coverage**, **style**,
 ```bash
 uv run pytest --cov=shadowsim --cov-config=.coveragerc --cov-report=term-missing
 ```
+Coverage should always be at 100 percent unless impossible to achieve.
 
 ## Style
 

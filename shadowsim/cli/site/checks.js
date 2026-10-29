@@ -210,20 +210,148 @@
 
   function factoryAlert() {
     if (page.selection.model !== "preexisting") return null;
-    if (page.preexistingId === "tavis_cummings") {
-      return emitterCount() == null ? "Enter an emitter count from 1 to 13" : null;
+    if (page.preexistingId === "tavis_cummings" && emitterCount() == null) {
+      return "Enter an emitter count from 1 to 13";
     }
     if (jaynesHubbardSelected()) {
       if (cavityCount() == null) return "Enter a cavity count of at least 1";
       if (hoppingValue() == null) return "Enter a real hopping strength";
       if (jaynesHubbardQubits() == null) return "Cavities must use at most 15 qubits";
-      return null;
+    } else if (hubbardSelected()) {
+      if (cavityCount() == null) return "Enter a cavity count of at least 1";
+      if (emitterCount() == null) return "Enter an emitter count from 1 to 13";
+      if (hoppingValue() == null) return "Enter a real hopping strength";
+      if (hubbardQubits() == null) return "Cavities and emitters must use at most 15 qubits";
     }
-    if (!hubbardSelected()) return null;
-    if (cavityCount() == null) return "Enter a cavity count of at least 1";
-    if (emitterCount() == null) return "Enter an emitter count from 1 to 13";
-    if (hoppingValue() == null) return "Enter a real hopping strength";
-    if (hubbardQubits() == null) return "Cavities and emitters must use at most 15 qubits";
+    return paramAlert();
+  }
+
+  function factoryParams() {
+    const params = chosenFactory()?.params;
+    return Array.isArray(params) ? params : [];
+  }
+
+  function factoryFieldText(param) {
+    const stored = page.factoryText?.[param.name];
+    return typeof stored === "string" ? stored : String(param.default ?? "");
+  }
+
+  function realText(text) {
+    const trimmed = String(text ?? "").trim();
+    if (!/^-?(?:\d+\.?\d*|\.\d+)(?:e[+-]?\d+)?$/i.test(trimmed)) return null;
+    const value = Number(trimmed);
+    return Number.isFinite(value) ? value : null;
+  }
+
+  function numberValues(text) {
+    const trimmed = String(text ?? "").trim();
+    if (!trimmed) return null;
+    const parts = trimmed.includes(",") ? trimmed.split(",").map((part) => part.trim()) : [trimmed];
+    if (!parts.length || parts.some((part) => part === "")) return null;
+    const values = [];
+    for (const part of parts) {
+      const value = realText(part);
+      if (value == null) return null;
+      values.push(value);
+    }
+    return values;
+  }
+
+  function parseEdges(text) {
+    const trimmed = String(text ?? "").trim();
+    if (!trimmed) return [];
+    if (trimmed.includes("(") || trimmed.includes(")")) {
+      const pairs = [];
+      const matcher = /\(\s*(\d+)\s*,\s*(\d+)\s*\)/g;
+      let match = matcher.exec(trimmed);
+      while (match) {
+        pairs.push([Number(match[1]), Number(match[2])]);
+        match = matcher.exec(trimmed);
+      }
+      const rest = trimmed.replace(/\(\s*\d+\s*,\s*\d+\s*\)/g, "").replace(/[,\s]/g, "");
+      return rest || !pairs.length ? null : pairs;
+    }
+    const tokens = trimmed.split(/[\s,]+/).filter(Boolean);
+    if (!tokens.length) return null;
+    const pairs = [];
+    for (const token of tokens) {
+      const match = /^(\d+)-(\d+)$/.exec(token);
+      if (!match) return null;
+      pairs.push([Number(match[1]), Number(match[2])]);
+    }
+    return pairs;
+  }
+
+  function edgeIssue(pairs) {
+    const qubits = settingNumber("qubits");
+    const known = qubits != null && Number.isInteger(qubits);
+    const seen = new Set();
+    for (const [left, right] of pairs) {
+      if (left === right) return "Edges cannot contain a self-loop";
+      if (known && (left >= qubits || right >= qubits)) return "Edges must stay within the qubits";
+      const key = `${Math.min(left, right)}-${Math.max(left, right)}`;
+      if (seen.has(key)) return "Edges cannot repeat a pair";
+      seen.add(key);
+    }
+    return null;
+  }
+
+  function paramByName(name) {
+    return factoryParams().find((param) => param.name === name) ?? null;
+  }
+
+  function movedFromDefault(name) {
+    const param = paramByName(name);
+    return Boolean(param) && factoryFieldText(param).trim() !== String(param.default ?? "").trim();
+  }
+
+  function paramAlert() {
+    for (const param of factoryParams()) {
+      const text = factoryFieldText(param).trim();
+      if (param.kind === "number") {
+        if (realText(text) == null) return `Enter a real number for ${param.label}`;
+      } else if (param.kind === "number_or_list") {
+        const values = numberValues(text);
+        if (values == null) {
+          return text.includes(",")
+            ? `Enter real numbers for ${param.label}`
+            : `Enter a real number for ${param.label}`;
+        }
+        const count = emitterCount();
+        if (text.includes(",") && count != null && values.length !== count) {
+          return `Enter ${count} numbers for ${param.label}`;
+        }
+      } else if (param.kind === "choice") {
+        const choices = Array.isArray(param.choices) ? param.choices : [];
+        if (!choices.includes(text)) return `Choose ${choices.join(" or ")} for ${param.label}`;
+      } else if (param.kind === "edges") {
+        const pairs = parseEdges(text);
+        if (pairs == null) return "Enter edges as pairs such as 0-1, 1-2";
+        const issue = edgeIssue(pairs);
+        if (issue) return issue;
+      }
+    }
+    const coupling = paramByName("J");
+    const field = paramByName("h");
+    if (coupling && field && realText(factoryFieldText(coupling)) === 0 && realText(factoryFieldText(field)) === 0) {
+      return "J and h cannot both be zero";
+    }
+    const edges = paramByName("edges");
+    const pairs = edges ? parseEdges(factoryFieldText(edges)) : [];
+    if (pairs && pairs.length && (movedFromDefault("topology") || movedFromDefault("boundary"))) {
+      return "Edges use the chain preset. Set topology to chain and boundary to open";
+    }
+    const boundary = paramByName("boundary");
+    const qubits = settingNumber("qubits");
+    if (
+      boundary &&
+      factoryFieldText(boundary).trim() === "periodic" &&
+      qubits != null &&
+      Number.isInteger(qubits) &&
+      qubits < 3
+    ) {
+      return "Periodic boundary needs at least 3 qubits";
+    }
     return null;
   }
 
@@ -455,21 +583,47 @@
     return setup;
   }
 
+  function factoryArgument(param) {
+    const text = factoryFieldText(param).trim();
+    if (param.kind === "edges") {
+      const pairs = parseEdges(text);
+      if (!pairs || !pairs.length) return null;
+      return `edges=[${pairs.map(([left, right]) => `(${left}, ${right})`).join(", ")}]`;
+    }
+    if (param.kind === "choice") return `${param.name}=${pyString(text)}`;
+    if (param.kind === "number_or_list" && text.includes(",")) {
+      const values = numberValues(text);
+      if (!values) return null;
+      return `${param.name}=[${values.map(pyFloat).join(", ")}]`;
+    }
+    const value = realText(text);
+    if (value == null) return null;
+    return `${param.name}=${pyFloat(value)}`;
+  }
+
+  function factoryArguments(factory) {
+    const args = [];
+    if (jaynesHubbardSelected()) args.push(`n_cavities=${cavityCount()}`, `nu=${pyFloat(hoppingValue())}`);
+    else if (hubbardSelected()) {
+      args.push(`n_cavities=${cavityCount()}`, `n_emitters=${emitterCount()}`, `nu=${pyFloat(hoppingValue())}`);
+    } else if (page.preexistingId === "tavis_cummings") args.push(`n_emitters=${emitterCount()}`);
+    else if (factory.qubits) {
+      const qubits = settingNumber("qubits");
+      args.push(`n_qubits=${qubits == null ? "" : String(Math.round(qubits))}`);
+    }
+    for (const param of factoryParams()) {
+      const rendered = factoryArgument(param);
+      if (rendered) args.push(rendered);
+    }
+    return args;
+  }
+
   function modelLine() {
     const factory = chosenFactory();
-    if (jaynesHubbardSelected() && factoryAlert() == null) {
-      return `model = jaynes_cummings_hubbard(n_cavities=${cavityCount()}, nu=${pyFloat(hoppingValue())})`;
+    if (page.selection.model === "preexisting" && factory) {
+      if (factoryAlert() != null) return "";
+      return `model = ${factory.id}(${factoryArguments(factory).join(", ")})`;
     }
-    if (hubbardSelected() && factoryAlert() == null) {
-      return (
-        `model = tavis_cummings_hubbard(n_cavities=${cavityCount()}, ` +
-        `n_emitters=${emitterCount()}, nu=${pyFloat(hoppingValue())})`
-      );
-    }
-    if (page.selection.model === "preexisting" && page.preexistingId === "tavis_cummings" && emitterCount() != null) {
-      return `model = tavis_cummings(n_emitters=${emitterCount()})`;
-    }
-    if (page.selection.model === "preexisting" && factory) return fillSetup(factory, "");
     return usingAddedOperators() ? addedOperatorLines() : "";
   }
 

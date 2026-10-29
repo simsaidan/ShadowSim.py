@@ -88,6 +88,7 @@ let preexistingOpen = false;
 let emitterText = "1";
 let cavityText = "1";
 let hoppingText = "0";
+let factoryText = {};
 const MAX_EMITTERS = 13;
 const MAX_OPERATOR_QUBITS = 8;
 
@@ -153,6 +154,7 @@ function currentPage() {
     emitterText,
     cavityText,
     hoppingText,
+    factoryText,
     basisBits,
     grayBits,
     angleText,
@@ -426,7 +428,106 @@ function preexistingDetail() {
     const emitterLabel = emitters === 1 ? "1 emitter" : `${emitters} emitters`;
     return `${cavityLabel}, ${emitterLabel}, ${qubits} qubits`;
   }
+  if (preexistingId === "ising") return "at least 2 qubits";
   return chosenFactory()?.title ?? "";
+}
+
+function factoryParams() {
+  const params = chosenFactory()?.params;
+  return Array.isArray(params) ? params : [];
+}
+
+function paramText(param) {
+  const stored = factoryText[param.name];
+  return typeof stored === "string" ? stored : String(param.default ?? "");
+}
+
+function movedFromDefault(name) {
+  const param = factoryParams().find((item) => item.name === name);
+  return Boolean(param) && paramText(param) !== String(param.default ?? "");
+}
+
+function edgesFilled() {
+  const param = factoryParams().find((item) => item.name === "edges");
+  return Boolean(param) && paramText(param).trim() !== "";
+}
+
+function fieldLocked(param) {
+  if (param.name === "edges") return movedFromDefault("topology") || movedFromDefault("boundary");
+  if (param.name === "topology" || param.name === "boundary") return edgesFilled();
+  return false;
+}
+
+function refreshFactoryLocks(chip) {
+  if (!chip) return;
+  const filled = edgesFilled();
+  const moved = movedFromDefault("topology") || movedFromDefault("boundary");
+  const edges = chip.querySelector('[aria-label="edges"]');
+  const topology = chip.querySelector('[aria-label="topology"]');
+  const boundary = chip.querySelector('[aria-label="boundary"]');
+  if (edges) edges.disabled = moved;
+  if (topology) topology.disabled = filled;
+  if (boundary) boundary.disabled = filled;
+}
+
+function rememberFactoryText(name, value) {
+  factoryText[name] = value;
+}
+
+function factoryField(param) {
+  const value = paramText(param);
+  const locked = fieldLocked(param);
+  if (param.kind === "choice") {
+    return el(
+      "label",
+      { className: "preexisting-field" },
+      param.label,
+      el(
+        "select",
+        {
+          "aria-label": param.label,
+          disabled: locked || null,
+          onchange: (event) => {
+            rememberFactoryText(param.name, event.target.value);
+            refreshFactoryLocks(event.target.closest(".chip"));
+            refreshCavityModel();
+          },
+        },
+        ...(Array.isArray(param.choices) ? param.choices : []).map((choice) =>
+          el("option", { value: choice, selected: choice === value }, choice),
+        ),
+      ),
+    );
+  }
+  const numeric = param.kind === "number" || param.kind === "number_or_list";
+  return el(
+    "label",
+    { className: "preexisting-field" },
+    param.label,
+    el("input", {
+      type: "text",
+      inputmode: numeric ? "decimal" : "text",
+      "aria-label": param.label,
+      value,
+      disabled: locked || null,
+      spellcheck: "false",
+      autocomplete: "off",
+      oninput: (event) => {
+        rememberFactoryText(param.name, event.target.value.trim());
+        refreshFactoryLocks(event.target.closest(".chip"));
+        refreshCavityModel();
+      },
+    }),
+  );
+}
+
+function postedFactory() {
+  if (selection.model !== "preexisting") return null;
+  const params = factoryParams();
+  if (!params.length) return null;
+  const body = {};
+  for (const param of params) body[param.name] = paramText(param);
+  return body;
 }
 
 function refreshCavityModel() {
@@ -507,7 +608,7 @@ function preexistingChip() {
       refreshCavityModel();
     },
   });
-  const alertText = factoryAlert() ?? "Enter an emitter count from 1 to 13";
+  const alertText = factoryAlert() ?? "Check the model arguments";
   return el(
     "div",
     { className: `chip tone-teal preexisting${preexistingOpen ? " is-editing" : ""}` },
@@ -529,19 +630,17 @@ function preexistingChip() {
       el(
         "div",
         { className: "preexisting-actions" },
-        usesEmitterCount() || jaynesHubbardSelected()
-          ? el(
-              "span",
-              {
-                className: "basis-alert preexisting-alert",
-                role: "img",
-                "aria-label": alertText,
-                title: alertText,
-                hidden: !emitterProblem(),
-              },
-              "!",
-            )
-          : null,
+        el(
+          "span",
+          {
+            className: "basis-alert preexisting-alert",
+            role: "img",
+            "aria-label": alertText,
+            title: alertText,
+            hidden: !emitterProblem(),
+          },
+          "!",
+        ),
         preexistingOpen
           ? el(
               "button",
@@ -581,6 +680,7 @@ function preexistingChip() {
     preexistingOpen && (hubbardSelected() || jaynesHubbardSelected())
       ? el("label", { className: "preexisting-field" }, "Hopping", hopping)
       : null,
+    ...(preexistingOpen ? factoryParams().map(factoryField) : []),
   );
 }
 
@@ -2364,6 +2464,7 @@ async function cancelRun() {
 }
 
 function runRequest() {
+  const factory = postedFactory();
   return {
     ...postedSelection(),
     model: selection.model === "preexisting" ? preexistingId : selection.model,
@@ -2390,6 +2491,7 @@ function runRequest() {
     ...(selection.model === "preexisting" && preexistingId === "jaynes_cummings_hubbard"
       ? { cavities: cavityCount(), nu: hoppingValue() }
       : {}),
+    ...(factory ? { factory } : {}),
   };
 }
 
@@ -2907,6 +3009,7 @@ function boardSnapshot() {
     emitterText,
     cavityText,
     hoppingText,
+    factoryText: copyStrings(factoryText),
     modelTerms: modelTerms.map((term) => ({
       id: term.id,
       matrix: typeof term.matrix === "string" ? term.matrix : "",
@@ -2998,6 +3101,10 @@ function applyBoard(snapshot) {
   emitterText = storedText(snapshot.emitterText, "1");
   cavityText = storedText(snapshot.cavityText, "1");
   hoppingText = storedText(snapshot.hoppingText, "0");
+  factoryText =
+    snapshot.factoryText && typeof snapshot.factoryText === "object" && !Array.isArray(snapshot.factoryText)
+      ? copyStrings(snapshot.factoryText)
+      : {};
   modelTerms.splice(
     0,
     modelTerms.length,
@@ -3079,6 +3186,7 @@ function emptyBoard() {
   emitterText = "1";
   cavityText = "1";
   hoppingText = "0";
+  factoryText = {};
   modelTerms.splice(0, modelTerms.length);
   placedSims.splice(0, placedSims.length);
   placedThens.splice(0, placedThens.length);

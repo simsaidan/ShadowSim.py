@@ -277,6 +277,7 @@ function resetPage() {
   emitterText = "1";
   cavityText = "1";
   hoppingText = "0";
+  factoryText = {};
   modelTerms.splice(0, modelTerms.length);
   placedSims.splice(0, placedSims.length);
   placedThens.splice(0, placedThens.length);
@@ -526,6 +527,73 @@ if (request.action === "roundtrip") {
     measure: cell('.slot[data-slot="measure"]'),
     simulator: cell('.slot[data-slot="simulator"]'),
   };
+} else if (request.action === "factory") {
+  resetPage();
+  BLOCKS.model = [{ id: "preexisting", title: "Preexisting model", detail: "Choose a built-in model" }];
+  modelFactories = [{
+    id: "ising",
+    title: "Ising",
+    qubits: true,
+    setup: "model = ising(n_qubits={qubits})",
+    params: [
+      { name: "J", label: "J", kind: "number", default: "1" },
+      { name: "h", label: "h", kind: "number", default: "0" },
+      { name: "field", label: "field", kind: "choice", default: "transverse", choices: ["classical", "transverse"] },
+      { name: "topology", label: "topology", kind: "choice", default: "chain", choices: ["chain"] },
+      { name: "boundary", label: "boundary", kind: "choice", default: "open", choices: ["open", "periodic"] },
+      { name: "edges", label: "edges", kind: "edges", default: "" },
+    ],
+  }];
+  const board = document.createElement("section");
+  board.className = "board";
+  document.documentElement.append(board);
+  draw(board);
+  place("model", "preexisting");
+  function control(label) {
+    return board.querySelector('[aria-label="' + label + '"]');
+  }
+  function optionValue(select) {
+    const option = (select.children || []).find((child) => child.attrs && Object.hasOwn(child.attrs, "selected"));
+    return option ? option.attrs.value : null;
+  }
+  const defaults = {
+    detail: nodeText(board.querySelector(".preexisting-detail")),
+    J: control("J").attrs.value,
+    h: control("h").attrs.value,
+    field: optionValue(control("field")),
+    topology: optionValue(control("topology")),
+    boundary: optionValue(control("boundary")),
+    edges: control("edges").attrs.value,
+    alertHidden: Object.hasOwn(board.querySelector(".preexisting-alert").attrs, "hidden"),
+  };
+  typeInto(control("J"), "2");
+  typeInto(control("edges"), "0-1, 1-2");
+  const topologyLocked = control("topology").disabled === true;
+  const boundaryLocked = control("boundary").disabled === true;
+  typeInto(control("edges"), "");
+  const boundary = control("boundary");
+  boundary.value = "periodic";
+  boundary.listeners.change[0]({ target: boundary, currentTarget: boundary });
+  const edgesLocked = control("edges").disabled === true;
+  const snap = boardSnapshot();
+  factoryText = { J: "9", h: "4" };
+  const applied = applyBoard(snap);
+  const hParam = modelFactories[0].params.find((param) => param.name === "h");
+  result = {
+    defaults,
+    topologyLocked,
+    boundaryLocked,
+    edgesLocked,
+    applied,
+    storedJ: snap.factoryText.J,
+    storedEdges: snap.factoryText.edges,
+    storedBoundary: snap.factoryText.boundary,
+    storedH: Object.hasOwn(snap.factoryText, "h"),
+    restoredJ: factoryText.J,
+    restoredH: Object.hasOwn(factoryText, "h"),
+    hDefault: paramText(hParam),
+    request: runRequest().factory,
+  };
 } else {
   throw new Error("unknown action");
 }
@@ -563,6 +631,39 @@ def test_placed_blocks_keep_their_grid_cells() -> None:
     assert page["modelPalette"] == {"column": "3", "row": "2"}
     assert page["simulator"] == {"column": "5", "row": "1"}
     assert page["measure"] == {"column": "7", "row": "1"}
+
+
+def test_factory_fields_keep_edits_and_fall_back_to_defaults() -> None:
+    page = _call("factory")
+    assert page["defaults"] == {
+        "detail": "at least 2 qubits",
+        "J": "1",
+        "h": "0",
+        "field": "transverse",
+        "topology": "chain",
+        "boundary": "open",
+        "edges": "",
+        "alertHidden": True,
+    }
+    assert page["topologyLocked"] is True
+    assert page["boundaryLocked"] is True
+    assert page["edgesLocked"] is True
+    assert page["applied"] is True
+    assert page["storedJ"] == "2"
+    assert page["storedEdges"] == ""
+    assert page["storedBoundary"] == "periodic"
+    assert page["storedH"] is False
+    assert page["restoredJ"] == "2"
+    assert page["restoredH"] is False
+    assert page["hDefault"] == "0"
+    assert page["request"] == {
+        "J": "2",
+        "h": "0",
+        "field": "transverse",
+        "topology": "chain",
+        "boundary": "periodic",
+        "edges": "",
+    }
 
 
 def test_board_snapshot_round_trip() -> None:
