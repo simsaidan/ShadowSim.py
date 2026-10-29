@@ -274,6 +274,67 @@ def test_benchmark_export_includes_save_error_metrics() -> None:
     assert 'benchmark.save_error_metrics(path="results/metrics.json")' in text
 
 
+def test_tavis_cummings_hubbard_preview_uses_cavities_and_hopping() -> None:
+    page = _qutip_page()
+    page["preexistingId"] = "tavis_cummings_hubbard"
+    page["cavityText"] = "2"
+    page["emitterText"] = "1"
+    page["hoppingText"] = "1.5"
+    page["basisBits"] = "000000"
+    page["modelFactories"] = [
+        {
+            "id": "tavis_cummings_hubbard",
+            "title": "Tavis-Cummings-Hubbard",
+            "qubits": False,
+            "setup": "model = tavis_cummings_hubbard()",
+        }
+    ]
+    assert _call("hubbardSelected", page) is True
+    assert _call("cavityModelSelected", page) is True
+    assert _call("fixedFactoryQubits", page) == 6
+    text = _call("previewText", page)
+    assert isinstance(text, str)
+    assert "from shadowsim.models import tavis_cummings_hubbard" in text
+    assert "model = tavis_cummings_hubbard(n_cavities=2, n_emitters=1, nu=1.5)" in text
+
+    page["emitterText"] = "6"
+    assert _call("fixedFactoryQubits", page) is None
+    assert _call("emitterProblem", page) is True
+    assert _call("factoryAlert", page) == "Cavities and emitters must use at most 15 qubits"
+
+
+def test_jaynes_cummings_hubbard_preview_uses_cavities_and_hopping() -> None:
+    page = _qutip_page()
+    page["preexistingId"] = "jaynes_cummings_hubbard"
+    page["cavityText"] = "2"
+    page["emitterText"] = "4"
+    page["hoppingText"] = "1.5"
+    page["basisBits"] = "000000"
+    page["modelFactories"] = [
+        {
+            "id": "jaynes_cummings_hubbard",
+            "title": "Jaynes-Cummings-Hubbard",
+            "qubits": False,
+            "setup": "model = jaynes_cummings_hubbard()",
+        }
+    ]
+    assert _call("jaynesHubbardSelected", page) is True
+    assert _call("hubbardSelected", page) is False
+    assert _call("usesEmitterCount", page) is False
+    assert _call("cavityModelSelected", page) is True
+    assert _call("fixedFactoryQubits", page) == 6
+    text = _call("previewText", page)
+    assert isinstance(text, str)
+    assert "from shadowsim.models import jaynes_cummings_hubbard" in text
+    assert "model = jaynes_cummings_hubbard(n_cavities=2, nu=1.5)" in text
+    assert "n_emitters" not in text
+
+    page["cavityText"] = "6"
+    assert _call("fixedFactoryQubits", page) is None
+    assert _call("emitterProblem", page) is True
+    assert _call("factoryAlert", page) == "Cavities must use at most 15 qubits"
+
+
 def test_preview_imports_are_explicit() -> None:
     qutip = _call("previewText", _qutip_page())
     assert isinstance(qutip, str)

@@ -150,9 +150,10 @@ def test_initial_state_uses_the_model_qubit_count(state: str) -> None:
 
 
 @pytest.mark.qutip
-def test_tavis_cummings_ignores_the_qubits_field() -> None:
+@pytest.mark.parametrize("model_id", ["tavis_cummings", "tavis_cummings_hubbard"])
+def test_tavis_cummings_ignores_the_qubits_field(model_id: str) -> None:
     pytest.importorskip("qutip")
-    simulator = build_simulator(_selection(model="tavis_cummings", qubits="1", basis="100"), time_steps=2)
+    simulator = build_simulator(_selection(model=model_id, qubits="1", basis="100"), time_steps=2)
     assert simulator.num_qubits == 3
     assert simulator.initial_state.get_num_qubits() == 3
 
@@ -166,25 +167,86 @@ def test_jaynes_cummings_ignores_the_qubits_field() -> None:
 
 
 @pytest.mark.qutip
-def test_tavis_cummings_sizes_from_the_emitter_count() -> None:
+@pytest.mark.parametrize("model_id", ["tavis_cummings", "tavis_cummings_hubbard"])
+def test_tavis_cummings_sizes_from_the_emitter_count(model_id: str) -> None:
     pytest.importorskip("qutip")
     simulator = build_simulator(
-        _selection(model="tavis_cummings", emitters=2, qubits="4", basis="0000"),
+        _selection(model=model_id, emitters=2, qubits="4", basis="0000"),
         time_steps=2,
     )
     assert simulator.num_qubits == 4
     assert simulator.initial_state.get_num_qubits() == 4
 
 
+@pytest.mark.qutip
+def test_tavis_cummings_hubbard_sizes_from_cavities_and_hopping() -> None:
+    pytest.importorskip("qutip")
+    simulator = build_simulator(
+        _selection(model="tavis_cummings_hubbard", cavities=2, emitters=1, nu=1.5, basis="000000"),
+        time_steps=2,
+    )
+    assert simulator.num_qubits == 6
+    assert len(simulator.hamiltonians) == 7
+
+
+@pytest.mark.parametrize(
+    ("overrides", "match"),
+    [
+        ({"cavities": 0}, "cavities must be an integer of at least 1"),
+        ({"cavities": True}, "cavities must be an integer of at least 1"),
+        ({"nu": "nope"}, "hopping must be a real number"),
+        ({"nu": True}, "hopping must be a real number"),
+        ({"nu": []}, "hopping must be a real number"),
+        ({"nu": "  "}, "hopping must be a real number"),
+        ({"nu": float("inf")}, "hopping must be a real number"),
+        ({"cavities": 2, "emitters": 6}, "at most 15 qubits"),
+    ],
+)
+def test_tavis_cummings_hubbard_page_limits(forbid_qutip: None, overrides: dict[str, object], match: str) -> None:
+    with pytest.raises(ValueError, match=match):
+        build_simulator(_selection(model="tavis_cummings_hubbard", basis="100", **overrides))
+
+
+@pytest.mark.qutip
+def test_jaynes_cummings_hubbard_sizes_from_cavities_and_hopping() -> None:
+    pytest.importorskip("qutip")
+    simulator = build_simulator(
+        _selection(model="jaynes_cummings_hubbard", cavities=2, emitters=5, nu=1.5, basis="000000"),
+        time_steps=2,
+    )
+    assert simulator.num_qubits == 6
+    assert len(simulator.hamiltonians) == 7
+
+
+@pytest.mark.parametrize(
+    ("overrides", "match"),
+    [
+        ({"cavities": 0}, "cavities must be an integer of at least 1"),
+        ({"cavities": True}, "cavities must be an integer of at least 1"),
+        ({"nu": "nope"}, "hopping must be a real number"),
+        ({"nu": True}, "hopping must be a real number"),
+        ({"nu": []}, "hopping must be a real number"),
+        ({"nu": "  "}, "hopping must be a real number"),
+        ({"nu": float("inf")}, "hopping must be a real number"),
+        ({"cavities": 6}, "at most 15 qubits"),
+    ],
+)
+def test_jaynes_cummings_hubbard_page_limits(forbid_qutip: None, overrides: dict[str, object], match: str) -> None:
+    with pytest.raises(ValueError, match=match):
+        build_simulator(_selection(model="jaynes_cummings_hubbard", basis="100", **overrides))
+
+
+@pytest.mark.parametrize("model_id", ["tavis_cummings", "tavis_cummings_hubbard"])
 @pytest.mark.parametrize("emitters", [0, 14, True, "nope"])
-def test_tavis_emitter_count_is_rejected_before_import(forbid_qutip: None, emitters: object) -> None:
+def test_tavis_emitter_count_is_rejected_before_import(forbid_qutip: None, model_id: str, emitters: object) -> None:
     with pytest.raises(ValueError, match="emitters must be an integer from 1 to 13"):
-        build_simulator(_selection(model="tavis_cummings", emitters=emitters, basis="100"))
+        build_simulator(_selection(model=model_id, emitters=emitters, basis="100"))
 
 
-def test_tavis_emitter_count_must_match_the_state(forbid_qutip: None) -> None:
+@pytest.mark.parametrize("model_id", ["tavis_cummings", "tavis_cummings_hubbard"])
+def test_tavis_emitter_count_must_match_the_state(forbid_qutip: None, model_id: str) -> None:
     with pytest.raises(ValueError, match=r"qubit count \(4\)"):
-        build_simulator(_selection(model="tavis_cummings", emitters=2, basis="000"))
+        build_simulator(_selection(model=model_id, emitters=2, basis="000"))
 
 
 def test_basis_bit_string_selects_that_state() -> None:
@@ -1123,13 +1185,25 @@ def test_describe_models_reads_factories() -> None:
 
 def test_listed_models_reads_the_package_factories() -> None:
     listed = listed_models()
-    assert [item["id"] for item in listed] == ["ising", "jaynes_cummings", "tavis_cummings"]
+    assert [item["id"] for item in listed] == [
+        "ising",
+        "jaynes_cummings",
+        "jaynes_cummings_hubbard",
+        "tavis_cummings",
+        "tavis_cummings_hubbard",
+    ]
     assert listed[0]["title"] == "Ising"
     assert listed[0]["qubits"] is True
     assert listed[0]["setup"] == "model = ising(n_qubits={qubits})"
     assert listed[1]["title"] == "Jaynes-Cummings"
     assert listed[1]["qubits"] is False
-    assert listed[2]["setup"] == "model = tavis_cummings()"
+    assert listed[2]["title"] == "Jaynes-Cummings-Hubbard"
+    assert listed[2]["qubits"] is False
+    assert listed[2]["setup"] == "model = jaynes_cummings_hubbard()"
+    assert listed[3]["setup"] == "model = tavis_cummings()"
+    assert listed[4]["title"] == "Tavis-Cummings-Hubbard"
+    assert listed[4]["qubits"] is False
+    assert listed[4]["setup"] == "model = tavis_cummings_hubbard()"
 
 
 def test_listed_model_terms_reads_operator_classes() -> None:
@@ -1263,7 +1337,9 @@ def test_get_models_returns_the_package_factories() -> None:
     assert [item["id"] for item in payload["models"]] == [
         "ising",
         "jaynes_cummings",
+        "jaynes_cummings_hubbard",
         "tavis_cummings",
+        "tavis_cummings_hubbard",
         "hamiltonian",
         "local_hamiltonian",
         "lindblad",
