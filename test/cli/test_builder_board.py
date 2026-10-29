@@ -503,6 +503,27 @@ if (request.action === "roundtrip") {
     removedSave,
     attachKeepsChart: resultsNode() === chart,
   };
+} else if (request.action === "grid") {
+  resetPage();
+  BLOCKS.model = [{ id: "preexisting", title: "Preexisting model", detail: "Choose a built-in model" }];
+  const board = document.createElement("section");
+  board.className = "board";
+  document.documentElement.append(board);
+  draw(board);
+  place("state", "basis");
+  place("model", "preexisting");
+  place("measure", "z");
+  function cell(selector) {
+    const node = board.querySelector(selector);
+    return { column: node.style.gridColumn, row: node.style.gridRow };
+  }
+  result = {
+    state: cell('.slot[data-slot="state"]'),
+    model: cell('.slot[data-slot="model"]'),
+    modelPalette: cell('.lane[data-palette="model"]'),
+    measure: cell('.slot[data-slot="measure"]'),
+    simulator: cell('.slot[data-slot="simulator"]'),
+  };
 } else {
   throw new Error("unknown action");
 }
@@ -531,6 +552,15 @@ def _call(action: str) -> dict[str, Any]:
         pytest.fail(completed.stderr or completed.stdout)
     result: dict[str, Any] = json.loads(completed.stdout)
     return result
+
+
+def test_placed_blocks_keep_their_grid_cells() -> None:
+    page = _call("grid")
+    assert page["state"] == {"column": "1", "row": "1"}
+    assert page["model"] == {"column": "3", "row": "1"}
+    assert page["modelPalette"] == {"column": "3", "row": "2"}
+    assert page["simulator"] == {"column": "5", "row": "1"}
+    assert page["measure"] == {"column": "7", "row": "1"}
 
 
 def test_board_snapshot_round_trip() -> None:

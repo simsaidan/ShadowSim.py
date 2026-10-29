@@ -568,6 +568,86 @@ def test_save_resource_metrics_records_circuit_metrics(tmp_path: Path) -> None:
     assert record["resources"][0]["toffoli_count"] == 0
 
 
+def test_save_resource_metrics_marks_a_partial_backend_unavailable(tmp_path: Path) -> None:
+    class Partial:
+        def depth(self, circuit: object) -> int:
+            del circuit
+            return 1
+
+    class Recorded:
+        id = "partial"
+        tlist = [0.0]
+        circuit_backend = Partial()
+
+        def metrics_circuit(self) -> str:
+            return "final"
+
+    record = json.loads(save_resource_metrics(Recorded(), None, path=tmp_path / "partial.json").read_text())
+    assert record["resources"][0]["depth"] == "N/A"
+    assert record["resources"][0]["toffoli_count"] == "N/A"
+
+
+def test_save_resource_metrics_marks_a_non_integer_count_unavailable(tmp_path: Path) -> None:
+    def recorded(backend: object, name: str) -> dict[str, object]:
+        class Recorded:
+            id = name
+            tlist = [0.0]
+            circuit_backend = backend
+
+            def metrics_circuit(self) -> str:
+                return "final"
+
+        path = save_resource_metrics(Recorded(), None, path=tmp_path / f"{name}.json")
+        body = json.loads(path.read_text())
+        row: dict[str, object] = body["resources"][0]
+        return row
+
+    class Boolean:
+        def depth(self, circuit: object) -> bool:
+            del circuit
+            return True
+
+        def width(self, circuit: object) -> int:
+            del circuit
+            return 1
+
+        def gate_count(self, circuit: object) -> int:
+            del circuit
+            return 1
+
+        def t_count(self, circuit: object) -> int:
+            del circuit
+            return 0
+
+        def toffoli_count(self, circuit: object) -> int:
+            del circuit
+            return 0
+
+    class Fractional:
+        def depth(self, circuit: object) -> int:
+            del circuit
+            return 1
+
+        def width(self, circuit: object) -> float:
+            del circuit
+            return 1.5
+
+        def gate_count(self, circuit: object) -> int:
+            del circuit
+            return 1
+
+        def t_count(self, circuit: object) -> int:
+            del circuit
+            return 0
+
+        def toffoli_count(self, circuit: object) -> int:
+            del circuit
+            return 0
+
+    assert recorded(Boolean(), "boolean")["depth"] == "N/A"
+    assert recorded(Fractional(), "fractional")["width"] == "N/A"
+
+
 def test_save_resource_metrics_marks_unsupported_circuit_metrics(tmp_path: Path) -> None:
     class Raising:
         def depth(self, circuit: object) -> int:
