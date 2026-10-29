@@ -166,27 +166,88 @@
     return count <= page.maxEmitters ? count : null;
   }
 
+  function usesEmitterCount() {
+    return page.preexistingId === "tavis_cummings" || page.preexistingId === "tavis_cummings_hubbard";
+  }
+
+  function hubbardSelected() {
+    return page.selection.model === "preexisting" && page.preexistingId === "tavis_cummings_hubbard";
+  }
+
+  function jaynesHubbardSelected() {
+    return page.selection.model === "preexisting" && page.preexistingId === "jaynes_cummings_hubbard";
+  }
+
+  function cavityCount() {
+    const text = String(page.cavityText ?? "").trim();
+    if (!positiveIntText(text)) return null;
+    return Number(text);
+  }
+
+  function hoppingValue() {
+    const text = String(page.hoppingText ?? "").trim();
+    if (!/^-?(?:\d+\.?\d*|\.\d+)(?:e[+-]?\d+)?$/i.test(text)) return null;
+    const value = Number(text);
+    return Number.isFinite(value) ? value : null;
+  }
+
+  function hubbardQubits() {
+    const cavities = cavityCount();
+    const emitters = emitterCount();
+    const limit = page.stateLimits?.basis ?? 15;
+    if (cavities == null || emitters == null) return null;
+    const qubits = cavities * (2 + emitters);
+    return qubits <= limit ? qubits : null;
+  }
+
+  function jaynesHubbardQubits() {
+    const cavities = cavityCount();
+    const limit = page.stateLimits?.basis ?? 15;
+    if (cavities == null) return null;
+    const qubits = cavities * 3;
+    return qubits <= limit ? qubits : null;
+  }
+
+  function factoryAlert() {
+    if (page.selection.model !== "preexisting") return null;
+    if (page.preexistingId === "tavis_cummings") {
+      return emitterCount() == null ? "Enter an emitter count from 1 to 13" : null;
+    }
+    if (jaynesHubbardSelected()) {
+      if (cavityCount() == null) return "Enter a cavity count of at least 1";
+      if (hoppingValue() == null) return "Enter a real hopping strength";
+      if (jaynesHubbardQubits() == null) return "Cavities must use at most 15 qubits";
+      return null;
+    }
+    if (!hubbardSelected()) return null;
+    if (cavityCount() == null) return "Enter a cavity count of at least 1";
+    if (emitterCount() == null) return "Enter an emitter count from 1 to 13";
+    if (hoppingValue() == null) return "Enter a real hopping strength";
+    if (hubbardQubits() == null) return "Cavities and emitters must use at most 15 qubits";
+    return null;
+  }
+
   function cavityModelSelected() {
     return (
       page.selection.model === "preexisting" &&
-      (page.preexistingId === "jaynes_cummings" || page.preexistingId === "tavis_cummings")
+      (page.preexistingId === "jaynes_cummings" || usesEmitterCount() || jaynesHubbardSelected())
     );
   }
 
   function fixedFactoryQubits() {
     if (page.selection.model !== "preexisting") return null;
     if (page.preexistingId === "jaynes_cummings") return 3;
+    if (jaynesHubbardSelected()) return jaynesHubbardQubits();
     if (page.preexistingId === "tavis_cummings") {
       const count = emitterCount();
       return count == null ? null : 2 + count;
     }
+    if (hubbardSelected()) return hubbardQubits();
     return null;
   }
 
   function emitterProblem() {
-    return (
-      page.selection.model === "preexisting" && page.preexistingId === "tavis_cummings" && emitterCount() == null
-    );
+    return factoryAlert() != null;
   }
 
   function stateImpliedQubits() {
@@ -396,6 +457,15 @@
 
   function modelLine() {
     const factory = chosenFactory();
+    if (jaynesHubbardSelected() && factoryAlert() == null) {
+      return `model = jaynes_cummings_hubbard(n_cavities=${cavityCount()}, nu=${pyFloat(hoppingValue())})`;
+    }
+    if (hubbardSelected() && factoryAlert() == null) {
+      return (
+        `model = tavis_cummings_hubbard(n_cavities=${cavityCount()}, ` +
+        `n_emitters=${emitterCount()}, nu=${pyFloat(hoppingValue())})`
+      );
+    }
     if (page.selection.model === "preexisting" && page.preexistingId === "tavis_cummings" && emitterCount() != null) {
       return `model = tavis_cummings(n_emitters=${emitterCount()})`;
     }
@@ -867,7 +937,13 @@
     blockById: bind(blockById),
     cavityModelSelected: bind(cavityModelSelected),
     chosenFactory: bind(chosenFactory),
+    cavityCount: bind(cavityCount),
     emitterCount: bind(emitterCount),
+    usesEmitterCount: bind(usesEmitterCount),
+    hubbardSelected: bind(hubbardSelected),
+    jaynesHubbardSelected: bind(jaynesHubbardSelected),
+    hoppingValue: bind(hoppingValue),
+    factoryAlert: bind(factoryAlert),
     emitterProblem: bind(emitterProblem),
     entryBody: bind(entryBody),
     fixedFactoryQubits: bind(fixedFactoryQubits),

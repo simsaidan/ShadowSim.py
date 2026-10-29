@@ -69,6 +69,11 @@ def build_simulator(selection: Mapping[str, object], *, time_steps: int = 101) -
             Factories that require ``n_qubits`` read ``qubits``. Jaynes–Cummings is
             always 3 qubits and ignores ``qubits``. Tavis–Cummings reads
             ``emitters`` (1 to 13, default 1) and uses ``2 + emitters`` qubits.
+            Tavis–Cummings–Hubbard reads ``cavities`` (default 1), ``emitters``
+            (1 to 13, default 1), and real ``nu`` (default 0). Its qubit count is
+            ``cavities * (2 + emitters)``, at most 15. Jaynes–Cummings–Hubbard
+            reads ``cavities`` and real ``nu``, with one emitter per cavity, so
+            its qubit count is ``3 * cavities``, at most 15.
             A basis or Gray code state reads ``basis`` or ``gray``, a string of 0
             and 1 whose length is the qubit count, at most 15 characters. Angle
             reads ``angles``, one finite real number per qubit. Amplitude reads
@@ -111,7 +116,13 @@ def build_simulator(selection: Mapping[str, object], *, time_steps: int = 101) -
     if isinstance(terms, list) and terms:
         model = _added_model(terms, selection.get("qubits"))
     else:
-        model = _model(_choice(selection, "model"), selection.get("qubits"), selection.get("emitters"))
+        model = _model(
+            _choice(selection, "model"),
+            selection.get("qubits"),
+            selection.get("emitters"),
+            selection.get("cavities"),
+            selection.get("nu"),
+        )
     state = _initial_state(state_id, model.num_qubits, _state_data(selection, state_id))
     measure_id = _choice(selection, "measure")
     sites = _measure_sites(selection, model.num_qubits)
@@ -675,17 +686,71 @@ def _emitter_count(value: object) -> int:
     return count
 
 
-def _model(model_id: str, qubits: object, emitters: object = None) -> IsingModel | TavisCummingsModel:
+def _cavity_count(value: object) -> int:
+    """Return a cavity count of at least 1. A missing value is 1."""
+    if value is None:
+        return 1
+    try:
+        count = _integer(value)
+    except ValueError:
+        raise ValueError("cavities must be an integer of at least 1") from None
+    if count < 1:
+        raise ValueError("cavities must be an integer of at least 1")
+    return count
+
+
+def _hopping(value: object) -> float:
+    """Return a finite real hopping strength. A missing value is 0."""
+    if value is None:
+        return 0.0
+    if isinstance(value, bool) or not isinstance(value, (int, float, str)):
+        raise ValueError("hopping must be a real number")
+    if isinstance(value, str):
+        text = value.strip()
+        if not text:
+            raise ValueError("hopping must be a real number")
+        try:
+            number = float(text)
+        except ValueError:
+            raise ValueError("hopping must be a real number") from None
+    else:
+        number = float(value)
+    if not math.isfinite(number):
+        raise ValueError("hopping must be a real number")
+    return number
+
+
+def _model(
+    model_id: str,
+    qubits: object,
+    emitters: object = None,
+    cavities: object = None,
+    nu: object = None,
+) -> IsingModel | TavisCummingsModel:
     """Build the selected factory.
 
     Ising reads ``qubits``. Jaynes–Cummings is always 3 qubits. Tavis–Cummings
     reads ``emitters`` and uses two cavity qubits plus one qubit per emitter.
+    Tavis–Cummings–Hubbard repeats that block once per cavity and reads ``nu``.
+    Jaynes–Cummings–Hubbard is that model with one emitter per cavity.
     """
     record = next((item for item in listed_models() if item["id"] == model_id), None)
     if record is None:
         raise ValueError("unknown model")
     factory = getattr(models, record["id"])
-    if model_id == "tavis_cummings":
+    if model_id == "tavis_cummings_hubbard":
+        emitter_count = _emitter_count(emitters)
+        cavity_count = _cavity_count(cavities)
+        qubit_count = cavity_count * (2 + emitter_count)
+        if qubit_count > 15:
+            raise ValueError("cavities and emitters must use at most 15 qubits")
+        built = factory(n_emitters=emitter_count, n_cavities=cavity_count, nu=_hopping(nu))
+    elif model_id == "jaynes_cummings_hubbard":
+        cavity_count = _cavity_count(cavities)
+        if cavity_count * 3 > 15:
+            raise ValueError("cavities must use at most 15 qubits")
+        built = factory(n_cavities=cavity_count, nu=_hopping(nu))
+    elif model_id == "tavis_cummings":
         built = factory(n_emitters=_emitter_count(emitters))
     elif record["qubits"]:
         built = factory(n_qubits=_integer(qubits))

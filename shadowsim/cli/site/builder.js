@@ -86,6 +86,8 @@ let modelFactories = [];
 let preexistingId = null;
 let preexistingOpen = false;
 let emitterText = "1";
+let cavityText = "1";
+let hoppingText = "0";
 const MAX_EMITTERS = 13;
 const MAX_OPERATOR_QUBITS = 8;
 
@@ -149,6 +151,8 @@ function currentPage() {
     modelFactories,
     preexistingId,
     emitterText,
+    cavityText,
+    hoppingText,
     basisBits,
     grayBits,
     angleText,
@@ -219,6 +223,30 @@ function amplitudeQubits(count) {
 
 function emitterCount() {
   return check(checks.emitterCount);
+}
+
+function cavityCount() {
+  return check(checks.cavityCount);
+}
+
+function hoppingValue() {
+  return check(checks.hoppingValue);
+}
+
+function factoryAlert() {
+  return check(checks.factoryAlert);
+}
+
+function hubbardSelected() {
+  return check(checks.hubbardSelected);
+}
+
+function jaynesHubbardSelected() {
+  return check(checks.jaynesHubbardSelected);
+}
+
+function usesEmitterCount() {
+  return check(checks.usesEmitterCount);
 }
 
 function cavityModelSelected() {
@@ -376,11 +404,27 @@ function blockCard(lane, block, { inSlot, onPlace, onRemove, blocked }) {
 
 function preexistingDetail() {
   if (preexistingId === "jaynes_cummings") return "3 qubits";
+  if (jaynesHubbardSelected()) {
+    const qubits = fixedFactoryQubits();
+    if (qubits == null) return "Set cavities and hopping";
+    const cavities = cavityCount();
+    const cavityLabel = cavities === 1 ? "1 cavity" : `${cavities} cavities`;
+    return `${cavityLabel}, ${qubits} qubits`;
+  }
   if (preexistingId === "tavis_cummings") {
     const count = emitterCount();
     if (count == null) return "Set the emitter count";
     const qubits = 2 + count;
     return count === 1 ? `1 emitter, ${qubits} qubits` : `${count} emitters, ${qubits} qubits`;
+  }
+  if (hubbardSelected()) {
+    const qubits = fixedFactoryQubits();
+    if (qubits == null) return "Set cavities, emitters, and hopping";
+    const cavities = cavityCount();
+    const emitters = emitterCount();
+    const cavityLabel = cavities === 1 ? "1 cavity" : `${cavities} cavities`;
+    const emitterLabel = emitters === 1 ? "1 emitter" : `${emitters} emitters`;
+    return `${cavityLabel}, ${emitterLabel}, ${qubits} qubits`;
   }
   return chosenFactory()?.title ?? "";
 }
@@ -390,7 +434,14 @@ function refreshCavityModel() {
   const detail = document.querySelector(".preexisting-detail");
   if (detail) detail.textContent = preexistingDetail();
   const alert = document.querySelector(".preexisting-alert");
-  if (alert) alert.hidden = !emitterProblem();
+  if (alert) {
+    alert.hidden = !emitterProblem();
+    const text = factoryAlert();
+    if (text) {
+      alert.setAttribute("aria-label", text);
+      alert.title = text;
+    }
+  }
   if (selection.state) refreshStateChip(selection.state);
   else refreshSummaryAndPreview();
 }
@@ -430,6 +481,33 @@ function preexistingChip() {
       refreshCavityModel();
     },
   });
+  const cavities = el("input", {
+    type: "text",
+    inputmode: "numeric",
+    "aria-label": "Cavities",
+    value: cavityText,
+    spellcheck: "false",
+    autocomplete: "off",
+    oninput: (event) => {
+      const next = event.target.value.replace(/\D/g, "");
+      if (event.target.value !== next) event.target.value = next;
+      cavityText = next;
+      refreshCavityModel();
+    },
+  });
+  const hopping = el("input", {
+    type: "text",
+    inputmode: "decimal",
+    "aria-label": "Hopping",
+    value: hoppingText,
+    spellcheck: "false",
+    autocomplete: "off",
+    oninput: (event) => {
+      hoppingText = event.target.value.trim();
+      refreshCavityModel();
+    },
+  });
+  const alertText = factoryAlert() ?? "Enter an emitter count from 1 to 13";
   return el(
     "div",
     { className: `chip tone-teal preexisting${preexistingOpen ? " is-editing" : ""}` },
@@ -451,14 +529,14 @@ function preexistingChip() {
       el(
         "div",
         { className: "preexisting-actions" },
-        preexistingId === "tavis_cummings"
+        usesEmitterCount() || jaynesHubbardSelected()
           ? el(
               "span",
               {
                 className: "basis-alert preexisting-alert",
                 role: "img",
-                "aria-label": "Enter an emitter count from 1 to 13.",
-                title: "Enter an emitter count from 1 to 13.",
+                "aria-label": alertText,
+                title: alertText,
                 hidden: !emitterProblem(),
               },
               "!",
@@ -494,8 +572,14 @@ function preexistingChip() {
       ),
     ),
     preexistingOpen ? el("label", { className: "preexisting-field" }, "Model", select) : null,
-    preexistingOpen && preexistingId === "tavis_cummings"
+    preexistingOpen && (hubbardSelected() || jaynesHubbardSelected())
+      ? el("label", { className: "preexisting-field" }, "Cavities", cavities)
+      : null,
+    preexistingOpen && usesEmitterCount()
       ? el("label", { className: "preexisting-field" }, "Emitters", emitters)
+      : null,
+    preexistingOpen && (hubbardSelected() || jaynesHubbardSelected())
+      ? el("label", { className: "preexisting-field" }, "Hopping", hopping)
       : null,
   );
 }
@@ -1638,7 +1722,7 @@ function refreshSummaryAndPreview() {
 function statusMessage() {
   if (statusHold) return statusHold;
   if (!isComplete()) return operatorStatus(false) ?? socketStatus(false) ?? "Place a block in each slot.";
-  if (emitterProblem()) return "Enter an emitter count.";
+  if (factoryAlert()) return `${factoryAlert()}.`;
   if (stateInputProblem() === "size") return stateSizeStatus(false);
   if (stateInputProblem() === "basis") return "Enter a basis bit string and total time.";
   if (stateInputProblem() === "gray") return "Enter a Gray code bit string and total time.";
@@ -1717,7 +1801,7 @@ function codeBody() {
   let message = operatorStatus(true) ?? socketStatus(true) ?? "Place a block in each slot to preview the script.";
   if (isComplete()) {
     const numbers = numberProblem(true);
-    if (emitterProblem()) message = "Enter an emitter count to preview the script.";
+    if (factoryAlert()) message = `${factoryAlert()} to preview the script.`;
     else if (stateInputProblem() === "size") message = stateSizeStatus(true);
     else if (stateInputProblem() === "basis") message = "Enter a basis bit string and total time to preview the script.";
     else if (stateInputProblem() === "gray") message = "Enter a Gray code bit string and total time to preview the script.";
@@ -2300,6 +2384,12 @@ function runRequest() {
     ...(selection.model === "preexisting" && preexistingId === "tavis_cummings"
       ? { emitters: emitterCount() }
       : {}),
+    ...(selection.model === "preexisting" && preexistingId === "tavis_cummings_hubbard"
+      ? { emitters: emitterCount(), cavities: cavityCount(), nu: hoppingValue() }
+      : {}),
+    ...(selection.model === "preexisting" && preexistingId === "jaynes_cummings_hubbard"
+      ? { cavities: cavityCount(), nu: hoppingValue() }
+      : {}),
   };
 }
 
@@ -2815,6 +2905,8 @@ function boardSnapshot() {
     qubitsSource,
     preexistingId,
     emitterText,
+    cavityText,
+    hoppingText,
     modelTerms: modelTerms.map((term) => ({
       id: term.id,
       matrix: typeof term.matrix === "string" ? term.matrix : "",
@@ -2904,6 +2996,8 @@ function applyBoard(snapshot) {
   qubitsSource = sources.includes(snapshot.qubitsSource) ? snapshot.qubitsSource : null;
   preexistingId = nextPreexisting;
   emitterText = storedText(snapshot.emitterText, "1");
+  cavityText = storedText(snapshot.cavityText, "1");
+  hoppingText = storedText(snapshot.hoppingText, "0");
   modelTerms.splice(
     0,
     modelTerms.length,
@@ -2983,6 +3077,8 @@ function emptyBoard() {
   qubitsSource = null;
   preexistingId = null;
   emitterText = "1";
+  cavityText = "1";
+  hoppingText = "0";
   modelTerms.splice(0, modelTerms.length);
   placedSims.splice(0, placedSims.length);
   placedThens.splice(0, placedThens.length);

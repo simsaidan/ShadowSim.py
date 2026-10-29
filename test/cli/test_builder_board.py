@@ -275,6 +275,8 @@ function resetPage() {
   qubitsSource = null;
   preexistingId = null;
   emitterText = "1";
+  cavityText = "1";
+  hoppingText = "0";
   modelTerms.splice(0, modelTerms.length);
   placedSims.splice(0, placedSims.length);
   placedThens.splice(0, placedThens.length);
