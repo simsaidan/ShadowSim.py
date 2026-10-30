@@ -1547,7 +1547,7 @@ def test_listed_backends_matches_the_circuit_module() -> None:
     pytest.importorskip("qiskit")
     pytest.importorskip("qiskit_aer")
     listed = listed_backends()
-    assert [item["id"] for item in listed] == ["aer", "paulipropagation"]
+    assert [item["id"] for item in listed] == ["aer", "numpy", "paulipropagation"]
     from shadowsim.backends.aer import AerCircuitBackend
 
     assert listed[0]["setup"] == "circuit_backend = AerCircuitBackend(shots={shots}, basis_gates={basis_gates})"
@@ -1565,15 +1565,19 @@ def test_listed_backends_matches_the_circuit_module() -> None:
     assert "store" not in listed[0]["fields"][0]["choices"]
     assert "cx" in listed[0]["fields"][0]["choices"]
     assert "Aer" in listed[0]["detail"]
-    assert listed[1]["setup"] == (
+    assert listed[1]["setup"] == "circuit_backend = NumpyCircuitBackend()"
+    assert listed[1]["shots"] is False
+    assert listed[1]["fields"] == []
+    assert "NumPy" in listed[1]["detail"]
+    assert listed[2]["setup"] == (
         "circuit_backend = PauliPropagationBackend(max_weight={max_weight}, min_abs_coeff={min_abs_coeff})"
     )
-    assert listed[1]["shots"] is False
-    assert listed[1]["fields"] == [
+    assert listed[2]["shots"] is False
+    assert listed[2]["fields"] == [
         {"name": "max_weight", "label": "Max weight", "default": "inf", "allow_inf": True},
         {"name": "min_abs_coeff", "label": "Min coefficient", "default": "1e-10", "allow_inf": False},
     ]
-    assert "Pauli" in listed[1]["detail"]
+    assert "Pauli" in listed[2]["detail"]
 
 
 def test_describe_models_formats_each_default_kind() -> None:
