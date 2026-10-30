@@ -198,7 +198,6 @@ The following simulators are supported by the package:
 | Split JMatrix | quantum-inspired | true |
 | Trotterization | quantum-inspired | false |
 | Wave matrix Lindbladization (coming soon) | — | — |
-| Pauli propagation time evolution (coming soon) | — | — |
 
 ### Backends
 
