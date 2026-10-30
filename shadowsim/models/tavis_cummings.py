@@ -1,6 +1,6 @@
 """Open cavity–emitter (Tavis–Cummings–like) model factory."""
 
-from collections.abc import Callable, Sequence
+from collections.abc import Sequence
 from dataclasses import dataclass
 
 import numpy as np
@@ -10,7 +10,7 @@ from shadowsim.core.local_hamiltonian import LocalHamiltonian
 from shadowsim.core.local_operator import LocalOperator
 from shadowsim.core.operator import Operator
 from shadowsim.core.state import State
-from shadowsim.simulators.reducers import cavity_population, population_one
+from shadowsim.simulators.reducers import Measurement
 from shadowsim.utils.constants import (
     I,
     one_state_two_qubits,
@@ -33,7 +33,6 @@ _FOCK_STATES = (
     three_state_two_qubits,
 )
 
-Reducer = Callable[[dict[str, int]], float]
 FloatOrSeq = float | Sequence[float]
 
 
@@ -53,9 +52,8 @@ class TavisCummingsModel:
         c_ops_local: Lindblad operators on local qubit blocks.
         psi0: Initial state (cavity Fock ⊗ all emitters in ground).
         e_ops: Observables for QuTiP (cavity population, then each emitter).
-        measurement_groups: Split-J groups after ancilla flip convention
-            (cavity pair, then each emitter).
-        reducers: Split-J count reducers matching ``e_ops``.
+        measurements: Shot-count measurements matching ``e_ops`` (cavity
+            population on qubits 0 and 1, then each emitter's population).
         num_qubits: ``2 + n_emitters``.
         n_emitters: Number of two-level emitters.
     """
@@ -66,8 +64,7 @@ class TavisCummingsModel:
     c_ops_local: list[LocalOperator]
     psi0: State
     e_ops: list[Operator]
-    measurement_groups: list[int | list[int]]
-    reducers: Sequence[Reducer]
+    measurements: list[Measurement]
     num_qubits: int
     n_emitters: int
 
@@ -203,10 +200,10 @@ def tavis_cummings(
     for i in range(n_emitters):
         e_ops.append(Operator(_embed_on_emitter(sigma.conjugate().T @ sigma, i, n_emitters)))
 
-    # Split-J measures ancilla + body; after flip_dict, index 0 is ancilla,
-    # [1, 2] are cavity qubits, and emitters start at index 3 (Example 2 convention).
-    measurement_groups: list[int | list[int]] = [[1, 2], *range(3, 3 + n_emitters)]
-    reducers: tuple[Reducer, ...] = (cavity_population, *((population_one,) * n_emitters))
+    measurements = [
+        Measurement.cavity_population(0, 1),
+        *(Measurement.population(_emitter_site(i)) for i in range(n_emitters)),
+    ]
 
     return TavisCummingsModel(
         full_hamiltonians=full_hamiltonians,
@@ -215,8 +212,7 @@ def tavis_cummings(
         c_ops_local=c_ops_local,
         psi0=psi0,
         e_ops=e_ops,
-        measurement_groups=measurement_groups,
-        reducers=reducers,
+        measurements=measurements,
         num_qubits=num_qubits,
         n_emitters=n_emitters,
     )

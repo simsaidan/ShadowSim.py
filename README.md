@@ -192,16 +192,29 @@ job leaves both as `None`.
 
 The following simulators are supported by the package:
 
-| Name | Type | Backend | Can handle open systems |
-| --- | --- | --- | --- |
-| Qutip simulator | classical reference | — | true |
-| Split JMatrix | quantum-inspired | sampling backend | true |
-| Trotterization | quantum-inspired | circuit backend | false |
-| Wave matrix Lindbladization (coming soon) | — | — | — |
-| Pauli propagation time evolution (coming soon) | — | — | — |
+| Name | Type | Can handle open systems |
+| --- | --- | --- |
+| Qutip simulator | classical reference | true |
+| Split JMatrix | quantum-inspired | true |
+| Trotterization | quantum-inspired | false |
+| Wave matrix Lindbladization (coming soon) | — | — |
+| Pauli propagation time evolution (coming soon) | — | — |
 
-Single-qubit ⟨Z⟩ and ⟨X⟩ for one circuit are available now from
-[`PauliPropagationBackend`](#paulipropagation).
+### Backends
+
+The circuit simulators hand each time point's circuit to a circuit backend, passed
+as `circuit_backend=`. QuTiP integrates the master equation itself and takes no
+backend. The following backends are supported:
+
+| Backend | Kind | Simulators | Extra |
+| --- | --- | --- | --- |
+| `AerCircuitBackend` | sampling: returns shot counts from a `shots` budget | Split JMatrix, Trotterization | `qiskit` |
+| `PauliPropagationBackend` | expectation: returns exact Pauli expectations, no counts | Trotterization (closed systems) | `qiskit` and `pauli_propagation` |
+
+`AerCircuitBackend` is the default for both circuit simulators. Split JMatrix
+samples an ancilla, so it needs a sampling backend. See
+[Measurements](#measurements) for what each kind returns and
+[PauliPropagation](#paulipropagation) for the Julia setup.
 
 ### Sparse / Pauli-label shadow construction
 
@@ -313,7 +326,7 @@ operator embeddings.
 from shadowsim.backends import AerCircuitBackend
 from shadowsim.benchmarking import Benchmark
 from shadowsim.models import tavis_cummings
-from shadowsim.simulators import Measurement, QutipSimulator, SplitJMatrixSimulator
+from shadowsim.simulators import QutipSimulator, SplitJMatrixSimulator
 
 model = tavis_cummings()
 ```
@@ -348,8 +361,10 @@ splitjmatrix_simulator = SplitJMatrixSimulator(
 To easily compare results, we initialize a benchmark with a reference simulator
 and one or more challengers. All simulators must share the same time grid.
 We run the benchmark, which runs the underlying simulations. Split JMatrix only
-records counts, so we then measure the same quantities as the QuTiP `e_ops`: the
-cavity population on qubits 0 and 1, and the emitter population on qubit 2. Numeric L∞ / L2 /
+records counts, so we then apply `model.measurements`, which estimate the same
+quantities as the QuTiP `e_ops`: the cavity population on qubits 0 and 1, and the
+emitter population on qubit 2. Every model lists measurements that match its
+`e_ops` this way. Numeric L∞ / L2 /
 MAE / RMSE error metrics vs the reference are available via `error_metrics`.
 Wall-clock time, shot budget (when the circuit backend stores `shots`), and
 circuit metrics are available via `resource_metrics`. Those metrics are the
@@ -375,7 +390,7 @@ order.
 ```python
 benchmark = Benchmark(qutip_simulator, splitjmatrix_simulator)
 benchmark.run()
-splitjmatrix_simulator.measure([Measurement.cavity_population(0, 1), Measurement.population(2)])
+splitjmatrix_simulator.measure(model.measurements)
 print(benchmark.error_metrics())
 print(benchmark.resource_metrics())
 metrics_path = benchmark.save_error_metrics()

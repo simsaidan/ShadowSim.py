@@ -3,7 +3,7 @@
 ``n_cavities=1`` matches ``tavis_cummings``. More cavities add photon hopping.
 """
 
-from collections.abc import Callable, Sequence
+from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import TypeGuard, cast
 
@@ -15,7 +15,7 @@ from shadowsim.core.local_operator import LocalOperator
 from shadowsim.core.operator import Operator
 from shadowsim.core.state import State
 from shadowsim.models.tavis_cummings import TavisCummingsModel
-from shadowsim.simulators.reducers import cavity_population, population_one
+from shadowsim.simulators.reducers import Measurement
 from shadowsim.utils.constants import (
     I,
     one_state_two_qubits,
@@ -38,7 +38,6 @@ _FOCK_STATES = (
     three_state_two_qubits,
 )
 
-Reducer = Callable[[dict[str, int]], float]
 FloatOrSeq = float | Sequence[float]
 _Number = int | float | complex | np.number
 
@@ -121,13 +120,6 @@ def _embed_at(matrix: np.ndarray, left: int, right: int) -> np.ndarray:
     if left == 0 and right == 0:
         return matrix
     return tensor([*([I] * left), matrix, *([I] * right)])
-
-
-def _shift_group(group: int | list[int], offset: int) -> int | list[int]:
-    """Shift one ancilla-indexed measurement group by ``offset`` body qubits."""
-    if isinstance(group, int):
-        return group + offset
-    return [index + offset for index in group]
 
 
 def _hopping(a: np.ndarray, nu: complex, n_middle: int) -> np.ndarray:
@@ -242,10 +234,6 @@ def tavis_cummings_hubbard(
     block_e_ops = [_pad_right(a.conjugate().T @ a, n_emitters)]
     for i in range(n_emitters):
         block_e_ops.append(_embed_on_emitter(sigma.conjugate().T @ sigma, i, n_emitters))
-    # Split-J measures ancilla + body; after flip_dict, index 0 is ancilla.
-    # Within a block, [1, 2] are the cavity qubits and emitters start at index 3.
-    block_groups: list[int | list[int]] = [[1, 2], *range(3, 3 + n_emitters)]
-    block_reducers: tuple[Reducer, ...] = (cavity_population, *((population_one,) * n_emitters))
     block_state = tensor([_FOCK_STATES[initial_fock], *([zero] * n_emitters)])
 
     local_hamiltonians: list[LocalHamiltonian] = []
@@ -253,8 +241,7 @@ def tavis_cummings_hubbard(
     c_ops_local: list[LocalOperator] = []
     c_ops_full: list[Operator] = []
     e_ops: list[Operator] = []
-    measurement_groups: list[int | list[int]] = []
-    reducers: list[Reducer] = []
+    measurements: list[Measurement] = []
     for cavity in range(n_cavities):
         offset = cavity * block_qubits
         right = num_qubits - offset - block_qubits
@@ -268,8 +255,8 @@ def tavis_cummings_hubbard(
             c_ops_full.append(Operator(_embed_at(matrix, offset, right)))
         for matrix in block_e_ops:
             e_ops.append(Operator(_embed_at(matrix, offset, right)))
-        measurement_groups.extend(_shift_group(group, offset) for group in block_groups)
-        reducers.extend(block_reducers)
+        measurements.append(Measurement.cavity_population(offset, offset + 1))
+        measurements.extend(Measurement.population(offset + _emitter_site(i)) for i in range(n_emitters))
 
     pair = 0
     for left_cavity in range(n_cavities):
@@ -294,8 +281,7 @@ def tavis_cummings_hubbard(
         c_ops_local=c_ops_local,
         psi0=psi0,
         e_ops=e_ops,
-        measurement_groups=measurement_groups,
-        reducers=tuple(reducers),
+        measurements=measurements,
         num_qubits=num_qubits,
         n_emitters=n_emitters,
         n_cavities=n_cavities,
