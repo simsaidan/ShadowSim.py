@@ -206,14 +206,32 @@ body {
   gap: 8px;
 }
 
-.preexisting-head > div:first-child,
-.basis-head > div:first-child,
-.simulator-head > div:first-child,
-.save-head > div:first-child,
-.export-head > div:first-child,
-.measure-head > div:first-child,
-.backend-head > div:first-child {
+.preexisting-head > button,
+.basis-head > button,
+.simulator-head > button,
+.save-head > button,
+.export-head > button,
+.measure-head > button,
+.backend-head > button,
+.basis-head > div:first-child {
   min-width: 0;
+}
+
+.preexisting-head > button,
+.basis-head > button,
+.simulator-head > button,
+.save-head > button,
+.export-head > button,
+.measure-head > button,
+.backend-head > button {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  padding: 0;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
 }
 
 .preexisting-actions,
@@ -439,7 +457,27 @@ body {
 .run:focus-visible,
 .clear:focus-visible,
 .block:focus-visible,
-.remove:focus-visible {
+.remove:focus-visible,
+.done:focus-visible,
+.preexisting-head > button:focus-visible,
+.basis-head > button:focus-visible,
+.simulator-head > button:focus-visible,
+.save-head > button:focus-visible,
+.export-head > button:focus-visible,
+.measure-head > button:focus-visible,
+.backend-head > button:focus-visible,
+.preexisting-field select:focus-visible,
+.preexisting-field input:focus-visible,
+.basis-field input:focus-visible,
+.basis-field textarea:focus-visible,
+.save-field input:focus-visible,
+.export-field input:focus-visible,
+.counts-field input:focus-visible,
+.backend-field input:focus-visible,
+.backend-fields input:focus-visible,
+.sim-fields input:focus-visible,
+.sim-fields select:focus-visible,
+.measure-fields input:focus-visible {
   outline: 2px solid var(--blue-ink);
   outline-offset: 2px;
 }

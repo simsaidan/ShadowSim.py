@@ -623,8 +623,9 @@ function preexistingChip() {
       "div",
       { className: "preexisting-head" },
       el(
-        "div",
+        "button",
         {
+          type: "button",
           onclick: (event) => {
             if (preexistingOpen) return;
             preexistingOpen = true;
@@ -801,8 +802,9 @@ function stateChip(options) {
       "div",
       { className: "basis-head" },
       el(
-        "div",
+        "button",
         {
+          type: "button",
           onclick: (event) => {
             if (stateOpen) return;
             stateOpen = true;
@@ -973,8 +975,9 @@ function simulatorChip(entry) {
       "div",
       { className: "simulator-head" },
       el(
-        "div",
+        "button",
         {
+          type: "button",
           onclick: (event) => {
             if (entry.open) return;
             entry.open = true;
@@ -1033,8 +1036,9 @@ function pathChip(block, options) {
       "div",
       { className: `${options.kind}-head` },
       el(
-        "div",
+        "button",
         {
+          type: "button",
           onclick: (event) => {
             if (options.open) return;
             options.setOpen(true);
@@ -1175,8 +1179,9 @@ function backendChip(entry) {
       "div",
       { className: "backend-head" },
       el(
-        "div",
+        "button",
         {
+          type: "button",
           onclick: (event) => {
             if (!configurable || editing) return;
             if (samples) entry.shotsOpen = true;
@@ -2762,8 +2767,9 @@ function measureChip(block) {
       "div",
       { className: "measure-head" },
       el(
-        "div",
+        "button",
         {
+          type: "button",
           onclick: (event) => {
             if (open || qubitCount() == null) return;
             measureOpen = true;
