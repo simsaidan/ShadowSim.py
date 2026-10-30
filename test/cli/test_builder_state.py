@@ -164,7 +164,10 @@ const siblings = ["gray", "angle", "amplitude"].map((id) => {
 
 process.stdout.write(JSON.stringify({
   open: plain(open),
-  closed: plain(closed),
+  closed: Object.assign(plain(closed), {
+    header: closed.head ? closed.head.tag : null,
+    headerType: closed.head ? closed.head.attrs.type : null,
+  }),
   redraws: afterReopen,
   reopened,
   placed,
@@ -209,6 +212,8 @@ def test_basis_state_card_closes_from_done() -> None:
     assert page["closed"]["done"] is None
     assert page["closed"]["field"] is False
     assert page["closed"]["detail"] == "Start in |10>"
+    assert page["closed"]["header"] == "button"
+    assert page["closed"]["headerType"] == "button"
     assert page["redraws"] == 0
     assert page["reopened"] is True
     assert page["placed"] is True
