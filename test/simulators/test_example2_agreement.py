@@ -11,7 +11,7 @@ pytest.importorskip("qiskit_aer")
 from shadowsim.backends import AerCircuitBackend
 from shadowsim.benchmarking import Benchmark
 from shadowsim.models import tavis_cummings
-from shadowsim.simulators import Measurement, QutipSimulator, SplitJMatrixSimulator
+from shadowsim.simulators import QutipSimulator, SplitJMatrixSimulator
 
 # Reduced vs examples/simple_algo_benchmark.py (0.25, 301, num_steps=40, shots=10000).
 TOTAL_TIME = 0.25
@@ -53,7 +53,7 @@ def test_example2_qutip_splitjmatrix_agreement():
 
     benchmark = Benchmark(qutip_simulator, splitjmatrix_simulator)
     benchmark.run()
-    splitjmatrix_simulator.measure([Measurement.cavity_population(0, 1), Measurement.population(2)])
+    splitjmatrix_simulator.measure(model.measurements)
 
     metrics = benchmark.error_metrics()
     assert len(metrics) == 1

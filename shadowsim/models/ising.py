@@ -1,6 +1,6 @@
 """Classical and transverse-field Ising model factory."""
 
-from collections.abc import Callable, Sequence
+from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Literal
 
@@ -13,10 +13,8 @@ from shadowsim.core.operator import Operator
 from shadowsim.core.pauli_string import PauliString
 from shadowsim.core.pauli_sum import PauliSum
 from shadowsim.core.state import State
-from shadowsim.simulators.reducers import population_one
+from shadowsim.simulators.reducers import Measurement
 from shadowsim.utils.tensor import tensor
-
-Reducer = Callable[[dict[str, int]], float]
 
 FieldKind = Literal["classical", "transverse"]
 TopologyKind = Literal["chain", "custom"]
@@ -44,8 +42,7 @@ class IsingModel:
         c_ops_local: Local Lindblad operators (empty; closed system).
         psi0: Default initial state (all-|0⟩ classical, all-|+⟩ transverse).
         e_ops: Per-site ``Z`` observables.
-        measurement_groups: One group per qubit site.
-        reducers: Count reducers aligned with ``measurement_groups``.
+        measurements: Per-site ``Z`` expectations from shot counts, matching ``e_ops``.
         pauli_sum: Full Hamiltonian as a sparse Pauli sum.
         edges: Resolved undirected interaction pairs ``(i, j)`` with ``i < j``.
         num_qubits: Number of qubits.
@@ -62,8 +59,7 @@ class IsingModel:
     c_ops_local: list[LocalOperator]
     psi0: State
     e_ops: list[Operator]
-    measurement_groups: list[int | list[int]]
-    reducers: Sequence[Reducer]
+    measurements: list[Measurement]
     pauli_sum: PauliSum
     edges: list[tuple[int, int]]
     num_qubits: int
@@ -242,8 +238,7 @@ def ising(
 
     psi0 = State(psi0_vec, n_qubits)
     e_ops = [Operator(_pauli_label(n_qubits, {site: "Z"})) for site in range(n_qubits)]
-    measurement_groups: list[int | list[int]] = list(range(n_qubits))
-    reducers: tuple[Reducer, ...] = tuple(population_one for _ in range(n_qubits))
+    measurements = [Measurement.expectation(site) for site in range(n_qubits)]
 
     return IsingModel(
         full_hamiltonians=full_hamiltonians,
@@ -252,8 +247,7 @@ def ising(
         c_ops_local=[],
         psi0=psi0,
         e_ops=e_ops,
-        measurement_groups=measurement_groups,
-        reducers=reducers,
+        measurements=measurements,
         pauli_sum=pauli_sum,
         edges=resolved_edges,
         num_qubits=n_qubits,

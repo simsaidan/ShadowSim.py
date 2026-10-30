@@ -1,7 +1,7 @@
 from shadowsim.backends import AerCircuitBackend
 from shadowsim.benchmarking import Benchmark
 from shadowsim.models import tavis_cummings
-from shadowsim.simulators import Measurement, QutipSimulator, SplitJMatrixSimulator
+from shadowsim.simulators import QutipSimulator, SplitJMatrixSimulator
 
 model = tavis_cummings()
 
@@ -28,7 +28,7 @@ splitjmatrix_simulator = SplitJMatrixSimulator(
 
 benchmark = Benchmark(qutip_simulator, splitjmatrix_simulator)
 benchmark.run()
-splitjmatrix_simulator.measure([Measurement.cavity_population(0, 1), Measurement.population(2)])
+splitjmatrix_simulator.measure(model.measurements)
 for challenger in benchmark.error_metrics():
     print(f"Error metrics for {challenger['challenger_id']}:")
     for obs in challenger["observables"]:

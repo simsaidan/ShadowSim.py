@@ -5,7 +5,7 @@ import pytest
 
 from shadowsim.core import PauliString
 from shadowsim.models import IsingModel, ising
-from shadowsim.simulators import population_one
+from shadowsim.simulators import Measurement
 from shadowsim.utils import tensor
 
 
@@ -46,8 +46,7 @@ def test_open_chain_metadata_and_terms():
     assert model.h == 0.5
     assert model.c_ops_full == []
     assert model.c_ops_local == []
-    assert model.measurement_groups == [0, 1, 2]
-    assert list(model.reducers) == [population_one, population_one, population_one]
+    assert model.measurements == [Measurement.expectation(0), Measurement.expectation(1), Measurement.expectation(2)]
 
     terms = model.pauli_sum.terms
     assert terms["ZZI"] == pytest.approx(1.0)

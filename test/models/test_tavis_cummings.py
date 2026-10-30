@@ -4,7 +4,7 @@ import numpy as np
 import pytest
 
 from shadowsim.models import TavisCummingsModel, tavis_cummings
-from shadowsim.simulators import cavity_population, population_one
+from shadowsim.simulators import Measurement
 from shadowsim.utils import (
     I,
     one_state_two_qubits,
@@ -58,8 +58,7 @@ def test_defaults_match_example2():
     assert isinstance(model, TavisCummingsModel)
     assert model.n_emitters == 1
     assert model.num_qubits == 3
-    assert model.measurement_groups == [[1, 2], 3]
-    assert list(model.reducers) == [cavity_population, population_one]
+    assert model.measurements == [Measurement.cavity_population(0, 1), Measurement.population(2)]
 
     assert [h.sites for h in model.local_hamiltonians] == ref["local_sites"]
     for got, expected in zip(model.local_hamiltonians, ref["local_mats"], strict=True):
@@ -112,8 +111,11 @@ def test_two_emitters_layout_and_observables():
 
     assert model.n_emitters == 2
     assert model.num_qubits == 4
-    assert model.measurement_groups == [[1, 2], 3, 4]
-    assert list(model.reducers) == [cavity_population, population_one, population_one]
+    assert model.measurements == [
+        Measurement.cavity_population(0, 1),
+        Measurement.population(2),
+        Measurement.population(3),
+    ]
     assert len(model.e_ops) == 3
     assert len(model.c_ops_local) == 3
     # cavity + (emitter free + coupling) * 2
@@ -155,8 +157,7 @@ def test_scalar_params_broadcast_to_emitters():
     assert np.allclose(free_norms, free_norms[0])
     gamma_norms = [np.linalg.norm(op.matrix) for op in model.c_ops_local[1:]]
     assert np.allclose(gamma_norms, gamma_norms[0])
-    assert model.measurement_groups == [[1, 2], 3, 4, 5]
-    assert len(model.reducers) == 4
+    assert [measurement.qubits for measurement in model.measurements] == [(0, 1), (2,), (3,), (4,)]
 
 
 @pytest.mark.parametrize(

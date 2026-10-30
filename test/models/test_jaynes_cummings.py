@@ -12,8 +12,7 @@ def _assert_same_operators(got: JaynesCummingsModel, expected: TavisCummingsMode
     """Compare operator payloads; dataclass equality is type-sensitive."""
     assert got.n_emitters == expected.n_emitters
     assert got.num_qubits == expected.num_qubits
-    assert got.measurement_groups == expected.measurement_groups
-    assert list(got.reducers) == list(expected.reducers)
+    assert got.measurements == expected.measurements
 
     assert [h.sites for h in got.local_hamiltonians] == [h.sites for h in expected.local_hamiltonians]
     for actual, reference in zip(got.local_hamiltonians, expected.local_hamiltonians, strict=True):

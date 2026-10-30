@@ -4,6 +4,7 @@ import numpy as np
 import pytest
 
 from shadowsim.models import TavisCummingsHubbardModel, TavisCummingsModel, tavis_cummings, tavis_cummings_hubbard
+from shadowsim.simulators import Measurement
 from shadowsim.utils.constants import (
     I,
     one_state_two_qubits,
@@ -18,8 +19,7 @@ def _assert_same_operators(got: TavisCummingsHubbardModel, expected: TavisCummin
     """Compare operator payloads; dataclass equality is type-sensitive."""
     assert got.n_emitters == expected.n_emitters
     assert got.num_qubits == expected.num_qubits
-    assert got.measurement_groups == expected.measurement_groups
-    assert list(got.reducers) == list(expected.reducers)
+    assert got.measurements == expected.measurements
 
     assert [h.sites for h in got.local_hamiltonians] == [h.sites for h in expected.local_hamiltonians]
     for actual, reference in zip(got.local_hamiltonians, expected.local_hamiltonians, strict=True):
@@ -84,8 +84,12 @@ def test_two_cavities_without_hopping_are_disjoint_copies():
     assert len(model.local_hamiltonians) == 2 * terms
     assert len(model.full_hamiltonians) == 2 * len(block.full_hamiltonians)
     assert len(model.c_ops_local) == 2 * len(block.c_ops_local)
-    assert model.measurement_groups == [[1, 2], 3, [4, 5], 6]
-    assert list(model.reducers) == [*block.reducers, *block.reducers]
+    assert model.measurements == [
+        Measurement.cavity_population(0, 1),
+        Measurement.population(2),
+        Measurement.cavity_population(3, 4),
+        Measurement.population(5),
+    ]
     np.testing.assert_allclose(model.psi0.to_numpy(), tensor([block.psi0.to_numpy(), block.psi0.to_numpy()]))
 
     for cavity in range(2):

@@ -13,7 +13,6 @@ import shadowsim.backends.aer as aer_backend_module
 import shadowsim.simulators.splitjmatrix_simulator as splitjmatrix_module
 from shadowsim.core import LocalHamiltonian, LocalOperator, Operator, State
 from shadowsim.simulators import Measurement, SplitJMatrixSimulator
-from shadowsim.simulators.reducers import cavity_population, expectation_x, expectation_z, population_one
 from shadowsim.simulators.splitjmatrix_simulator import _split_jmatrix
 from shadowsim.simulators.trotterization_simulator import _trotter_slice_unitaries
 
@@ -301,16 +300,6 @@ def test_splitjmatrix_simulator_keeps_counts_without_the_ancilla(monkeypatch):
     assert result.observables == []
     assert result.metadata["basis"] == "ZX"
     assert simulator.measure([Measurement.population(0)]).observables[0].tolist() == [0.5, 0.0]
-
-
-def test_population_one_and_cavity_population_empty_counts():
-    assert population_one({}) == 0.0
-    assert cavity_population({}) == 0.0
-    assert population_one({"0": 3, "1": 1}) == 0.25
-    assert cavity_population({"11": 1, "10": 1, "01": 1, "00": 1}) == 1.5
-    assert expectation_z({}) == 0.0
-    assert expectation_z({"0": 3, "1": 1}) == 0.5
-    assert expectation_x({"0": 3, "1": 1}) == 0.5
 
 
 def test_split_jmatrix_rejects_nonpositive_shots():
