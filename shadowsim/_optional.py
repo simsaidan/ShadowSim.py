@@ -9,6 +9,7 @@ _EXTRA_MODULES: dict[str, frozenset[str]] = {
     "qiskit": frozenset({"qiskit", "qiskit_aer", "scipy"}),
     "viz": frozenset({"matplotlib"}),
     "pauli_propagation": frozenset({"juliacall"}),
+    "qulacs": frozenset({"qulacs"}),
 }
 
 

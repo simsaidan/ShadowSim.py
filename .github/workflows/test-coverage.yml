@@ -106,7 +106,7 @@ jobs:
       - name: Run core tests
         run: >
           uv run --no-sync pytest -v
-          -m "not qutip and not qiskit and not viz and not cross_extra"
+          -m "not qutip and not qiskit and not viz and not qulacs and not cross_extra"
 
   extras:
     strategy:

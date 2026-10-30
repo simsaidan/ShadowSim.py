@@ -1,5 +1,5 @@
 version = 1
-revision = 5
+revision = 3
 requires-python = ">=3.12"
 resolution-markers = [
     "python_full_version >= '3.15'",
@@ -1619,6 +1619,28 @@ wheels = [
 ]
 
 [[package]]
+name = "qulacs"
+version = "0.6.14"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "numpy" },
+    { name = "scipy" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/6f/ee/3ea057492e4e6be4b4169e4c4bcfd12eb4ab2dc5b80c087832af96dc2865/qulacs-0.6.14.tar.gz", hash = "sha256:fcb3e67ce521e90c1ff6c3c2bda473ec045cc3a8e7600e11e2ea0bfc54c5f14a", size = 813269, upload-time = "2026-07-29T10:41:51.711Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/41/ac/00f1fd849129b1410d2295e4e68564bfae7ce3c2dcddb119ec436b0d4bdd/qulacs-0.6.14-cp312-cp312-macosx_10_13_x86_64.whl", hash = "sha256:2f8313ecd58d4a5975494ba8d195b9261b54ee95da7b556a06b2b317700c5156", size = 725821, upload-time = "2026-07-29T10:55:11.928Z" },
+    { url = "https://files.pythonhosted.org/packages/fa/2b/4eca7ea82ba050a235acf28a2ccb6452b08682e233771028861f82d02de0/qulacs-0.6.14-cp312-cp312-macosx_11_0_arm64.whl", hash = "sha256:b432bc36d6bee9dcd55e014e48ca40de49ddb1629f67863db587f5b202ea6991", size = 646513, upload-time = "2026-07-29T10:43:26.618Z" },
+    { url = "https://files.pythonhosted.org/packages/f0/95/579b6ec253be1dfe6b8bd39442fe2c7055f511f36d73ce8bb8e19208248b/qulacs-0.6.14-cp312-cp312-manylinux_2_24_aarch64.manylinux_2_28_aarch64.whl", hash = "sha256:ce53e7f4bea4ad6b6f53ae93d8633967be448b095f9ccef57db7f8394dfd7591", size = 919359, upload-time = "2026-07-29T11:20:40.263Z" },
+    { url = "https://files.pythonhosted.org/packages/93/57/c96637c88fd0c0ea2268b2e055f59de51e5fae304ce1c45e6515d95c013e/qulacs-0.6.14-cp312-cp312-manylinux_2_24_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:d46469d8e50ba26c4c56929924d13c18cf819fb722c09477bfa30af1c66f7a36", size = 1009417, upload-time = "2026-07-29T10:52:04.71Z" },
+    { url = "https://files.pythonhosted.org/packages/ee/64/860b9eee7d7bf13e127addc695d55900d0161441388dfdff74db00745782/qulacs-0.6.14-cp312-cp312-win_amd64.whl", hash = "sha256:8ea6df202851ce0dd3cd5a1bb185f3b6074678055056662965c2cdc962e310a9", size = 943137, upload-time = "2026-07-29T10:50:34.419Z" },
+    { url = "https://files.pythonhosted.org/packages/1a/c3/29dfe1a43121771e49970a1789b1872a1e8e31547558f39c9100e1d314f4/qulacs-0.6.14-cp313-cp313-macosx_10_13_x86_64.whl", hash = "sha256:ef4f534c1e3bdf145743618c23aac7312c626b2ae32f30542e0d2bffb21722ba", size = 725866, upload-time = "2026-07-29T10:49:07.541Z" },
+    { url = "https://files.pythonhosted.org/packages/ac/bf/0d7b72efd96ab850739ae26a4e5cc590fbc29f35bdd6451ce23a8f3d7cf8/qulacs-0.6.14-cp313-cp313-macosx_11_0_arm64.whl", hash = "sha256:becf66f24c1eeb54d82c1f5010286c6bac0198d103df7b24cc3f4e6ea20ba9a8", size = 646502, upload-time = "2026-07-29T10:47:39.884Z" },
+    { url = "https://files.pythonhosted.org/packages/78/a2/ca0c9d4509d3a6c98a844dbf84a4d2a0e68820a1f46b5b11f860284c44e3/qulacs-0.6.14-cp313-cp313-manylinux_2_24_aarch64.manylinux_2_28_aarch64.whl", hash = "sha256:0d4ebb1ad9d18679dcf0939ceb45ea6c238afb1e20edf9fb213d2f8ba1425871", size = 919389, upload-time = "2026-07-29T11:20:10.788Z" },
+    { url = "https://files.pythonhosted.org/packages/23/f8/969ccfac4ecb98c5b070a84d85349b6ce6f1e63a5db93cd35a26189736a1/qulacs-0.6.14-cp313-cp313-manylinux_2_24_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:fecc4d8488a69a426fee96293d084341d80c94843fdfb7ea47c9be3efbc13bd7", size = 1009203, upload-time = "2026-07-29T10:51:53.178Z" },
+    { url = "https://files.pythonhosted.org/packages/53/7a/8dad563fb2e0ffb4167dbb2b503635d53173207c1997981c013848da88cf/qulacs-0.6.14-cp313-cp313-win_amd64.whl", hash = "sha256:1436704bcd72eed20612e5948d6a8d5d5b30350d48dfd41fcf6c9a231993e602", size = 943160, upload-time = "2026-07-29T10:48:46.73Z" },
+]
+
+[[package]]
 name = "qutip"
 version = "5.3.1"
 source = { registry = "https://pypi.org/simple" }
@@ -1832,6 +1854,7 @@ all = [
     { name = "matplotlib" },
     { name = "qiskit" },
     { name = "qiskit-aer" },
+    { name = "qulacs" },
     { name = "qutip" },
     { name = "scipy" },
 ]
@@ -1842,6 +1865,9 @@ qiskit = [
     { name = "qiskit" },
     { name = "qiskit-aer" },
     { name = "scipy" },
+]
+qulacs = [
+    { name = "qulacs" },
 ]
 qutip = [
     { name = "qutip" },
@@ -1882,13 +1908,15 @@ requires-dist = [
     { name = "numpy", specifier = ">=2.0" },
     { name = "qiskit", marker = "extra == 'qiskit'" },
     { name = "qiskit-aer", marker = "extra == 'qiskit'" },
+    { name = "qulacs", marker = "extra == 'qulacs'" },
     { name = "qutip", marker = "extra == 'qutip'" },
     { name = "scipy", marker = "extra == 'qiskit'", specifier = ">=1.14" },
     { name = "shadowsim", extras = ["qiskit"], marker = "extra == 'all'" },
+    { name = "shadowsim", extras = ["qulacs"], marker = "extra == 'all'" },
     { name = "shadowsim", extras = ["qutip"], marker = "extra == 'all'" },
     { name = "shadowsim", extras = ["viz"], marker = "extra == 'all'" },
 ]
-provides-extras = ["qutip", "qiskit", "viz", "pauli-propagation", "all"]
+provides-extras = ["qutip", "qiskit", "viz", "pauli-propagation", "qulacs", "all"]
 
 [package.metadata.requires-dev]
 dev = [

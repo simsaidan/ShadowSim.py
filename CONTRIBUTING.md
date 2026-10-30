@@ -27,8 +27,9 @@ uv run --all-extras pytest --cov=shadowsim --cov-config=.coveragerc --cov-report
 ```
 
 Optional extras are selected with pytest markers (`qutip`, `qiskit`, `viz`,
-`cross_extra`). Tests that need more than one extra use `cross_extra` and run
-only in the full all-extras jobs.
+`qulacs`, `cross_extra`). Tests that need more than one extra use `cross_extra` and run
+only in the full all-extras jobs. Qulacs tests also need the `qiskit` extra, so they
+carry both `qulacs` and `cross_extra`.
 
 Pushes and pull requests run [`.github/workflows/test-coverage.yml`](.github/workflows/test-coverage.yml):
 

@@ -31,7 +31,8 @@ viz = ["matplotlib"]
 # 0.9.37 requires CondaPkg 0.2.38, which needs JSON 1.2. The PauliPropagation
 # revision allows only JSON 0.21, so this extra stays on the previous release.
 pauli_propagation = ["juliacall==0.9.37"]
-all = ["shadowsim[qutip]", "shadowsim[qiskit]", "shadowsim[viz]"]
+qulacs = ["qulacs"]
+all = ["shadowsim[qutip]", "shadowsim[qiskit]", "shadowsim[viz]", "shadowsim[qulacs]"]
 
 [project.urls]
 Repository = "https://github.com/simsaidan/ShadowSim.py"
@@ -101,6 +102,8 @@ module = [
     "scipy.*",
     "juliacall",
     "juliacall.*",
+    "qulacs",
+    "qulacs.*",
 ]
 ignore_missing_imports = true
 
@@ -151,6 +154,7 @@ module = [
     "shadowsim.backends.pauli_propagation",
     "shadowsim.backends.numpy",
     "shadowsim.backends.numpy_statevector",
+    "shadowsim.backends.qulacs",
     "shadowsim.backends.program",
     "shadowsim.benchmarking",
     "shadowsim.benchmarking.benchmark",
@@ -169,6 +173,7 @@ markers = [
     "qiskit: tests that require the qiskit extra",
     "viz: tests that require the viz extra",
     "pauli_propagation: tests that require the pauli_propagation extra",
+    "qulacs: tests that require the qulacs extra",
     "cross_extra: tests that require more than one optional extra",
 ]
 
