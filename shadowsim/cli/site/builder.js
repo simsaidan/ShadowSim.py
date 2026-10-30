@@ -1359,9 +1359,8 @@ function refreshHamiltonianChips() {
     const term = modelTerms.find((item) => item.key === Number(chip.dataset.key));
     if (!term) return;
     const detail = chip.querySelector(".hamiltonian-detail");
-    const alert = chip.querySelector(".basis-alert");
     if (detail) detail.textContent = hamiltonianDetail(term);
-    if (alert) alert.hidden = !hamiltonianProblem(term);
+    syncOperatorAlert(chip, term);
   });
 }
 
@@ -1378,8 +1377,7 @@ function hamiltonianChip(term) {
     },
   });
   input.value = term.matrix;
-  const problem = hamiltonianProblem(term);
-  return el(
+  const chip = el(
     "div",
     { className: "chip tone-teal hamiltonian is-editing", "data-key": String(term.key) },
     el(
@@ -1394,17 +1392,7 @@ function hamiltonianChip(term) {
       el(
         "div",
         { className: "basis-actions" },
-        el(
-          "span",
-          {
-            className: "basis-alert",
-            role: "img",
-            "aria-label": "Enter a Hermitian matrix",
-            title: "Enter a Hermitian matrix",
-            hidden: !problem,
-          },
-          "!",
-        ),
+        el("span", { className: "basis-alert", role: "img" }, "!"),
         el(
           "button",
           {
@@ -1422,6 +1410,8 @@ function hamiltonianChip(term) {
     ),
     el("label", { className: "basis-field" }, "Matrix", input),
   );
+  syncOperatorAlert(chip, term);
+  return chip;
 }
 
 function localSites(term, count) {
@@ -1494,6 +1484,32 @@ function localFields(term) {
   return el("div", { className: "local-fields" }, el("label", { className: "basis-field" }, "Matrix", input), localSiteFields(term));
 }
 
+function operatorProblem(term) {
+  if (term.id === "lindblad") return lindbladProblem(term);
+  if (term.id === "local_hamiltonian") return localHamiltonianProblem(term);
+  return hamiltonianProblem(term);
+}
+
+function syncOperatorAlert(chip, term) {
+  const problem = operatorProblem(term);
+  const shown = Boolean(problem) && (term.id === "hamiltonian" || qubitCount() != null);
+  const alert = chip.querySelector(".basis-alert");
+  const field = chip.querySelector("textarea");
+  const alertId = `operator-alert-${term.key}`;
+  if (alert) {
+    alert.hidden = !shown;
+    alert.setAttribute("id", alertId);
+    if (problem) {
+      alert.setAttribute("aria-label", problem);
+      alert.setAttribute("title", problem);
+      alert.title = problem;
+    }
+  }
+  if (!field) return;
+  if (shown && alert) field.setAttribute("aria-describedby", alertId);
+  else field.removeAttribute("aria-describedby");
+}
+
 function refreshLocalHamiltonianChips() {
   document.querySelectorAll?.(".chip.local-hamiltonian, .chip.lindblad")?.forEach((chip) => {
     const term = modelTerms.find((item) => item.key === Number(chip.dataset.key));
@@ -1503,26 +1519,20 @@ function refreshLocalHamiltonianChips() {
     const open = count != null;
     chip.classList.toggle("is-editing", open);
     const detail = chip.querySelector(".hamiltonian-detail");
-    const alert = chip.querySelector(".basis-alert");
-    const problem = term.id === "lindblad" ? lindbladProblem(term) : localHamiltonianProblem(term);
     if (detail) detail.textContent = actedQubitDetail(term);
-    if (alert) alert.hidden = !open || !problem;
     const fields = chip.querySelector(".local-fields");
-    if (!open) {
-      fields?.remove();
-      return;
-    }
-    if (!fields) chip.append(localFields(term));
+    if (!open) fields?.remove();
+    else if (!fields) chip.append(localFields(term));
     else fields.querySelector(".measure-fields")?.replaceWith(localSiteFields(term));
+    syncOperatorAlert(chip, term);
   });
 }
 
 function actedQubitChip(term) {
   const open = qubitCount() != null;
   const lindblad = term.id === "lindblad";
-  const problem = lindblad ? lindbladProblem(term) : localHamiltonianProblem(term);
   const title = lindblad ? "Add a Lindblad operator" : "Add a Local Hamiltonian";
-  return el(
+  const chip = el(
     "div",
     {
       className: `chip tone-teal ${lindblad ? "lindblad" : "local-hamiltonian"}${open ? " is-editing" : ""}`,
@@ -1535,17 +1545,7 @@ function actedQubitChip(term) {
       el(
         "div",
         { className: "basis-actions" },
-        el(
-          "span",
-          {
-            className: "basis-alert",
-            role: "img",
-            "aria-label": lindblad ? "Enter a Lindblad operator" : "Enter a local Hamiltonian",
-            title: lindblad ? "Enter a Lindblad operator" : "Enter a local Hamiltonian",
-            hidden: !open || !problem,
-          },
-          "!",
-        ),
+        el("span", { className: "basis-alert", role: "img" }, "!"),
         el(
           "button",
           {
@@ -1563,6 +1563,8 @@ function actedQubitChip(term) {
     ),
     open ? localFields(term) : null,
   );
+  syncOperatorAlert(chip, term);
+  return chip;
 }
 
 function slotChips(lane) {

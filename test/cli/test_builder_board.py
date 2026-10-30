@@ -80,6 +80,24 @@ Object.defineProperty(Element.prototype, "textContent", {
   set(value) { this._text = String(value); },
   get() { return this._text; },
 });
+Object.defineProperty(Element.prototype, "dataset", {
+  get() {
+    const data = {};
+    for (const [key, value] of Object.entries(this.attrs)) {
+      if (!key.startsWith("data-")) continue;
+      const name = key.slice(5).replace(/-([a-z])/g, (_, letter) => letter.toUpperCase());
+      data[name] = value;
+    }
+    return data;
+  },
+});
+Object.defineProperty(Element.prototype, "hidden", {
+  get() { return Object.hasOwn(this.attrs, "hidden"); },
+  set(value) {
+    if (value) this.attrs.hidden = "";
+    else delete this.attrs.hidden;
+  },
+});
 function TextNode(value) {
   this.text = String(value);
 }
@@ -223,6 +241,24 @@ function nodeText(node) {
   if (!node) return "";
   if (!node.tag) return node.text || "";
   return (node.children || []).map(nodeText).join("");
+}
+function operatorAlert(chip) {
+  const alert = chip.querySelector(".basis-alert");
+  const field = chip.querySelector("textarea");
+  const describedby = field && Object.hasOwn(field.attrs, "aria-describedby") ? field.attrs["aria-describedby"] : null;
+  return {
+    label: alert.attrs["aria-label"] || null,
+    title: alert.attrs.title || null,
+    hidden: alert.hidden === true,
+    linked: describedby != null && describedby === alert.attrs.id,
+    describedby,
+  };
+}
+function toggleSite(chip, site, checked) {
+  const kind = chip.className.split(" ").includes("lindblad") ? "Lindblad" : "Local";
+  const box = chip.querySelector('[aria-label="' + kind + " qubit " + site + '"]');
+  box.checked = checked;
+  box.listeners.change[0]({ target: box });
 }
 function typeInto(node, value) {
   node.value = value;
@@ -672,6 +708,48 @@ if (request.action === "roundtrip") {
     unknownPreview: previewText(),
     commaStatus: (typeInto(gates, ",,,"), statusMessage()),
   };
+} else if (request.action === "operators") {
+  resetPage();
+  BLOCKS.model = [
+    { id: "hamiltonian", title: "Hamiltonian", adds: true, detail: "" },
+    { id: "local_hamiltonian", title: "Local Hamiltonian", adds: true, detail: "" },
+    { id: "lindblad", title: "Lindblad", adds: true, detail: "" },
+  ];
+  selection.state = "basis";
+  basisBits = "00";
+  settings.qubits = "2";
+  qubitsSource = "state";
+  const board = document.createElement("section");
+  board.className = "board";
+  document.documentElement.append(board);
+  draw(board);
+  place("model", "hamiltonian");
+  const matrix = board.querySelector(".chip.hamiltonian textarea");
+  typeInto(matrix, "[[1, 1], [0, 1]]");
+  const nonhermitian = operatorAlert(board.querySelector(".chip.hamiltonian"));
+  typeInto(matrix, "[[1, 0], [0, -1]]");
+  const wrongSize = operatorAlert(board.querySelector(".chip.hamiltonian"));
+  basisBits = "0";
+  syncStateQubits();
+  typeInto(matrix, "[[1, 0], [0, -1]]");
+  const validHamiltonian = operatorAlert(board.querySelector(".chip.hamiltonian"));
+  basisBits = "000";
+  syncStateQubits();
+  place("model", "local_hamiltonian");
+  place("model", "lindblad");
+  const local = () => board.querySelector(".chip.local-hamiltonian");
+  const lindblad = () => board.querySelector(".chip.lindblad");
+  const emptyLocal = operatorAlert(local());
+  toggleSite(local(), 0, true);
+  toggleSite(local(), 2, true);
+  toggleSite(lindblad(), 0, true);
+  toggleSite(lindblad(), 2, true);
+  const splitLocal = operatorAlert(local());
+  const splitLindblad = operatorAlert(lindblad());
+  toggleSite(local(), 2, false);
+  typeInto(local().querySelector("textarea"), "[[1, 0], [0, -1]]");
+  const validLocal = operatorAlert(local());
+  result = { nonhermitian, wrongSize, validHamiltonian, emptyLocal, splitLocal, splitLindblad, validLocal };
 } else {
   throw new Error("unknown action");
 }
@@ -809,6 +887,26 @@ def test_unknown_blocks_are_dropped() -> None:
         {"id": "trotterization", "backend": None, "shots": "256"},
         {"id": "trotterization", "backend": "aer", "shots": "128"},
     ]
+
+
+def test_operator_alerts_name_the_current_problem() -> None:
+    page = _call("operators")
+    shown = {
+        "nonhermitian": "Matrix must be Hermitian.",
+        "wrongSize": "Must be 4\u00d74 for 2 qubits.",
+        "emptyLocal": "Pick at least one qubit.",
+        "splitLocal": "Qubits must be contiguous.",
+        "splitLindblad": "Qubits must be contiguous.",
+    }
+    for key, label in shown.items():
+        assert page[key]["label"] == label
+        assert page[key]["title"] == label
+        assert page[key]["hidden"] is False
+        assert page[key]["linked"] is True
+    for key in ("validHamiltonian", "validLocal"):
+        assert page[key]["hidden"] is True
+        assert page[key]["linked"] is False
+        assert page[key]["describedby"] is None
 
 
 def test_aer_card_edits_gates_beside_shots() -> None:
