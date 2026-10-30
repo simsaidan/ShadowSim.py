@@ -235,8 +235,14 @@ def test_a_known_backend_missing_from_the_catalog_is_rejected(monkeypatch: pytes
     monkeypatch.setitem(backend_exports, "GhostBackend", ("custom.ghost", "qiskit"))
     monkeypatch.setitem(sys.modules, "custom.simulators", sim_module)
     monkeypatch.setitem(sys.modules, "custom.ghost", back_module)
+    monkeypatch.setattr(
+        "shadowsim.cli.run.listed_backends",
+        lambda: [{"id": "aer", "shots": True}],
+    )
     with pytest.raises(ValueError, match="unknown backend"):
         build_simulator(_selection(simulator="custom", backend="ghost"))
+    with pytest.raises(ValueError, match="unknown backend"):
+        build_simulator(_selection(simulator="custom", backend="ghost", shots=0))
 
 
 def test_a_backend_setup_without_a_class_is_rejected(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -2065,6 +2071,15 @@ def test_added_terms_fail_before_optional_imports(forbid_qutip: None) -> None:
                 terms=[{"id": "local_hamiltonian", "matrix": _Z_MATRIX, "sites": [0, 1]}],
             )
         )
+
+
+def test_a_posted_shot_count_is_rejected_when_no_backend_imports(monkeypatch: pytest.MonkeyPatch) -> None:
+    def explode() -> list[object]:
+        raise ImportError("no circuit backends could be imported")
+
+    monkeypatch.setattr("shadowsim.cli.run.listed_backends", explode)
+    with pytest.raises(ValueError, match="shots must be a positive integer"):
+        build_simulator(_selection(simulator="trotterization", time_steps=2, shots=0))
 
 
 def test_ignored_actions_and_bad_numbers_fail_before_import(forbid_qutip: None) -> None:

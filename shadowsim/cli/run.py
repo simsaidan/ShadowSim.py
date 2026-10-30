@@ -101,8 +101,12 @@ def build_simulator(selection: Mapping[str, object], *, time_steps: int = 101) -
             ``time_steps`` in ``selection`` overrides the ``time_steps`` argument.
             Shot-based simulators also read ``num_steps``, ``trotter_depth``,
             ``order`` (1 or 2), and ``seed``. A backend with a shot budget reads
-            ``shots``. A gate-list field, such as Aer's ``basis_gates``, is a
-            comma-separated string or a sequence of names. A blank value keeps
+            ``shots``. A posted ``time_steps`` value is checked before the
+            simulator extra is imported. A posted ``shots`` value is checked
+            then too when that backend has a shot budget, and also when no
+            backend module can be imported. A gate-list field, such as Aer's
+            ``basis_gates``, is a comma-separated string or a sequence of names.
+            A blank value keeps
             that backend's own basis. Any other backend field is a non-negative
             number, and a missing value keeps the catalog default. A simulator
             with ``closed_system`` set rejects Lindblad operators. Missing
@@ -149,6 +153,10 @@ def build_simulator(selection: Mapping[str, object], *, time_steps: int = 101) -
         _reject_counts(measure_id, "QuTiP")
         steps = _selection_positive_int(selection, "time_steps", time_steps, "time steps")
         return _qutip_simulator(model, state, measure_id, total_time, steps, sites)
+    if "time_steps" in selection:
+        _selection_positive_int(selection, "time_steps", time_steps, "time steps")
+    if backend and "shots" in selection and _backend_has_shot_budget(backend):
+        _selection_positive_int(selection, "shots", _CIRCUIT_SHOTS, "shots")
     cls = _load_exported(module_name, extra, class_name, "unknown simulator")
     if "observables" in inspect.signature(cls).parameters:
         _reject_counts(measure_id, class_name.removesuffix("Simulator"))
@@ -505,6 +513,22 @@ def _load_exported(module_name: str, extra: str | None, class_name: str, missing
     if not isinstance(value, type):
         raise ValueError(missing)
     return value
+
+
+def _backend_has_shot_budget(backend_id: str) -> bool:
+    """Return whether ``backend_id`` reads a shot budget.
+
+    A posted shot count is still checked when no backend module can be imported,
+    so that number is reported before the missing extra.
+    """
+    try:
+        records = listed_backends()
+    except ImportError:
+        return True
+    for record in records:
+        if record["id"] == backend_id:
+            return bool(record["shots"])
+    return False
 
 
 def _backend_record(backend_id: str) -> ListedBackend:
