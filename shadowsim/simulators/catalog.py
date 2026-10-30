@@ -19,6 +19,7 @@ class ListedSimulator(TypedDict):
     setup: str
     observables: bool
     samples: bool
+    closed_system: bool
 
 
 def listed_simulators() -> list[ListedSimulator]:
@@ -28,7 +29,13 @@ def listed_simulators() -> list[ListedSimulator]:
     is skipped when its extra is not installed. QuTiP is the one that records
     explicit observables; the others take a circuit backend. ``samples`` is true
     when the class sets ``requires_sampling_backend``, so the page pairs it only
-    with a backend that has a shot budget.
+    with a backend that has a shot budget. ``closed_system`` is true when the
+    class sets that attribute.
+    ``setup`` names the class and leaves the page's constructor values as
+    placeholders: ``{name}``, ``{hamiltonians}``, ``{lindblads}``, ``{qubits}``,
+    ``{total}``, and ``{time_steps}``. A circuit simulator also leaves
+    ``{num_steps}``, ``{trotter_depth}``, ``{order}``, ``{seed}``, ``{basis}``,
+    and ``{backend}``.
 
     Returns:
         Simulators the builder page can offer.
@@ -60,23 +67,27 @@ def _describe_simulator(cls: type) -> ListedSimulator:
     detail = title if document is None else document.split("\n", 1)[0].replace("``", "")
     observables = "observables" in inspect.signature(cls).parameters
     samples = bool(getattr(cls, "requires_sampling_backend", False))
+    closed_system = bool(getattr(cls, "closed_system", False))
     if observables:
         setup = (
-            f"{{name}} = {cls.__name__}(model.full_hamiltonians, model.c_ops_full, state,\n"
-            "                    e_ops, num_qubits=model.num_qubits,\n"
-            "                    total_time={total}, time_steps=101)"
+            f"{{name}} = {cls.__name__}({{hamiltonians}}, {{lindblads}}, state,\n"
+            "                    e_ops, num_qubits={qubits},\n"
+            "                    total_time={total}, time_steps={time_steps})"
         )
     else:
         setup = (
             f"{{name}} = {cls.__name__}(\n"
-            "    model.local_hamiltonians,\n"
-            "    model.c_ops_local,\n"
+            "    {hamiltonians},\n"
+            "    {lindblads},\n"
             "    state,\n"
-            "    num_qubits=model.num_qubits,\n"
+            "    num_qubits={qubits},\n"
             "    total_time={total},\n"
-            "    time_steps=101,\n"
-            "    num_steps=20,\n"
-            "    circuit_backend=circuit_backend,\n"
+            "    time_steps={time_steps},\n"
+            "    num_steps={num_steps},\n"
+            "    trotter_depth={trotter_depth},\n"
+            "    order={order},\n"
+            "    seed={seed}{basis},\n"
+            "    circuit_backend={backend},\n"
             ")"
         )
     return {
@@ -87,4 +98,5 @@ def _describe_simulator(cls: type) -> ListedSimulator:
         "setup": setup,
         "observables": observables,
         "samples": samples,
+        "closed_system": closed_system,
     }

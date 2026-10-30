@@ -178,6 +178,7 @@ def _trotter_circuit_counts(
 class TrotterizationSimulator(Simulator):
     """Simulate closed-system dynamics with a Trotter product formula.
 
+    ``closed_system`` is true, so Lindblad operators are rejected.
     Counts come from ``circuit_backend`` when that backend stores ``shots``.
     Omitting it uses :class:`AerCircuitBackend`. Before the measurement, each
     qubit is rotated into its letter of ``basis`` (default all ``Z``). The result
@@ -203,6 +204,8 @@ class TrotterizationSimulator(Simulator):
     may run in completion order. A job from ``start()`` counts each finished
     time point in ``completed_steps``.
     """
+
+    closed_system: bool = True
 
     def __init__(
         self,

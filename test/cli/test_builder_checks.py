@@ -9,6 +9,32 @@ import pytest
 
 CHECKS = Path(__file__).resolve().parents[2] / "shadowsim" / "cli" / "site" / "checks.js"
 
+_QUTIP_SETUP = (
+    "{name} = QutipSimulator({hamiltonians}, {lindblads}, state,\n"
+    "                    e_ops, num_qubits={qubits},\n"
+    "                    total_time={total}, time_steps={time_steps})"
+)
+
+
+def _circuit_setup(class_name: str) -> str:
+    """Return the catalog setup string for one circuit simulator."""
+    return (
+        f"{{name}} = {class_name}(\n"
+        "    {hamiltonians},\n"
+        "    {lindblads},\n"
+        "    state,\n"
+        "    num_qubits={qubits},\n"
+        "    total_time={total},\n"
+        "    time_steps={time_steps},\n"
+        "    num_steps={num_steps},\n"
+        "    trotter_depth={trotter_depth},\n"
+        "    order={order},\n"
+        "    seed={seed}{basis},\n"
+        "    circuit_backend={backend},\n"
+        ")"
+    )
+
+
 _SCRIPT = r"""
 const checks = require(process.argv[1]);
 const request = JSON.parse(process.argv[2]);
@@ -51,7 +77,7 @@ def _qutip_page() -> dict[str, Any]:
         "blocks": {
             "state": [{"id": "basis", "title": "Basis state", "phrase": "Basis state"}],
             "model": [],
-            "simulator": [{"id": "qutip", "title": "QuTiP", "observables": True}],
+            "simulator": [{"id": "qutip", "title": "QuTiP", "observables": True, "setup": _QUTIP_SETUP}],
             "backend": [
                 {
                     "id": "aer",
@@ -102,7 +128,14 @@ def _qutip_page() -> dict[str, Any]:
 def _circuit_page() -> dict[str, Any]:
     """Return a complete circuit selection, including a backend."""
     page = _qutip_page()
-    page["blocks"]["simulator"] = [{"id": "trotterization", "title": "Trotterization", "observables": False}]
+    page["blocks"]["simulator"] = [
+        {
+            "id": "trotterization",
+            "title": "Trotterization",
+            "observables": False,
+            "setup": _circuit_setup("TrotterizationSimulator"),
+        }
+    ]
     page["selection"]["simulator"] = "trotterization"
     page["placedSims"] = [
         {
@@ -182,8 +215,20 @@ def test_split_j_rejects_a_backend_without_shots() -> None:
 def test_preview_names_a_backend_for_each_circuit_row() -> None:
     page = _circuit_page()
     page["blocks"]["simulator"] = [
-        {"id": "trotterization", "title": "Trotterization", "observables": False, "samples": False},
-        {"id": "splitjmatrix", "title": "SplitJMatrix", "observables": False, "samples": True},
+        {
+            "id": "trotterization",
+            "title": "Trotterization",
+            "observables": False,
+            "samples": False,
+            "setup": _circuit_setup("TrotterizationSimulator"),
+        },
+        {
+            "id": "splitjmatrix",
+            "title": "SplitJMatrix",
+            "observables": False,
+            "samples": True,
+            "setup": _circuit_setup("SplitJMatrixSimulator"),
+        },
     ]
     page["blocks"]["backend"].append(
         {
@@ -290,7 +335,7 @@ def test_unknown_aer_gates_block_the_run_and_the_preview() -> None:
 
 def test_preview_numbers_a_backend_with_its_row() -> None:
     page = _circuit_page()
-    page["blocks"]["simulator"].insert(0, {"id": "qutip", "title": "QuTiP", "observables": True})
+    page["blocks"]["simulator"].insert(0, {"id": "qutip", "title": "QuTiP", "observables": True, "setup": _QUTIP_SETUP})
     page["placedSims"].insert(0, {"id": "qutip", "params": {"timeSteps": "11"}})
     page["selection"]["simulator"] = "qutip"
     text = _call("previewText", page)
@@ -393,6 +438,8 @@ def test_preview_imports_are_explicit() -> None:
     assert isinstance(qutip, str)
     assert "from shadowsim.encoding import ComputationalBasisEncoding" in qutip
     assert "from shadowsim.simulators import QutipSimulator\n" in qutip
+    assert "sim = QutipSimulator(model.full_hamiltonians, model.c_ops_full, state," in qutip
+    assert "time_steps=11)" in qutip
     assert "expectation_z" not in qutip
     assert "import *" not in qutip
 
@@ -413,6 +460,28 @@ def test_preview_imports_are_explicit() -> None:
     assert 'basis="ZX"' in text
     assert "measurements = [Measurement.expectation(1)]" in text
     assert text.endswith("sim.simulate()\nresult = sim.measure(measurements)\nsim.plot_results()")
+
+
+def test_preview_uses_the_catalog_class() -> None:
+    page = _circuit_page()
+    page["blocks"]["simulator"] = [
+        {
+            "id": "custom",
+            "title": "Custom",
+            "observables": False,
+            "setup": _circuit_setup("CustomSimulator"),
+        }
+    ]
+    page["selection"]["simulator"] = "custom"
+    page["placedSims"][0]["id"] = "custom"
+    text = _call("previewText", page)
+    assert isinstance(text, str)
+    assert "from shadowsim.simulators import CustomSimulator, Measurement" in text
+    assert "sim = CustomSimulator(" in text
+    assert "time_steps=11" in text
+    assert "circuit_backend=circuit_backend_1" in text
+    assert "SplitJMatrixSimulator" not in text
+    assert "TrotterizationSimulator" not in text
 
 
 def _counts_page(expression: str = 'counts["01"] / shots') -> dict[str, Any]:
@@ -473,12 +542,12 @@ def test_counts_needs_aer_and_a_valid_expression() -> None:
     qutip["blocks"]["measure"].append({"id": "counts", "title": "Counts", "phrase": "Counts on all qubits"})
     qutip["selection"]["measure"] = "counts"
     qutip["countsExpression"] = 'counts["01"] / shots'
-    assert _call("countsProblem", qutip) == "Counts needs Aer. QuTiP and PauliPropagation return expectations."
+    assert _call("countsProblem", qutip) == "Counts needs a backend with a shot budget."
 
     pauli = _counts_page()
     pauli["blocks"]["backend"].append({"id": "paulipropagation", "phrase": "PauliPropagation", "shots": False})
     pauli["placedSims"][0]["backend"] = "paulipropagation"
-    assert _call("countsProblem", pauli) == "Counts needs Aer. QuTiP and PauliPropagation return expectations."
+    assert _call("countsProblem", pauli) == "Counts needs a backend with a shot budget."
     assert _call("countsStatus", _qutip_page(), False) is None
 
 
@@ -495,7 +564,7 @@ def test_counts_preview_names_the_qubits_and_expression() -> None:
 
 def test_benchmark_preview_measures_each_circuit_simulator() -> None:
     page = _circuit_page()
-    page["blocks"]["simulator"].append({"id": "qutip", "title": "QuTiP", "observables": True})
+    page["blocks"]["simulator"].append({"id": "qutip", "title": "QuTiP", "observables": True, "setup": _QUTIP_SETUP})
     page["placedSims"].insert(0, {"id": "qutip", "params": {"timeSteps": "11"}})
     text = _call("previewText", page)
     assert "benchmark.run()\nsim_2.measure(measurements)\nbenchmark.save_result_plot()" in text

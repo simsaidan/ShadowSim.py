@@ -330,7 +330,17 @@ function resetPage() {
 }
 function fillIsing() {
   resetPage();
-  BLOCKS.simulator = [{ id: "qutip", title: "QuTiP", observables: true, detail: "Reference" }];
+  BLOCKS.simulator = [{
+    id: "qutip",
+    title: "QuTiP",
+    observables: true,
+    detail: "Reference",
+    setup: [
+      "{name} = QutipSimulator({hamiltonians}, {lindblads}, state,",
+      "                    e_ops, num_qubits={qubits},",
+      "                    total_time={total}, time_steps={time_steps})",
+    ].join(String.fromCharCode(10)),
+  }];
   BLOCKS.model = [{ id: "preexisting", title: "Preexisting model", detail: "Choose a built-in model" }];
   modelFactories = [{
     id: "ising",
@@ -355,7 +365,27 @@ function fillIsing() {
 }
 function fillCircuit() {
   fillIsing();
-  BLOCKS.simulator = [{ id: "trotterization", title: "Trotterization", observables: false, detail: "" }];
+  BLOCKS.simulator = [{
+    id: "trotterization",
+    title: "Trotterization",
+    observables: false,
+    detail: "",
+    setup: [
+      "{name} = TrotterizationSimulator(",
+      "    {hamiltonians},",
+      "    {lindblads},",
+      "    state,",
+      "    num_qubits={qubits},",
+      "    total_time={total},",
+      "    time_steps={time_steps},",
+      "    num_steps={num_steps},",
+      "    trotter_depth={trotter_depth},",
+      "    order={order},",
+      "    seed={seed}{basis},",
+      "    circuit_backend={backend},",
+      ")",
+    ].join(String.fromCharCode(10)),
+  }];
   BLOCKS.backend = [{
     id: "aer",
     phrase: "Aer",
