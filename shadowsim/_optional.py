@@ -10,6 +10,7 @@ _EXTRA_MODULES: dict[str, frozenset[str]] = {
     "viz": frozenset({"matplotlib"}),
     "pauli_propagation": frozenset({"juliacall"}),
     "qulacs": frozenset({"qulacs"}),
+    "cirq": frozenset({"cirq"}),
 }
 
 

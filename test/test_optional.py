@@ -61,3 +61,9 @@ def test_import_optional_names_the_qulacs_extra():
     with patch("shadowsim._optional.importlib.import_module", side_effect=_missing("qulacs")):
         with pytest.raises(ImportError, match=r"pip install 'shadowsim\[qulacs\]'"):
             import_optional("qulacs", extra="qulacs")
+
+
+def test_import_optional_names_the_cirq_extra():
+    with patch("shadowsim._optional.importlib.import_module", side_effect=_missing("cirq")):
+        with pytest.raises(ImportError, match=r"pip install 'shadowsim\[cirq\]'"):
+            import_optional("cirq", extra="cirq")
