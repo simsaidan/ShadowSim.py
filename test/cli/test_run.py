@@ -1048,6 +1048,13 @@ def test_pauli_propagation_rejects_split_j() -> None:
 
 
 @pytest.mark.qiskit
+def test_qulacs_rejects_split_j() -> None:
+    pytest.importorskip("qiskit")
+    with pytest.raises(ValueError, match="shot budget"):
+        build_simulator(_selection(simulator="splitjmatrix", backend="qulacs", time_steps=2))
+
+
+@pytest.mark.qiskit
 def test_aer_uses_posted_basis_gates() -> None:
     pytest.importorskip("qiskit_aer")
     posted = {"simulator": "trotterization", "time_steps": 2, "num_steps": 1}
@@ -1547,7 +1554,7 @@ def test_listed_backends_matches_the_circuit_module() -> None:
     pytest.importorskip("qiskit")
     pytest.importorskip("qiskit_aer")
     listed = listed_backends()
-    assert [item["id"] for item in listed] == ["aer", "numpy", "paulipropagation"]
+    assert [item["id"] for item in listed] == ["aer", "numpy", "qulacs", "paulipropagation"]
     from shadowsim.backends.aer import AerCircuitBackend
 
     assert listed[0]["setup"] == "circuit_backend = AerCircuitBackend(shots={shots}, basis_gates={basis_gates})"
@@ -1569,15 +1576,19 @@ def test_listed_backends_matches_the_circuit_module() -> None:
     assert listed[1]["shots"] is False
     assert listed[1]["fields"] == []
     assert "NumPy" in listed[1]["detail"]
-    assert listed[2]["setup"] == (
+    assert listed[2]["setup"] == "circuit_backend = QulacsCircuitBackend()"
+    assert listed[2]["shots"] is False
+    assert listed[2]["fields"] == []
+    assert "Qulacs" in listed[2]["detail"]
+    assert listed[3]["setup"] == (
         "circuit_backend = PauliPropagationBackend(max_weight={max_weight}, min_abs_coeff={min_abs_coeff})"
     )
-    assert listed[2]["shots"] is False
-    assert listed[2]["fields"] == [
+    assert listed[3]["shots"] is False
+    assert listed[3]["fields"] == [
         {"name": "max_weight", "label": "Max weight", "default": "inf", "allow_inf": True},
         {"name": "min_abs_coeff", "label": "Min coefficient", "default": "1e-10", "allow_inf": False},
     ]
-    assert "Pauli" in listed[2]["detail"]
+    assert "Pauli" in listed[3]["detail"]
 
 
 def test_describe_models_formats_each_default_kind() -> None:

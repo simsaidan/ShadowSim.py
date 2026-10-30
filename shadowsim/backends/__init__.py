@@ -11,10 +11,12 @@ if TYPE_CHECKING:
     from shadowsim.backends.circuit import to_qiskit as to_qiskit
     from shadowsim.backends.numpy import NumpyCircuitBackend as NumpyCircuitBackend
     from shadowsim.backends.pauli_propagation import PauliPropagationBackend as PauliPropagationBackend
+    from shadowsim.backends.qulacs import QulacsCircuitBackend as QulacsCircuitBackend
 
 _EXPORTS: dict[str, tuple[str, str]] = {
     "AerCircuitBackend": ("shadowsim.backends.aer", "qiskit"),
     "NumpyCircuitBackend": ("shadowsim.backends.numpy", "qiskit"),
+    "QulacsCircuitBackend": ("shadowsim.backends.qulacs", "qulacs"),
     "CircuitBackend": ("shadowsim.backends.circuit", "qiskit"),
     "PauliPropagationBackend": ("shadowsim.backends.pauli_propagation", "pauli_propagation"),
     "from_qiskit": ("shadowsim.backends.circuit", "qiskit"),
@@ -31,6 +33,7 @@ __all__ = [
     "ListedBackend",
     "NumpyCircuitBackend",
     "PauliPropagationBackend",
+    "QulacsCircuitBackend",
     "from_qiskit",
     "listed_backends",
     "to_qiskit",
