@@ -1,5 +1,4 @@
 import numpy as np
-from matplotlib import pyplot as plt
 
 from shadowsim.core import Hamiltonian, OperatorSet, State
 from shadowsim.shadow import run_shadow_simulation
@@ -55,10 +54,4 @@ print("shadow_num_qubits:", shadow.shadow_num_qubits)
 for label, trace in zip(shadow.labels, shadow.expectations, strict=True):
     print(f"{label} variation:", float(np.max(trace) - np.min(trace)))
 
-for label, trace in zip(shadow.labels, shadow.expectations, strict=True):
-    plt.plot(shadow.times, trace, label=label)
-plt.title(f"{shadow.shadow_num_qubits}-qubit shadow")
-plt.xlabel("Time")
-plt.ylabel("Expectation")
-plt.legend()
-plt.show()
+shadow.plot_results(title=f"{shadow.shadow_num_qubits}-qubit shadow")

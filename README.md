@@ -301,6 +301,7 @@ uv run python examples/simple_shadow.py
 ```
 That example uses Pauli labels (sparse construction path) and
 `run_shadow_simulation` for the reduced shadow dynamics.
+The returned result can `save` and `load` the shadow traces, and `plot_results` draws them.
 Pass `verbose=True` to `run_shadow_simulation` if you want Pauli-set and
 closure sizes printed.
 
