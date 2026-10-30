@@ -149,6 +149,8 @@ module = [
     "shadowsim.backends.aer",
     "shadowsim.backends.circuit",
     "shadowsim.backends.pauli_propagation",
+    "shadowsim.backends.numpy",
+    "shadowsim.backends.numpy_statevector",
     "shadowsim.backends.program",
     "shadowsim.benchmarking",
     "shadowsim.benchmarking.benchmark",

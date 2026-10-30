@@ -30,7 +30,7 @@ python -m pip install "shadowsim[all] @ git+https://github.com/simsaidan/ShadowS
 | Extra | Provides |
 | --- | --- |
 | `qutip` | `QutipSimulator`, `run_shadow_simulation`, and QuTiP interop (`from_qutip` / `to_qutip`) |
-| `qiskit` | Split JMatrix and Trotterization (`qiskit`, `qiskit-aer`, and `scipy`) |
+| `qiskit` | Split JMatrix, Trotterization, and `NumpyCircuitBackend` (`qiskit`, `qiskit-aer`, and `scipy`) |
 | `viz` | Matplotlib plots (`plot_results` and benchmark figures) |
 | `pauli_propagation` | `PauliPropagationBackend` (`juliacall` 0.9.36). Julia 1.10+ and the Julia package are a separate install; see [PauliPropagation](#paulipropagation) |
 | `all` | `qutip`, `qiskit`, and `viz` |
@@ -136,10 +136,11 @@ qubit into its letter of `basis` (default all `Z`; `X` adds a Hadamard, `Y` adds
 - **Sampling backends** such as `AerCircuitBackend` have a `shots` budget and
   return counts. `result.counts` holds one dict per time point, and `observables`
   stays empty until you measure. Any `Measurement` can read them.
-- **Expectation backends** such as `PauliPropagationBackend` compute Pauli
-  expectation values directly and have no counts. Trotterization fills
-  `observables` with each qubit's ⟨P⟩ for its `basis` letter, so only
-  `Measurement.expectation` and `Measurement.population` can read them.
+- **Expectation backends** such as `PauliPropagationBackend` and
+  `NumpyCircuitBackend` have no shot budget. Trotterization fills
+  `observables` with each qubit's ⟨P⟩ for its `basis` letter and leaves
+  `counts` empty, so only `Measurement.expectation` and
+  `Measurement.population` can read them.
 
 In every counts key, bit `i` is system qubit `i` (Qiskit's order is reversed
 before the counts are stored). Split JMatrix drops its ancilla bit, so its keys
@@ -208,12 +209,37 @@ backend. The following backends are supported:
 | Backend | Kind | Simulators | Extra |
 | --- | --- | --- | --- |
 | `AerCircuitBackend` | sampling: returns shot counts from a `shots` budget | Split JMatrix, Trotterization | `qiskit` |
+| `NumpyCircuitBackend` | expectation: exact Pauli expectations from a NumPy statevector. `run_counts` can still sample | Trotterization (closed systems) | `qiskit` |
 | `PauliPropagationBackend` | expectation: returns exact Pauli expectations, no counts | Trotterization (closed systems) | `qiskit` and `pauli_propagation` |
 
 `AerCircuitBackend` is the default for both circuit simulators. Split JMatrix
 samples an ancilla, so it needs a sampling backend. See
 [Measurements](#measurements) for what each kind returns and
 [PauliPropagation](#paulipropagation) for the Julia setup.
+
+`NumpyCircuitBackend` is the reference for small circuits. Correctness and
+readability come before performance. It stores no `shots` attribute, so
+Trotterization reads exact ⟨Z⟩ and ⟨X⟩. `run_counts` still samples the
+computational basis, and the same `seed` repeats those counts. `Reset` and a
+measurement followed by a gate are rejected. Split JMatrix samples an ancilla
+with `Reset`, so it uses Aer.
+
+Checked circuits agree with Aer statevector probabilities to `1e-8`. One local
+Hamiltonian makes the Trotter product exact: that ⟨Z⟩ curve matches `cos(2t)`
+to `1e-8` and QuTiP to `1e-6`. A seeded Hadamard of 4000 shots stays within
+`0.05` of Aer and of `1/2`.
+
+```python
+from qiskit import QuantumCircuit
+
+from shadowsim.backends import NumpyCircuitBackend
+
+circuit = QuantumCircuit(1)
+circuit.rx(0.4, 0)
+backend = NumpyCircuitBackend()
+backend.z_expectations(circuit, [0], shots=1, seed=None)  # [cos(0.4)]
+backend.x_expectations(circuit, [0], shots=1, seed=None)  # [0.0]
+```
 
 ### Sparse / Pauli-label shadow construction
 
@@ -282,6 +308,7 @@ For practical scale limits (sparse vs dense, closure size, simulators), see
 | QuTiP simulator | small truncated models | stiff ODEs / Hilbert dim |
 | Split JMatrix + Aer | tiny time grids / shot budgets for smoke; set `seed` for reproducible Aer shots | circuit per timestep × shots |
 | Trotterization + Aer | closed systems only; tiny time grids / shot budgets; set `seed` for reproducible Aer shots | circuit per timestep × shots |
+| Trotterization + NumPy | small closed systems used as a reference | one statevector of length `2^n` per time point |
 
 ### Not yet / still heavy
 
