@@ -1,16 +1,20 @@
 """Build a simulator from a builder-page selection."""
 
+import importlib
+import inspect
 import math
 import re
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import cast
+from typing import Any, cast
 
 import numpy as np
 
-from shadowsim import models
+from shadowsim import models, simulators
 from shadowsim._optional import import_optional
+from shadowsim.backends import _EXPORTS as _BACKEND_EXPORTS
+from shadowsim.backends.catalog import ListedBackend, listed_backends
 from shadowsim.benchmarking.benchmark import Benchmark
 from shadowsim.core.hamiltonian import Hamiltonian
 from shadowsim.core.local_hamiltonian import LocalHamiltonian
@@ -30,7 +34,6 @@ from shadowsim.simulators.simulator import Simulator
 from shadowsim.utils.hermitian import hermitian
 
 _STATES = frozenset({"basis", "gray", "angle", "amplitude"})
-_SIMULATORS = frozenset({"qutip", "trotterization", "splitjmatrix"})
 # A page click cannot afford the class defaults of 101 points and 10_000 shots.
 _CIRCUIT_TIME_STEPS = 11
 _CIRCUIT_NUM_STEPS = 4
@@ -59,14 +62,18 @@ def build_simulator(selection: Mapping[str, object], *, time_steps: int = 101) -
     """Build a simulator for one builder-page selection.
 
     Args:
-        selection: Page ids and settings. ``then`` is ignored. A circuit
-            simulator's ``backend`` is ``aer`` or ``paulipropagation``. QuTiP
-            ignores a missing backend. ``measure`` of ``x`` or ``z`` records that Pauli's
-            expectation on each selected qubit for every simulator. ``counts``
-            evaluates ``expression`` (see :class:`~shadowsim.simulators.Measurement`)
-            on the shot counts of the selected qubits, in ``sites`` order. It needs
-            the Aer backend, so QuTiP and PauliPropagation reject it. A circuit
-            simulator records counts only; :func:`run_page` reads them.
+        selection: Page ids and settings. ``then`` is ignored. ``simulator`` is
+            an id from :func:`shadowsim.simulators.catalog.listed_simulators`.
+            A simulator that records observables ignores a missing backend. A
+            circuit simulator's ``backend`` is an id from
+            :func:`shadowsim.backends.catalog.listed_backends`, and one that
+            samples needs a backend with a shot budget. ``measure`` of ``x`` or
+            ``z`` records that Pauli's expectation on each selected qubit for
+            every simulator. ``counts`` evaluates ``expression`` (see
+            :class:`~shadowsim.simulators.Measurement`) on the shot counts of the
+            selected qubits, in ``sites`` order. It needs a backend with a shot
+            budget, so an observables simulator and a backend without one reject
+            it. A circuit simulator records counts only; :func:`run_page` reads them.
             ``model`` is a factory name from :func:`shadowsim.models.catalog.listed_models`.
             A non-empty ``terms`` list is the model instead: each item has ``id``
             and ``matrix``, and local terms also have ``sites``. At least one
@@ -93,14 +100,17 @@ def build_simulator(selection: Mapping[str, object], *, time_steps: int = 101) -
             every qubit.
             ``time_steps`` in ``selection`` overrides the ``time_steps`` argument.
             Shot-based simulators also read ``num_steps``, ``trotter_depth``,
-            ``order`` (1 or 2), ``shots``, and ``seed``. ``shots`` is the Aer
-            backend's shot budget; the page collects it on that backend.
-            Aer also reads ``basis_gates``. A blank value keeps Aer's own basis.
-            A string is a comma-separated list of gate names, and a sequence of
-            names is used as given. PauliPropagation ignores ``shots`` and
-            ``basis_gates``. It reads ``max_weight`` (default ``inf``) and
-            ``min_abs_coeff`` (default ``1e-10``) and runs a closed Trotter circuit.
-            Missing shot-based values use the page budget.
+            ``order`` (1 or 2), and ``seed``. A backend with a shot budget reads
+            ``shots``. A posted ``time_steps`` value is checked before the
+            simulator extra is imported. A posted ``shots`` value is checked
+            then too when that backend has a shot budget, and also when no
+            backend module can be imported. A gate-list field, such as Aer's
+            ``basis_gates``, is a comma-separated string or a sequence of names.
+            A blank value keeps
+            that backend's own basis. Any other backend field is a non-negative
+            number, and a missing value keeps the catalog default. A simulator
+            with ``closed_system`` set rejects Lindblad operators. Missing
+            shot-based values use the page budget.
         time_steps: Points on the QuTiP solver grid when ``selection`` omits
             ``time_steps``. Defaults to the page preview.
 
@@ -109,16 +119,15 @@ def build_simulator(selection: Mapping[str, object], *, time_steps: int = 101) -
 
     Raises:
         ValueError: The selection cannot run in this slice.
-        ImportError: The QuTiP or Qiskit extra required by the simulator is not installed.
+        ImportError: The extra required by the simulator or backend is not installed.
     """
     if isinstance(time_steps, bool) or not isinstance(time_steps, int) or time_steps < 1:
         raise ValueError("time_steps must be a positive integer")
     simulator_id = _choice(selection, "simulator")
-    if simulator_id not in _SIMULATORS:
-        raise ValueError("unknown simulator")
+    class_name, module_name, extra = _simulator_export(simulator_id)
     backend = _choice(selection, "backend")
-    if (simulator_id != "qutip" or backend) and backend not in {"aer", "paulipropagation"}:
-        raise ValueError("only Aer and PauliPropagation can run from the page")
+    if backend and backend not in _backend_ids():
+        raise ValueError("unknown backend")
     state_id = _choice(selection, "state")
     if state_id not in _STATES:
         raise ValueError("unknown initial state")
@@ -140,13 +149,27 @@ def build_simulator(selection: Mapping[str, object], *, time_steps: int = 101) -
     measure_id = _choice(selection, "measure")
     sites = _measure_sites(selection, model.num_qubits)
     _measurements(selection, model.num_qubits)
-    if measure_id == "counts" and (simulator_id == "qutip" or backend == "paulipropagation"):
-        name = "QuTiP" if simulator_id == "qutip" else "PauliPropagation"
-        raise ValueError(f"{name} returns Pauli expectations, not shot counts; use Aer for a counts measurement")
-    if simulator_id == "qutip":
+    if class_name == "QutipSimulator":
+        _reject_counts(measure_id, "QuTiP")
         steps = _selection_positive_int(selection, "time_steps", time_steps, "time steps")
         return _qutip_simulator(model, state, measure_id, total_time, steps, sites)
-    return _circuit_simulator(simulator_id, selection, model, state, measure_id, total_time, sites, backend)
+    if "time_steps" in selection:
+        _selection_positive_int(selection, "time_steps", time_steps, "time steps")
+    if backend and "shots" in selection and _backend_has_shot_budget(backend):
+        _selection_positive_int(selection, "shots", _CIRCUIT_SHOTS, "shots")
+    cls = _load_exported(module_name, extra, class_name, "unknown simulator")
+    if "observables" in inspect.signature(cls).parameters:
+        _reject_counts(measure_id, class_name.removesuffix("Simulator"))
+        steps = _selection_positive_int(selection, "time_steps", time_steps, "time steps")
+        return _qutip_simulator(model, state, measure_id, total_time, steps, sites, cls)
+    if not backend:
+        raise ValueError("unknown backend")
+    record = _backend_record(backend)
+    if not record["shots"]:
+        _reject_counts(measure_id, record["title"])
+    if getattr(cls, "requires_sampling_backend", False) and not record["shots"]:
+        raise ValueError(f"{class_name.removesuffix('Simulator')} needs a backend with a shot budget")
+    return _circuit_simulator(cls, selection, model, state, measure_id, total_time, sites, record)
 
 
 def run_page(selection: Mapping[str, object], *, output_root: Path | None = None) -> dict[str, object]:
@@ -175,8 +198,8 @@ def run_page(selection: Mapping[str, object], *, output_root: Path | None = None
     A relative path is resolved from the working directory.
 
     Args:
-        selection: Page ids, settings, and result actions. An Aer row may include
-            ``basis_gates``, as described on :func:`build_simulator`.
+        selection: Page ids, settings, and result actions. A backend row may include
+            the fields described on :func:`build_simulator`.
         output_root: Directory that save and export paths must stay under.
             ``None`` leaves those paths unchanged.
     """
@@ -391,11 +414,18 @@ def _qutip_simulator(
     total_time: float,
     time_steps: int,
     sites: list[int],
+    cls: Any = None,
 ) -> Simulator:
-    """Build the QuTiP simulator for explicit Pauli observables."""
+    """Build an observables simulator for explicit Pauli observables.
+
+    QuTiP is imported when ``cls`` is omitted, so a test can replace this
+    function without importing that extra.
+    """
     observables = _observables(model.num_qubits, measure_id, sites)
-    qutip_simulator = import_optional("shadowsim.simulators.qutip_simulator", extra="qutip")
-    return qutip_simulator.QutipSimulator(
+    if cls is None:
+        qutip_simulator = import_optional("shadowsim.simulators.qutip_simulator", extra="qutip")
+        cls = qutip_simulator.QutipSimulator
+    return cls(
         model.full_hamiltonians,
         model.c_ops_full,
         state,
@@ -407,51 +437,31 @@ def _qutip_simulator(
 
 
 def _circuit_simulator(
-    simulator_id: str,
+    cls: Any,
     selection: Mapping[str, object],
     model: _PageModel,
     state: State,
     measure_id: str,
     total_time: float,
     sites: list[int],
-    backend: str,
+    record: ListedBackend,
 ) -> Simulator:
-    """Build a Trotter or Split J simulator on Aer or PauliPropagation.
+    """Build a circuit simulator on the catalog backend ``record`` names.
 
     X rotates the selected qubits into the X basis before the measurement. Z
-    and counts measure every qubit in Z. The simulator records counts (or Pauli
-    expectations on PauliPropagation), which :func:`_measured_result` reads.
-    PauliPropagation runs the closed Trotter circuit and ignores the shot budget.
+    and counts measure every qubit in Z. The simulator records counts, or Pauli
+    expectations when the backend has no shot budget, which
+    :func:`_measured_result` reads.
     """
     steps = _selection_positive_int(selection, "time_steps", _CIRCUIT_TIME_STEPS, "time steps")
     num_steps = _selection_positive_int(selection, "num_steps", _CIRCUIT_NUM_STEPS, "product steps")
     depth = _selection_positive_int(selection, "trotter_depth", 1, "Trotter depth")
     seed = _selection_integer(selection, "seed", _CIRCUIT_SEED, "seed")
     order = _selection_order(selection)
-    if simulator_id == "trotterization" and model.c_ops_local:
-        raise ValueError("Trotterization is closed-system only")
-    if backend == "paulipropagation":
-        pauli = import_optional("shadowsim.backends.pauli_propagation", extra="pauli_propagation")
-        circuit_backend = pauli.PauliPropagationBackend(
-            max_weight=_selection_nonnegative(selection, "max_weight", math.inf, "max weight", allow_inf=True),
-            min_abs_coeff=_selection_nonnegative(selection, "min_abs_coeff", 1e-10, "min coefficient", allow_inf=False),
-        )
-    else:
-        shots = _selection_positive_int(selection, "shots", _CIRCUIT_SHOTS, "shots")
-        aer = import_optional("shadowsim.backends.aer", extra="qiskit")
-        circuit_backend = aer.AerCircuitBackend(shots=shots, basis_gates=_selection_basis_gates(selection))
-    module_name = (
-        "shadowsim.simulators.trotterization_simulator"
-        if simulator_id == "trotterization"
-        else "shadowsim.simulators.splitjmatrix_simulator"
-    )
-    simulator_module = import_optional(module_name, extra="qiskit")
-    simulator_cls = (
-        simulator_module.TrotterizationSimulator
-        if simulator_id == "trotterization"
-        else simulator_module.SplitJMatrixSimulator
-    )
-    return simulator_cls(
+    if getattr(cls, "closed_system", False) and model.c_ops_local:
+        raise ValueError(f"{cls.__name__.removesuffix('Simulator')} is closed-system only")
+    circuit_backend = _make_backend(record, selection)
+    return cls(
         model.local_hamiltonians,
         model.c_ops_local,
         state,
@@ -467,24 +477,136 @@ def _circuit_simulator(
     )
 
 
+def _reject_counts(measure_id: str, label: str) -> None:
+    """Reject a counts measurement for a simulator or backend that returns expectations."""
+    if measure_id != "counts":
+        return
+    raise ValueError(f"{label} returns Pauli expectations, not shot counts; use Aer for a counts measurement")
+
+
+def _simulator_export(simulator_id: str) -> tuple[str, str, str | None]:
+    """Return the export entry whose catalog id is ``simulator_id``."""
+    for class_name, (module_name, extra) in simulators._EXPORTS.items():
+        if class_name.removesuffix("Simulator").lower() == simulator_id:
+            return class_name, module_name, extra
+    raise ValueError("unknown simulator")
+
+
+def _backend_ids() -> set[str]:
+    """Return catalog ids for exported backend classes, without importing them."""
+    ids: set[str] = set()
+    for class_name in _BACKEND_EXPORTS:
+        if not class_name.endswith("Backend") or class_name == "CircuitBackend":
+            continue
+        title = class_name.removesuffix("CircuitBackend").removesuffix("Backend")
+        ids.add(title.lower())
+    return ids
+
+
+def _load_exported(module_name: str, extra: str | None, class_name: str, missing: str) -> Any:
+    """Import ``class_name`` from ``module_name``."""
+    if extra is None:
+        module = importlib.import_module(module_name)
+    else:
+        module = import_optional(module_name, extra=extra)
+    value = getattr(module, class_name, None)
+    if not isinstance(value, type):
+        raise ValueError(missing)
+    return value
+
+
+def _backend_has_shot_budget(backend_id: str) -> bool:
+    """Return whether ``backend_id`` reads a shot budget.
+
+    A posted shot count is still checked when no backend module can be imported,
+    so that number is reported before the missing extra.
+    """
+    try:
+        records = listed_backends()
+    except ImportError:
+        return True
+    for record in records:
+        if record["id"] == backend_id:
+            return bool(record["shots"])
+    return False
+
+
+def _backend_record(backend_id: str) -> ListedBackend:
+    """Return the catalog record for ``backend_id``.
+
+    A known export whose module cannot be imported raises that import error.
+    """
+    for record in listed_backends():
+        if record["id"] == backend_id:
+            return record
+    for class_name, (module_name, extra) in _BACKEND_EXPORTS.items():
+        if not class_name.endswith("Backend") or class_name == "CircuitBackend":
+            continue
+        title = class_name.removesuffix("CircuitBackend").removesuffix("Backend")
+        if title.lower() == backend_id:
+            import_optional(module_name, extra=extra)
+            break
+    raise ValueError("unknown backend")
+
+
+def _catalog_number(default: str, *, allow_inf: bool) -> float:
+    """Return the numeric default published on a backend field."""
+    text = default.strip().lower()
+    if allow_inf and text in {"inf", "infinity"}:
+        return math.inf
+    return float(text)
+
+
+def _make_backend(record: ListedBackend, selection: Mapping[str, object]) -> Any:
+    """Construct the backend class named by ``record`` from the posted fields."""
+    cls = _backend_class(record["setup"])
+    kwargs: dict[str, object] = {}
+    if record["shots"]:
+        kwargs["shots"] = _selection_positive_int(selection, "shots", _CIRCUIT_SHOTS, "shots")
+    for field in record["fields"]:
+        if field.get("kind") == "gates":
+            kwargs[field["name"]] = _selection_basis_gates(selection, field["name"])
+        else:
+            kwargs[field["name"]] = _selection_nonnegative(
+                selection,
+                field["name"],
+                _catalog_number(field["default"], allow_inf=field["allow_inf"]),
+                field["label"].lower(),
+                allow_inf=field["allow_inf"],
+            )
+    return cls(**kwargs)
+
+
+def _backend_class(setup: str) -> Any:
+    """Import the backend class named in a catalog ``setup`` string."""
+    match = re.search(r"circuit_backend = ([A-Za-z0-9_]+)", setup)
+    if match is None:
+        raise ValueError("unknown backend")
+    class_name = match.group(1)
+    try:
+        module_name, extra = _BACKEND_EXPORTS[class_name]
+    except KeyError:
+        raise ValueError("unknown backend") from None
+    return _load_exported(module_name, extra, class_name, "unknown backend")
+
+
 def _x_basis(num_qubits: int, sites: list[int]) -> str:
     """Return a basis that reads X on ``sites`` and Z on every other qubit."""
     return "".join("X" if qubit in sites else "Z" for qubit in range(num_qubits))
 
 
-def _selection_basis_gates(selection: Mapping[str, object]) -> list[str] | None:
-    """Return Aer gate names, or ``None`` when the page left the field blank.
+def _selection_basis_gates(selection: Mapping[str, object], key: str = "basis_gates") -> list[str] | None:
+    """Return gate names for ``key``, or ``None`` when the page left the field blank.
 
     A string is split on commas and whitespace. A sequence of strings is used
-    as given. ``AerCircuitBackend`` checks that each name is a gate it can
-    compile into.
+    as given. The backend checks that each name is a gate it can compile into.
 
     Raises:
-        ValueError: ``basis_gates`` is not text or a sequence of gate names.
+        ValueError: ``key`` is not text or a sequence of gate names.
     """
-    if "basis_gates" not in selection or selection["basis_gates"] is None:
+    if key not in selection or selection[key] is None:
         return None
-    value = selection["basis_gates"]
+    value = selection[key]
     if isinstance(value, str):
         names = [part for part in re.split(r"[\s,]+", value.strip()) if part]
         if not value.strip():
@@ -494,7 +616,7 @@ def _selection_basis_gates(selection: Mapping[str, object]) -> list[str] | None:
         names = list(value)
         if all(isinstance(name, str) for name in names):
             return names
-    raise ValueError("basis_gates must be a sequence of gate names")
+    raise ValueError(f"{key} must be a sequence of gate names")
 
 
 def _selection_nonnegative(

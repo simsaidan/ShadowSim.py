@@ -4,6 +4,7 @@ import builtins
 import importlib
 import json
 import math
+import sys
 import threading
 import types
 import urllib.error
@@ -18,6 +19,8 @@ import pytest
 
 from shadowsim.backends import listed_backends
 from shadowsim.cli.run import (
+    _backend_class,
+    _backend_record,
     _initial_state,
     _measured_result,
     _measurements,
@@ -78,8 +81,8 @@ def forbid_qutip(monkeypatch: pytest.MonkeyPatch) -> None:
 @pytest.mark.parametrize(
     ("overrides", "message"),
     [
-        ({"backend": "qiskit"}, "only Aer"),
-        ({"backend": "other"}, "only Aer"),
+        ({"backend": "qiskit"}, "unknown backend"),
+        ({"backend": "other"}, "unknown backend"),
         ({"total": "0"}, "positive number"),
         ({"total": 0}, "positive number"),
         ({"total": "-1"}, "positive number"),
@@ -114,9 +117,142 @@ def test_qutip_without_a_backend_reaches_the_simulator(monkeypatch: pytest.Monke
     assert build_simulator(selection, time_steps=2) == "built"
 
 
+@pytest.mark.qiskit
 def test_circuit_simulator_without_a_backend_is_rejected(forbid_qutip: None) -> None:
-    with pytest.raises(ValueError, match="only Aer"):
+    pytest.importorskip("qiskit")
+    with pytest.raises(ValueError, match="unknown backend"):
         build_simulator(_selection(simulator="trotterization", backend=None))
+
+
+def test_an_exported_simulator_uses_its_catalog_backend(monkeypatch: pytest.MonkeyPatch) -> None:
+    class CustomSimulator:
+        """A circuit simulator the catalog has not hardcoded."""
+
+        def __init__(self, hamiltonians: object, lindblads: object, state: object, **kwargs: object) -> None:
+            del hamiltonians, lindblads, state
+            self.kwargs = kwargs
+
+    class CustomBackend:
+        """Estimate expectations with one scale."""
+
+        def __init__(self, scale: float = 2.5) -> None:
+            self.scale = scale
+
+        def run_counts(self) -> dict[str, int]:
+            return {}
+
+    sim_module = types.ModuleType("custom.simulators")
+    CustomSimulator.__module__ = sim_module.__name__
+    sim_module.CustomSimulator = CustomSimulator  # type: ignore[attr-defined]
+    back_module = types.ModuleType("custom.backends")
+    CustomBackend.__module__ = back_module.__name__
+    back_module.CustomBackend = CustomBackend  # type: ignore[attr-defined]
+
+    from shadowsim import simulators
+    from shadowsim.backends import _EXPORTS as backend_exports
+
+    monkeypatch.setitem(simulators._EXPORTS, "CustomSimulator", ("custom.simulators", None))
+    monkeypatch.setitem(backend_exports, "CustomBackend", ("custom.backends", "qiskit"))
+    monkeypatch.setitem(sys.modules, "custom.simulators", sim_module)
+    monkeypatch.setitem(sys.modules, "custom.backends", back_module)
+
+    simulator = build_simulator(_selection(simulator="custom", backend="custom"))
+    assert isinstance(simulator, CustomSimulator)
+    assert simulator.kwargs["circuit_backend"].scale == 2.5
+
+    CustomSimulator.requires_sampling_backend = True  # type: ignore[attr-defined]
+    with pytest.raises(ValueError, match="shot budget"):
+        build_simulator(_selection(simulator="custom", backend="custom"))
+
+
+def test_an_exported_observables_simulator_uses_its_class(monkeypatch: pytest.MonkeyPatch) -> None:
+    class NoteSimulator:
+        """An observables simulator other than QuTiP."""
+
+        def __init__(
+            self,
+            hamiltonians: object,
+            lindblads: object,
+            state: object,
+            observables: object,
+            **kwargs: object,
+        ) -> None:
+            del hamiltonians, lindblads, state
+            self.observables = observables
+            self.kwargs = kwargs
+
+    module = types.ModuleType("custom.observables")
+    module.NoteSimulator = NoteSimulator  # type: ignore[attr-defined]
+    from shadowsim import simulators
+
+    monkeypatch.setitem(simulators._EXPORTS, "NoteSimulator", ("custom.observables", None))
+    monkeypatch.setitem(sys.modules, "custom.observables", module)
+
+    simulator = build_simulator(_selection(simulator="note"), time_steps=4)
+    assert isinstance(simulator, NoteSimulator)
+    assert len(simulator.observables) == 2
+    assert simulator.kwargs["time_steps"] == 4
+    with pytest.raises(ValueError, match="Note returns Pauli expectations"):
+        build_simulator(
+            _selection(
+                simulator="note",
+                measure="counts",
+                sites=[0],
+                expression='counts["1"] / shots',
+            )
+        )
+
+
+def test_an_export_that_is_not_a_class_is_rejected(monkeypatch: pytest.MonkeyPatch) -> None:
+    module = types.ModuleType("custom.notaclass")
+    module.Widget = "nope"  # type: ignore[attr-defined]
+    from shadowsim import simulators
+
+    monkeypatch.setitem(simulators._EXPORTS, "Widget", ("custom.notaclass", None))
+    monkeypatch.setitem(sys.modules, "custom.notaclass", module)
+    with pytest.raises(ValueError, match="unknown simulator"):
+        build_simulator(_selection(simulator="widget"))
+
+
+def test_a_known_backend_missing_from_the_catalog_is_rejected(monkeypatch: pytest.MonkeyPatch) -> None:
+    class CustomSimulator:
+        def __init__(self, hamiltonians: object, lindblads: object, state: object, **kwargs: object) -> None:
+            del hamiltonians, lindblads, state, kwargs
+
+    class GhostBackend:
+        """A named export the catalog does not describe."""
+
+    sim_module = types.ModuleType("custom.simulators")
+    sim_module.CustomSimulator = CustomSimulator  # type: ignore[attr-defined]
+    back_module = types.ModuleType("custom.ghost")
+    GhostBackend.__module__ = back_module.__name__
+    back_module.GhostBackend = GhostBackend  # type: ignore[attr-defined]
+
+    from shadowsim import simulators
+    from shadowsim.backends import _EXPORTS as backend_exports
+
+    monkeypatch.setitem(simulators._EXPORTS, "CustomSimulator", ("custom.simulators", None))
+    monkeypatch.setitem(backend_exports, "GhostBackend", ("custom.ghost", "qiskit"))
+    monkeypatch.setitem(sys.modules, "custom.simulators", sim_module)
+    monkeypatch.setitem(sys.modules, "custom.ghost", back_module)
+    monkeypatch.setattr(
+        "shadowsim.cli.run.listed_backends",
+        lambda: [{"id": "aer", "shots": True}],
+    )
+    with pytest.raises(ValueError, match="unknown backend"):
+        build_simulator(_selection(simulator="custom", backend="ghost"))
+    with pytest.raises(ValueError, match="unknown backend"):
+        build_simulator(_selection(simulator="custom", backend="ghost", shots=0))
+
+
+def test_a_backend_setup_without_a_class_is_rejected(monkeypatch: pytest.MonkeyPatch) -> None:
+    with pytest.raises(ValueError, match="unknown backend"):
+        _backend_class("not a constructor")
+    with pytest.raises(ValueError, match="unknown backend"):
+        _backend_class("circuit_backend = MissingBackend()")
+    monkeypatch.setattr("shadowsim.cli.run.listed_backends", lambda: [])
+    with pytest.raises(ValueError, match="unknown backend"):
+        _backend_record("missing")
 
 
 @pytest.mark.parametrize("time_steps", [0, True, 1.5])
@@ -977,12 +1113,16 @@ def test_circuit_simulator_runs_ising_on_aer(simulator_id: str) -> None:
     assert all(len(curve) == 11 for curve in result.observables)
 
 
+@pytest.mark.qiskit
 def test_trotterization_rejects_an_open_model() -> None:
+    pytest.importorskip("qiskit")
     with pytest.raises(ValueError, match="closed-system"):
         build_simulator(_selection(simulator="trotterization", model="tavis_cummings", basis="100"))
 
 
+@pytest.mark.qiskit
 def test_shot_parameters_are_validated() -> None:
+    pytest.importorskip("qiskit")
     with pytest.raises(ValueError, match="shots"):
         build_simulator(_selection(simulator="splitjmatrix", shots=0))
     with pytest.raises(ValueError, match="order must be 1 or 2"):
@@ -1041,16 +1181,23 @@ def test_counts_measurement_evaluates_the_expression_on_aer() -> None:
     np.testing.assert_allclose(result.observables[0], [1.0])
 
 
-@pytest.mark.parametrize(
-    ("extra", "message"),
-    [
-        ({"simulator": "qutip"}, "QuTiP returns Pauli expectations"),
-        ({"simulator": "trotterization", "backend": "paulipropagation"}, "PauliPropagation returns Pauli"),
-    ],
-)
-def test_counts_measurement_needs_aer(extra: dict[str, object], message: str) -> None:
-    selection = _selection(measure="counts", sites=[0], expression='counts["1"] / shots', **extra)
-    with pytest.raises(ValueError, match=message):
+def test_counts_measurement_rejects_an_observables_simulator() -> None:
+    selection = _selection(measure="counts", sites=[0], expression='counts["1"] / shots', simulator="qutip")
+    with pytest.raises(ValueError, match="QuTiP returns Pauli expectations"):
+        build_simulator(selection)
+
+
+@pytest.mark.qiskit
+def test_counts_measurement_rejects_a_backend_without_shots() -> None:
+    pytest.importorskip("qiskit")
+    selection = _selection(
+        measure="counts",
+        sites=[0],
+        expression='counts["1"] / shots',
+        simulator="trotterization",
+        backend="paulipropagation",
+    )
+    with pytest.raises(ValueError, match="PauliPropagation returns Pauli"):
         build_simulator(selection)
 
 
@@ -1665,10 +1812,31 @@ def test_listed_simulators_skips_imports_that_fail(monkeypatch: pytest.MonkeyPat
     assert listed[0]["detail"] == "Base class for quantum simulation backends."
     assert listed[0]["observables"] is False
     assert listed[0]["samples"] is False
-    assert "BareSimulator" in listed[0]["setup"]
+    assert listed[0]["closed_system"] is False
+    assert listed[0]["setup"] == (
+        "{name} = BareSimulator(\n"
+        "    {hamiltonians},\n"
+        "    {lindblads},\n"
+        "    state,\n"
+        "    num_qubits={qubits},\n"
+        "    total_time={total},\n"
+        "    time_steps={time_steps},\n"
+        "    num_steps={num_steps},\n"
+        "    trotter_depth={trotter_depth},\n"
+        "    order={order},\n"
+        "    seed={seed}{basis},\n"
+        "    circuit_backend={backend},\n"
+        ")"
+    )
     assert listed[1]["detail"] == "Simulate with a note."
     assert listed[1]["observables"] is True
     assert listed[1]["samples"] is False
+    assert listed[1]["closed_system"] is False
+    assert listed[1]["setup"] == (
+        "{name} = NoteSimulator({hamiltonians}, {lindblads}, state,\n"
+        "                    e_ops, num_qubits={qubits},\n"
+        "                    total_time={total}, time_steps={time_steps})"
+    )
 
 
 def test_describe_simulator_uses_the_title_without_a_docstring(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -1681,6 +1849,15 @@ def test_describe_simulator_uses_the_title_without_a_docstring(monkeypatch: pyte
     assert described["detail"] == "Bare"
     assert described["observables"] is False
     assert described["samples"] is False
+    assert described["closed_system"] is False
+
+    class ClosedSimulator:
+        closed_system = True
+
+        def __init__(self) -> None:
+            return None
+
+    assert _describe_simulator(ClosedSimulator)["closed_system"] is True
 
 
 def test_listed_simulators_fail_when_none_import(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -1706,12 +1883,20 @@ def test_listed_simulators_reads_the_package_classes() -> None:
     assert [item["id"] for item in listed] == ["qutip", "splitjmatrix", "trotterization"]
     assert listed[0]["observables"] is True
     assert listed[0]["samples"] is False
-    assert listed[0]["setup"].startswith("{name} = QutipSimulator")
-    assert "{total}" in listed[0]["setup"]
+    assert listed[0]["closed_system"] is False
+    assert listed[0]["setup"] == (
+        "{name} = QutipSimulator({hamiltonians}, {lindblads}, state,\n"
+        "                    e_ops, num_qubits={qubits},\n"
+        "                    total_time={total}, time_steps={time_steps})"
+    )
     assert listed[1]["observables"] is False
     assert listed[1]["samples"] is True
-    assert "SplitJMatrixSimulator" in listed[1]["setup"]
+    assert listed[1]["closed_system"] is False
+    assert listed[1]["setup"].startswith("{name} = SplitJMatrixSimulator(\n")
+    assert "{backend}" in listed[1]["setup"]
     assert listed[2]["samples"] is False
+    assert listed[2]["closed_system"] is True
+    assert listed[2]["setup"].startswith("{name} = TrotterizationSimulator(\n")
     assert "QuTiP" in listed[0]["detail"]
 
 
@@ -1888,6 +2073,15 @@ def test_added_terms_fail_before_optional_imports(forbid_qutip: None) -> None:
         )
 
 
+def test_a_posted_shot_count_is_rejected_when_no_backend_imports(monkeypatch: pytest.MonkeyPatch) -> None:
+    def explode() -> list[object]:
+        raise ImportError("no circuit backends could be imported")
+
+    monkeypatch.setattr("shadowsim.cli.run.listed_backends", explode)
+    with pytest.raises(ValueError, match="shots must be a positive integer"):
+        build_simulator(_selection(simulator="trotterization", time_steps=2, shots=0))
+
+
 def test_ignored_actions_and_bad_numbers_fail_before_import(forbid_qutip: None) -> None:
     with pytest.raises(ValueError, match="unknown simulator"):
         run_page(_selection(simulator="nope", thens=1))
@@ -1958,7 +2152,9 @@ def test_angle_list_rejects_non_finite_numbers(forbid_qutip: None) -> None:
         build_simulator(_selection(state="angle", angles=[float("nan"), 0.0]))
 
 
+@pytest.mark.qiskit
 def test_trotterization_rejects_an_added_lindblad() -> None:
+    pytest.importorskip("qiskit")
     with pytest.raises(ValueError, match="closed-system only"):
         build_simulator(
             _added(

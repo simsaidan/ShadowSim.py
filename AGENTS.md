@@ -2,6 +2,8 @@
 
 Never push to `main`, even if you can bypass branch protections. Open a pull request from a branch instead.
 
+If the push is for an issue, the commit message should say `Resolves #<issue number>`.
+
 Before opening a pull request, always run **tests and coverage**, **style**,
 **type checking**, and **documentation** below and fix any failures.
 

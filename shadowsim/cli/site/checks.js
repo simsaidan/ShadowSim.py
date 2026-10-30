@@ -421,7 +421,7 @@
   function entryParamsReady(entry) {
     const params = entry.params;
     if (!positiveIntText(params.timeSteps)) return false;
-    if (entry.id === "qutip") return true;
+    if (isReference(entry)) return true;
     if (!positiveIntText(params.numSteps) || !positiveIntText(params.trotterDepth)) return false;
     if (!/^-?\d+$/.test(params.seed)) return false;
     return params.order === "1" || params.order === "2";
@@ -640,7 +640,7 @@
     const sampled = page.placedSims.every(
       (entry) => !isReference(entry) && (!entry.backend || blockById("backend", entry.backend)?.shots),
     );
-    if (!sampled) return "Counts needs Aer. QuTiP and PauliPropagation return expectations.";
+    if (!sampled) return "Counts needs a backend with a shot budget.";
     const count = qubitCount();
     if (count == null) return null;
     const sites = selectedSites(count);
@@ -901,14 +901,6 @@
     return usingAddedOperators() ? String(qubitCount()) : "model.num_qubits";
   }
 
-  function qutipCall(name, params) {
-    const hamiltonians = usingAddedOperators() ? "qutip_hamiltonians" : "model.full_hamiltonians";
-    const lindblads = usingAddedOperators() ? "lindblads_full" : "model.c_ops_full";
-    return `${name} = QutipSimulator(${hamiltonians}, ${lindblads}, state,
-                    e_ops, num_qubits=${systemQubits()},
-                    total_time=${pyFloat(settingNumber("total"))}, time_steps=${params.timeSteps})`;
-  }
-
   function entryBody(entry) {
     const params = entry.params;
     const body = { simulator: entry.id, time_steps: params.timeSteps };
@@ -936,26 +928,33 @@
   function simulatorCall(entry, name, backendName) {
     const params = entry.params;
     const block = blockById("simulator", entry.id);
-    if (!params || !block) return "";
-    if (block.observables) return qutipCall(name, params);
-    const className = entry.id === "trotterization" ? "TrotterizationSimulator" : "SplitJMatrixSimulator";
-    const orderLine = `,\n    order=${params.order}`;
+    if (!params || !block?.setup) return "";
+    const total = settingNumber("total");
+    const added = usingAddedOperators();
+    let hamiltonians = "model.local_hamiltonians";
+    let lindblads = "model.c_ops_local";
+    if (block.observables) {
+      hamiltonians = added ? "qutip_hamiltonians" : "model.full_hamiltonians";
+      lindblads = added ? "lindblads_full" : "model.c_ops_full";
+    } else if (added) {
+      hamiltonians = "circuit_hamiltonians";
+      lindblads = "lindblads";
+    }
     const sites = selectedSites(qubitCount());
-    const xLine = page.selection.measure === "x" ? `,\n    basis=${xBasis(sites)}` : "";
-    const hamiltonians = usingAddedOperators() ? "circuit_hamiltonians" : "model.local_hamiltonians";
-    const lindblads = usingAddedOperators() ? "lindblads" : "model.c_ops_local";
-    return `${name} = ${className}(
-    ${hamiltonians},
-    ${lindblads},
-    state,
-    num_qubits=${systemQubits()},
-    total_time=${pyFloat(settingNumber("total"))},
-    time_steps=${params.timeSteps},
-    num_steps=${params.numSteps},
-    trotter_depth=${params.trotterDepth}${orderLine},
-    seed=${params.seed}${xLine},
-    circuit_backend=${backendName},
-)`;
+    const basis = page.selection.measure === "x" ? `,\n    basis=${xBasis(sites)}` : "";
+    return block.setup
+      .replaceAll("{name}", name)
+      .replaceAll("{hamiltonians}", hamiltonians)
+      .replaceAll("{lindblads}", lindblads)
+      .replaceAll("{qubits}", systemQubits())
+      .replaceAll("{total}", total == null ? "" : pyFloat(total))
+      .replaceAll("{time_steps}", String(params.timeSteps ?? ""))
+      .replaceAll("{num_steps}", String(params.numSteps ?? ""))
+      .replaceAll("{trotter_depth}", String(params.trotterDepth ?? ""))
+      .replaceAll("{order}", String(params.order ?? ""))
+      .replaceAll("{seed}", String(params.seed ?? ""))
+      .replaceAll("{basis}", basis)
+      .replaceAll("{backend}", backendName);
   }
 
   function backendClass(backendId) {
@@ -1037,10 +1036,8 @@
   }
 
   function simulatorClass(entry) {
-    const block = blockById("simulator", entry.id);
-    if (!block) return "";
-    if (block.observables) return "QutipSimulator";
-    return entry.id === "trotterization" ? "TrotterizationSimulator" : "SplitJMatrixSimulator";
+    const setup = blockById("simulator", entry.id)?.setup ?? "";
+    return setup.match(/=\s*([A-Za-z0-9_]+)/)?.[1] ?? "";
   }
 
   function simulatorImport() {

@@ -287,9 +287,8 @@ function positiveIntText(value) {
 }
 
 function freshParams(id) {
-  if (id === "qutip") return { timeSteps: "101" };
-  const params = { timeSteps: "11", numSteps: "4", trotterDepth: "1", seed: "0", order: "1" };
-  return params;
+  if (isReference({ id })) return { timeSteps: "101" };
+  return { timeSteps: "11", numSteps: "4", trotterDepth: "1", seed: "0", order: "1" };
 }
 
 function simParamsReady() {
