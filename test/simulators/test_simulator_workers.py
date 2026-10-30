@@ -19,7 +19,7 @@ import shadowsim.simulators._time_points as time_points
 import shadowsim.simulators.splitjmatrix_simulator as splitj_module
 import shadowsim.simulators.trotterization_simulator as trotter_module
 from shadowsim.core import LocalHamiltonian, State
-from shadowsim.simulators import SplitJMatrixSimulator, TrotterizationSimulator
+from shadowsim.simulators import Measurement, SplitJMatrixSimulator, TrotterizationSimulator
 
 X = np.array([[0.0, 1.0], [1.0, 0.0]], dtype=np.complex128)
 _TOTAL_TIME = float(np.pi / 2)
@@ -52,12 +52,6 @@ def _make_split(**kwargs: object) -> SplitJMatrixSimulator:
     return SplitJMatrixSimulator(**_settings(**kwargs))
 
 
-def _make_split_system(**kwargs: object) -> SplitJMatrixSimulator:
-    """Measure the system qubit. Split J's ancilla occupies bit 0."""
-    kwargs.setdefault("measurement_groups", [1])
-    return _make_split(**kwargs)
-
-
 def _make_trotter(**kwargs: object) -> TrotterizationSimulator:
     return TrotterizationSimulator(**_settings(**kwargs))
 
@@ -67,18 +61,21 @@ _SIMULATORS = [
     pytest.param(_make_split, id="split_j"),
     pytest.param(_make_trotter, id="trotter"),
 ]
-_REAL_SIMULATORS = [
-    pytest.param(_make_split_system, id="split_j"),
-    pytest.param(_make_trotter, id="trotter"),
-]
 
 
 def _counts_for_time(args: tuple[object, ...], time_index: int, *, later: float) -> dict[str, int]:
-    """Return a sure ``|0>`` or ``|1>`` count, so a swapped time is visible."""
+    """Return a sure ``|0>`` or ``|1>`` count, so a swapped time is visible.
+
+    Keys have two bits, so Split J still has a system bit after dropping its ancilla.
+    """
     t = float(args[time_index])  # type: ignore[arg-type]
     if np.isclose(t, later):
-        return {"1": 4}
-    return {"0": 4}
+        return {"11": 4}
+    return {"00": 4}
+
+
+def _population(sim: SplitJMatrixSimulator | TrotterizationSimulator) -> np.ndarray:
+    return sim.measure([Measurement.population(0)]).observables[0]
 
 
 class _LastFinishesFirst:
@@ -155,15 +152,19 @@ class _RunSubmitted:
         return None
 
 
-@pytest.mark.parametrize("make", _REAL_SIMULATORS)
+@pytest.mark.parametrize("make", _SIMULATORS)
 def test_workers_match_the_serial_trace(make: _Make) -> None:
-    serial = make(workers=1).simulate()
-    parallel = make(workers=2).simulate()
+    serial = make(workers=1)
+    parallel = make(workers=2)
+    serial_counts = serial.simulate().counts
+    parallel_counts = parallel.simulate().counts
 
-    assert len(serial.observables[0]) >= 2
-    assert not np.isclose(serial.observables[0][0], serial.observables[0][1])
-    for left, right in zip(serial.observables, parallel.observables, strict=True):
-        assert np.array_equal(left, right)
+    assert serial_counts is not None
+    assert len(serial_counts) >= 2
+    assert serial_counts == parallel_counts
+    curve = _population(serial)
+    assert not np.isclose(curve[0], curve[1])
+    assert np.array_equal(curve, _population(parallel))
 
 
 @pytest.mark.parametrize(
@@ -190,9 +191,9 @@ def test_out_of_order_completion_keeps_tlist_order(
     monkeypatch.setattr(module, circuit_name, fake_counts)
     monkeypatch.setattr(time_points, "ProcessPoolExecutor", _LastFinishesFirst)
 
-    result = sim.simulate()
+    sim.simulate()
 
-    assert np.array_equal(result.observables[0], [0.0, 1.0])
+    assert np.array_equal(_population(sim), [0.0, 1.0])
     assert seen == [(1, 2), (0, 2)]
 
 

@@ -391,6 +391,36 @@ def test_save_drops_states_archive_when_states_absent(tmp_path: Path):
     assert loaded.states is None
 
 
+def test_save_load_counts(tmp_path: Path):
+    out = tmp_path / "run"
+    counts = [{"00": 3, "11": 1}, {"01": 4}]
+    SimulationResult(times=np.array([0.0, 1.0]), observables=[], algorithm="counted", counts=counts).save(out)
+    assert json.loads((out / "counts.json").read_text(encoding="utf-8")) == counts
+    loaded = SimulationResult.load(out)
+    assert loaded.counts == counts
+
+    SimulationResult(times=np.array([0.0]), observables=[np.array([1.0])], algorithm="uncounted").save(out)
+    assert not (out / "counts.json").exists()
+    assert SimulationResult.load(out).counts is None
+
+
+def test_load_missing_counts_file(tmp_path: Path):
+    out = tmp_path / "run"
+    SimulationResult(times=np.array([0.0]), observables=[], algorithm="counted", counts=[{"0": 1}]).save(out)
+    (out / "counts.json").unlink()
+    with pytest.raises(FileNotFoundError, match="claims counts"):
+        SimulationResult.load(out)
+
+
+@pytest.mark.parametrize("payload", [{"0": 1}, [{"0": 1.5}], [{"0": True}], ["00"]])
+def test_load_rejects_malformed_counts(tmp_path: Path, payload: object):
+    out = tmp_path / "run"
+    SimulationResult(times=np.array([0.0]), observables=[], algorithm="counted", counts=[{"0": 1}]).save(out)
+    (out / "counts.json").write_text(json.dumps(payload), encoding="utf-8")
+    with pytest.raises(ValueError, match="counts"):
+        SimulationResult.load(out)
+
+
 def test_load_missing_observables(tmp_path: Path):
     out = _saved(tmp_path / "run")
     (out / "observables.npz").unlink()

@@ -17,7 +17,15 @@ import numpy as np
 import pytest
 
 from shadowsim.backends import listed_backends
-from shadowsim.cli.run import _initial_state, _observable_labels, _series_name, build_simulator, run_page
+from shadowsim.cli.run import (
+    _initial_state,
+    _measured_result,
+    _measurements,
+    _observable_labels,
+    _series_name,
+    build_simulator,
+    run_page,
+)
 from shadowsim.cli.serve import _Handler
 from shadowsim.models import (
     ising,
@@ -28,7 +36,6 @@ from shadowsim.models import (
 )
 from shadowsim.models.catalog import _describe_models, listed_model_terms, listed_models
 from shadowsim.simulators.catalog import _describe_simulator, listed_simulators
-from shadowsim.simulators.reducers import expectation_x, expectation_z
 from shadowsim.simulators.result import _resource_record
 
 
@@ -714,7 +721,7 @@ def test_export_writes_benchmark_metrics_to_a_json_file(tmp_path: Path) -> None:
 def test_benchmark_requires_a_recorded_result(monkeypatch: pytest.MonkeyPatch) -> None:
     pytest.importorskip("qutip")
     monkeypatch.setattr("shadowsim.cli.run.Benchmark.run", lambda self: None)
-    with pytest.raises(ValueError, match="did not record a result"):
+    with pytest.raises(ValueError, match="Results are not available"):
         run_page(
             _selection(
                 simulators=[
@@ -963,7 +970,8 @@ def test_circuit_simulator_runs_ising_on_aer(simulator_id: str) -> None:
     assert simulator.num_steps == 4
     assert simulator.circuit_backend.shots == 256
     assert simulator.seed == 0
-    result = simulator.simulate()
+    simulator.simulate()
+    result = _measured_result(simulator, _selection(simulator=simulator_id))
     assert len(result.times) == 11
     assert len(result.observables) == 2
     assert all(len(curve) == 11 for curve in result.observables)
@@ -991,19 +999,84 @@ def test_qutip_time_steps_come_from_the_selection() -> None:
 
 
 @pytest.mark.qiskit
-def test_circuit_simulator_measures_the_selected_qubit() -> None:
+def test_circuit_simulator_records_counts_and_measures_the_selected_qubit() -> None:
     pytest.importorskip("qiskit_aer")
-    simulator = build_simulator(_selection(simulator="trotterization", sites=[0]))
-    assert simulator.measurement_groups == [[0]]
-    assert simulator.reducers == [expectation_z]
+    selection = _selection(simulator="trotterization", sites=[0], time_steps=2)
+    simulator = build_simulator(selection)
+    assert simulator.basis == "Z" * simulator.num_qubits
+    assert simulator.simulate().observables == []
+    result = _measured_result(simulator, selection)
+    assert result.metadata["measurements"] == [
+        {"qubits": [0], "expression": '(counts["0"] - counts["1"]) / shots', "label": "expectation on 0"}
+    ]
 
 
 @pytest.mark.qiskit
-def test_split_j_shifts_z_expectation_past_the_ancilla() -> None:
+def test_split_j_reads_system_qubits_without_an_ancilla_offset() -> None:
     pytest.importorskip("qiskit_aer")
-    simulator = build_simulator(_selection(simulator="splitjmatrix", sites=[0, 1]))
-    assert simulator.measurement_groups == [[1], [2]]
-    assert simulator.reducers == [expectation_z, expectation_z]
+    selection = _selection(simulator="splitjmatrix", sites=[0, 1], time_steps=1)
+    simulator = build_simulator(selection)
+    simulator.simulate()
+    result = _measured_result(simulator, selection)
+    assert [item["qubits"] for item in result.metadata["measurements"]] == [[0], [1]]
+    np.testing.assert_allclose(np.array(result.observables), [[-1.0], [1.0]])
+
+
+@pytest.mark.qiskit
+def test_counts_measurement_evaluates_the_expression_on_aer() -> None:
+    pytest.importorskip("qiskit_aer")
+    selection = _selection(
+        simulator="trotterization",
+        measure="counts",
+        sites=[1, 0],
+        expression='counts["01"] / shots',
+        time_steps=1,
+    )
+    simulator = build_simulator(selection)
+    simulator.simulate()
+    result = _measured_result(simulator, selection)
+    assert result.metadata["measurements"] == [
+        {"qubits": [1, 0], "expression": 'counts["01"] / shots', "label": 'counts["01"] / shots'}
+    ]
+    np.testing.assert_allclose(result.observables[0], [1.0])
+
+
+@pytest.mark.parametrize(
+    ("extra", "message"),
+    [
+        ({"simulator": "qutip"}, "QuTiP returns Pauli expectations"),
+        ({"simulator": "trotterization", "backend": "paulipropagation"}, "PauliPropagation returns Pauli"),
+    ],
+)
+def test_counts_measurement_needs_aer(extra: dict[str, object], message: str) -> None:
+    selection = _selection(measure="counts", sites=[0], expression='counts["1"] / shots', **extra)
+    with pytest.raises(ValueError, match=message):
+        build_simulator(selection)
+
+
+@pytest.mark.parametrize(
+    ("expression", "message"),
+    [
+        (None, "needs an expression"),
+        ('counts["11"] / shots', "1 characters"),
+        ("__import__('os')", "cannot use"),
+    ],
+)
+def test_counts_measurement_rejects_a_bad_expression(expression: object, message: str) -> None:
+    selection = _selection(measure="counts", simulator="trotterization", sites=[0], expression=expression)
+    with pytest.raises(ValueError, match=message):
+        build_simulator(selection)
+
+
+@pytest.mark.qutip
+def test_qutip_result_is_already_measured() -> None:
+    pytest.importorskip("qutip")
+    selection = _selection(time_steps=2)
+    simulator = build_simulator(selection)
+    with pytest.raises(ValueError, match="Results are not available"):
+        _measured_result(simulator, selection)
+    simulated = simulator.simulate()
+    assert _measured_result(simulator, selection) is simulated
 
 
 @pytest.mark.qiskit
@@ -1035,10 +1108,14 @@ def test_series_name_drops_the_simulator_suffix() -> None:
 
 
 def test_observable_labels_name_each_measured_qubit() -> None:
-    assert _observable_labels("z", [0, 1]) == ["⟨Z⟩ on 0", "⟨Z⟩ on 1"]
-    assert _observable_labels("x", [1]) == ["⟨X⟩ on 1"]
+    assert _observable_labels({"measure": "z", "sites": [0, 1]}, 2) == ["⟨Z⟩ on 0", "⟨Z⟩ on 1"]
+    assert _observable_labels({"measure": "x", "sites": [1]}, 2) == ["⟨X⟩ on 1"]
+    counts = {"measure": "counts", "sites": [0, 1], "expression": ' counts["01"] / shots '}
+    assert _observable_labels(counts, 2) == ['counts["01"] / shots']
     with pytest.raises(ValueError, match="unknown measurement"):
-        _observable_labels("y", [0])
+        _observable_labels({"measure": "y", "sites": [0]}, 1)
+    with pytest.raises(ValueError, match="unknown measurement"):
+        _measurements({"measure": "y", "sites": [0]}, 1)
 
 
 @pytest.mark.qutip
@@ -1167,9 +1244,7 @@ def test_benchmark_rejects_a_simulator_that_is_not_an_object() -> None:
 def test_circuit_simulator_measures_x_expectation(simulator_id: str) -> None:
     pytest.importorskip("qiskit_aer")
     simulator = build_simulator(_selection(simulator=simulator_id, measure="x", sites=[1]))
-    assert simulator.x_qubits == [1]
-    assert simulator.reducers == [expectation_x]
-    assert simulator.measurement_groups == [[2] if simulator_id == "splitjmatrix" else [1]]
+    assert simulator.basis == "".join("X" if qubit == 1 else "Z" for qubit in range(simulator.num_qubits))
 
 
 def test_post_runs_rejects_malformed_json() -> None:

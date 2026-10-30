@@ -151,6 +151,25 @@ def _load_states(root: Path) -> list[np.ndarray]:
     raise FileNotFoundError(f"meta.json claims states but {archive} is missing")
 
 
+def _load_counts(root: Path) -> list[dict[str, int]]:
+    """Read ``counts.json``: one dict of bitstring to shot count per time point."""
+    path = root / "counts.json"
+    if not path.is_file():
+        raise FileNotFoundError(f"meta.json claims counts but {path} is missing")
+    raw = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(raw, list):
+        raise ValueError(f"{path.name} must be a list of counts")
+    counts: list[dict[str, int]] = []
+    for item in raw:
+        if not isinstance(item, dict) or not all(
+            isinstance(key, str) and isinstance(value, int) and not isinstance(value, bool)
+            for key, value in item.items()
+        ):
+            raise ValueError(f"{path.name} must map bitstrings to integer shot counts")
+        counts.append(dict(item))
+    return counts
+
+
 @dataclass(frozen=True)
 class SimulationResult:
     """Outputs from a simulator ``simulate()`` / ``run()`` call.
@@ -163,6 +182,8 @@ class SimulationResult:
         algorithm: Backend identifier (typically the simulator ``id``).
         runtime: Wall-clock seconds for the ``simulate()`` call, if recorded.
         metadata: Reproducibility and parameter metadata (version, params, …).
+        counts: One shot-count dict per entry of ``times`` (``None`` when the
+            backend does not sample). Bit ``i`` of a key is system qubit ``i``.
     """
 
     times: npt.NDArray[np.float64]
@@ -172,6 +193,7 @@ class SimulationResult:
     algorithm: str = ""
     runtime: float | None = None
     metadata: dict[str, Any] = field(default_factory=dict)
+    counts: list[dict[str, int]] | None = None
 
     def save(self, path: str | Path) -> Path:
         """Write this result to a directory as numeric arrays plus ``meta.json``.
@@ -182,6 +204,7 @@ class SimulationResult:
               times.npy
               observables.npz
               states.npz   # only when ``states`` is not None
+              counts.json  # only when ``counts`` is not None
               meta.json
 
         Traces and states keep their shapes, including jagged traces. Archives
@@ -197,6 +220,11 @@ class SimulationResult:
             states_path.unlink(missing_ok=True)
         else:
             _write_archive(states_path, self.states)
+        counts_path = out / "counts.json"
+        if self.counts is None:
+            counts_path.unlink(missing_ok=True)
+        else:
+            counts_path.write_text(json.dumps(self.counts, sort_keys=True) + "\n", encoding="utf-8")
         # Drop the previous object-array files so a re-save cannot be loaded as a pickle.
         (out / "observables.npy").unlink(missing_ok=True)
         (out / "states.npy").unlink(missing_ok=True)
@@ -206,6 +234,7 @@ class SimulationResult:
             "runtime": self.runtime,
             "metadata": self.metadata,
             "has_states": self.states is not None,
+            "has_counts": self.counts is not None,
         }
         (out / "meta.json").write_text(json.dumps(meta, indent=2, sort_keys=True) + "\n", encoding="utf-8")
         return out
@@ -231,6 +260,9 @@ class SimulationResult:
         states: list[np.ndarray] | None = None
         if meta.get("has_states", False):
             states = _load_states(root)
+        counts: list[dict[str, int]] | None = None
+        if meta.get("has_counts", False):
+            counts = _load_counts(root)
         return cls(
             times=times,
             observables=observables,
@@ -239,6 +271,7 @@ class SimulationResult:
             algorithm=str(meta.get("algorithm", "")),
             runtime=meta.get("runtime"),
             metadata=dict(meta.get("metadata") or {}),
+            counts=counts,
         )
 
 

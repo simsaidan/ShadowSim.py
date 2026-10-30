@@ -13,6 +13,7 @@ from shadowsim.core.hamiltonian import Hamiltonian
 from shadowsim.core.operator import Operator
 from shadowsim.core.state import State
 from shadowsim.simulators.job import SimulationJob, SimulationStatus
+from shadowsim.simulators.reducers import Measurement, apply_measurements
 from shadowsim.simulators.result import SimulationResult, package_version
 
 # QuTiP stores ndarray traces; shot-based backends store lists of floats.
@@ -46,6 +47,7 @@ class Simulator:
         self.id = id
         self.results: _Traces | None = None
         self.last_result: SimulationResult | None = None
+        self._simulated: SimulationResult | None = None
         self.tlist = np.linspace(0, self.total_time, self.time_steps)
         self._active_job: SimulationJob | None = None
         self._job_lock = threading.Lock()
@@ -114,6 +116,7 @@ class Simulator:
         runtime: float | None = None,
         seed: int | None = None,
         states: list[np.ndarray] | None = None,
+        counts: list[dict[str, int]] | None = None,
         **extra_meta: Any,
     ) -> SimulationResult:
         """Build a ``SimulationResult``, store it on ``self.last_result``, and return it.
@@ -138,7 +141,27 @@ class Simulator:
             algorithm=self.id,
             runtime=runtime,
             metadata=metadata,
+            counts=counts,
         )
+        self.last_result = result
+        self._simulated = result
+        return result
+
+    def measure(self, measurements: Sequence[Measurement]) -> SimulationResult:
+        """Read ``measurements`` from the last ``simulate()`` and make them the results.
+
+        ``results``, ``last_result``, plots, and benchmarks then show one curve
+        per measurement. Each call reads the simulated result again, so a second
+        call replaces the first.
+
+        Raises:
+            ValueError: Nothing has been simulated yet, or a measurement cannot
+                be read from the result (see :func:`apply_measurements`).
+        """
+        if self._simulated is None:
+            raise ValueError("Results are not available. Please run the simulation first.")
+        result = apply_measurements(self._simulated, measurements)
+        self.results = [curve.copy() for curve in result.observables]
         self.last_result = result
         return result
 
