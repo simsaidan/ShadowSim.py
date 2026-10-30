@@ -11,9 +11,19 @@ Registers Hypothesis settings profiles:
 
 Select a profile with ``HYPOTHESIS_PROFILE``, ``pytest --hypothesis-profile``,
 or automatically via the ``CI`` environment variable (set by GitHub Actions).
+
+Qulacs vendors ``libgomp``. On Linux that library needs static TLS, and the
+reserve is gone once NumPy, SciPy, and QuTiP have been imported
+(``cannot allocate memory in static TLS block``). Load Qulacs before those
+test modules when the extra is installed.
 """
 
+import importlib.util
 import os
+
+# Execute the import here, before collection imports the scientific stack.
+if importlib.util.find_spec("qulacs") is not None:
+    import qulacs  # noqa: F401
 
 from hypothesis import settings
 
