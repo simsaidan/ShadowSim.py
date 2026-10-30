@@ -19,7 +19,7 @@ from shadowsim.backends.aer import AerCircuitBackend
 from shadowsim.backends.circuit import from_qiskit, to_qiskit
 from shadowsim.backends.program import Barrier, Hadamard, Measure, Prepare, Program, Reset, Unitary
 from shadowsim.core import LocalHamiltonian, State
-from shadowsim.simulators import SplitJMatrixSimulator, TrotterizationSimulator
+from shadowsim.simulators import Measurement, SplitJMatrixSimulator, TrotterizationSimulator
 
 Z = np.array([[1.0, 0.0], [0.0, -1.0]], dtype=np.complex128)
 _SIMULATORS = [SplitJMatrixSimulator, TrotterizationSimulator]
@@ -59,7 +59,7 @@ class _RecordingBackend:
 
     def run_counts(self, circuit, *, shots, seed):
         self.calls.append((shots, seed))
-        return {"1": 4}
+        return {"1" * circuit.num_qubits: 4}
 
 
 @pytest.mark.parametrize("cls", _SIMULATORS)
@@ -95,8 +95,9 @@ def test_one_fake_backend_drives_both_simulators(monkeypatch):
     backend = _RecordingBackend()
 
     for cls in _SIMULATORS:
-        result = cls(**_settings(circuit_backend=backend)).simulate()
-        assert result.metadata["circuit_backend"] == "recording"
+        simulator = cls(**_settings(circuit_backend=backend))
+        assert simulator.simulate().metadata["circuit_backend"] == "recording"
+        result = simulator.measure([Measurement.population(0)])
         np.testing.assert_allclose(result.observables[0], [1.0])
 
     assert backend.calls == [(4, 7), (4, 7)]

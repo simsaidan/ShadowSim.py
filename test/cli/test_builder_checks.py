@@ -398,16 +398,124 @@ def test_preview_imports_are_explicit() -> None:
 
     circuit = _call("previewText", _circuit_page())
     assert isinstance(circuit, str)
-    assert "from shadowsim.simulators import TrotterizationSimulator, expectation_z" in circuit
+    assert "from shadowsim.simulators import Measurement, TrotterizationSimulator" in circuit
+    assert "measurements = [Measurement.expectation(i) for i in range(model.num_qubits)]" in circuit
+    assert "measurement_groups" not in circuit
+    assert "reducers" not in circuit
     assert "import *" not in circuit
 
     measured = _circuit_page()
     measured["selection"]["measure"] = "x"
+    measured["measureSites"] = [1]
     measured["blocks"]["measure"].append({"id": "x", "title": "X expectation", "phrase": "X expectation on each qubit"})
     text = _call("previewText", measured)
     assert isinstance(text, str)
-    assert "from shadowsim.simulators import TrotterizationSimulator, expectation_x" in text
-    assert "expectation_z" not in text
+    assert 'basis="ZX"' in text
+    assert "measurements = [Measurement.expectation(1)]" in text
+    assert text.endswith("sim.simulate()\nresult = sim.measure(measurements)\nsim.plot_results()")
+
+
+def _counts_page(expression: str = 'counts["01"] / shots') -> dict[str, Any]:
+    page = _circuit_page()
+    page["blocks"]["measure"].append({"id": "counts", "title": "Counts", "phrase": "Counts on all qubits"})
+    page["selection"]["measure"] = "counts"
+    page["countsExpression"] = expression
+    return page
+
+
+@pytest.mark.parametrize(
+    ("expression", "width", "problem"),
+    [
+        ('counts["01"] / shots', 2, None),
+        ("-(counts['1'] - counts['0']) ** 2 / shots + 1e-3", 1, None),
+        ("2 ** -counts['1'] * .5", 1, None),
+        ("  ", 1, "Enter a counts expression."),
+        ("1" * 1001, 1, "Expression must be at most 1000 characters."),
+        ('counts["0"]', 2, "Counts keys must be 2 characters of 0 and 1."),
+        ('counts["2"]', 1, "Counts keys must be 1 characters of 0 and 1."),
+        ("__import__('os')", 1, "BAD"),
+        ("shots shots", 1, "BAD"),
+        ("counts[0]", 1, "BAD"),
+        ("counts['0'", 1, "BAD"),
+        ("(shots", 1, "BAD"),
+        ("shots +", 1, "BAD"),
+        ("shots * ", 1, "BAD"),
+        ("1 % 2", 1, "BAD"),
+        ('counts["0\\"]', 1, "BAD"),
+        ("", 1, "Enter a counts expression."),
+    ],
+)
+def test_expression_problem_mirrors_the_python_language(expression: str, width: int, problem: str | None) -> None:
+    allowed = 'Use numbers, shots, counts["01"], parentheses, and + - * / **.'
+    expected = allowed if problem == "BAD" else problem
+    assert _call("expressionProblem", _counts_page(), expression, width) == expected
+
+
+def test_counts_needs_aer_and_a_valid_expression() -> None:
+    page = _counts_page()
+    assert _call("countsProblem", page) is None
+    assert _call("runAllowed", page) is True
+
+    page["countsExpression"] = 'counts["1"] / shots'
+    assert _call("countsProblem", page) == "Counts keys must be 2 characters of 0 and 1."
+    assert _call("countsStatus", page, True) == "Counts keys must be 2 characters of 0 and 1 to preview the script."
+    assert _call("runAllowed", page) is False
+    assert _call("previewText", page) == ""
+
+    page["measureSites"] = [1]
+    assert _call("countsProblem", page) is None
+    page["measureSites"] = []
+    assert _call("countsProblem", page) is None
+    page["settings"]["qubits"] = ""
+    assert _call("countsProblem", page) is None
+
+    qutip = _qutip_page()
+    qutip["blocks"]["measure"].append({"id": "counts", "title": "Counts", "phrase": "Counts on all qubits"})
+    qutip["selection"]["measure"] = "counts"
+    qutip["countsExpression"] = 'counts["01"] / shots'
+    assert _call("countsProblem", qutip) == "Counts needs Aer. QuTiP and PauliPropagation return expectations."
+
+    pauli = _counts_page()
+    pauli["blocks"]["backend"].append({"id": "paulipropagation", "phrase": "PauliPropagation", "shots": False})
+    pauli["placedSims"][0]["backend"] = "paulipropagation"
+    assert _call("countsProblem", pauli) == "Counts needs Aer. QuTiP and PauliPropagation return expectations."
+    assert _call("countsStatus", _qutip_page(), False) is None
+
+
+def test_counts_preview_names_the_qubits_and_expression() -> None:
+    page = _counts_page("counts['1'] / shots")
+    page["measureSites"] = [1]
+    text = _call("previewText", page)
+    assert "measurements = [Measurement((1,), \"counts['1'] / shots\")]" in text
+
+    page = _counts_page()
+    text = _call("previewText", page)
+    assert "measurements = [Measurement((0, 1), 'counts[\"01\"] / shots')]" in text
+
+
+def test_benchmark_preview_measures_each_circuit_simulator() -> None:
+    page = _circuit_page()
+    page["blocks"]["simulator"].append({"id": "qutip", "title": "QuTiP", "observables": True})
+    page["placedSims"].insert(0, {"id": "qutip", "params": {"timeSteps": "11"}})
+    text = _call("previewText", page)
+    assert "benchmark.run()\nsim_2.measure(measurements)\nbenchmark.save_result_plot()" in text
+    assert "sim_1.measure" not in text
+
+
+@pytest.mark.qiskit
+def test_counts_preview_runs(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    pytest.importorskip("qiskit_aer")
+    page = _counts_page('counts["00"] / shots')
+    page["placedThens"] = ["save"]
+    page["selection"]["then"] = "save"
+    text = _call("previewText", page)
+    monkeypatch.chdir(tmp_path)
+    namespace: dict[str, Any] = {}
+    exec(compile(text, "preview", "exec"), namespace)
+    result = namespace["result"]
+    assert result.metadata["measurements"][0]["expression"] == 'counts["00"] / shots'
+    assert result.observables[0][0] == 1.0
+    assert (tmp_path / "results" / "run1" / "counts.json").is_file()
 
 
 def test_hamiltonian_problems_use_different_messages() -> None:

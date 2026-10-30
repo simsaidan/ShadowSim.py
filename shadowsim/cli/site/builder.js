@@ -51,6 +51,7 @@ const BLOCKS = {
   measure: [
     { id: "z", title: "Z expectation", detail: "On each qubit", phrase: "Z expectation on each qubit" },
     { id: "x", title: "X expectation", detail: "On each qubit", phrase: "X expectation on each qubit" },
+    { id: "counts", title: "Counts", detail: "Expression on all qubits", phrase: "Counts on all qubits" },
   ],
   then: [
     { id: "plot", title: "Plot results", detail: "Curves for each observable", phrase: "plot results" },
@@ -110,6 +111,7 @@ let exportOpen = false;
 let stateOpen = false;
 let measureOpen = false;
 let measureSites = null;
+let countsExpression = "";
 const DEFAULT_SHOTS = "256";
 
 let dragging = null;
@@ -164,6 +166,7 @@ function currentPage() {
     savePath,
     exportPath,
     measureSites,
+    countsExpression,
     qubitsSource,
     stateLimits: STATE_LIMITS,
     maxEmitters: MAX_EMITTERS,
@@ -319,6 +322,10 @@ function shotsReady() {
 
 function measureSitesReady() {
   return check(checks.measureSitesReady);
+}
+
+function countsStatus(preview) {
+  return check(checks.countsStatus, preview);
 }
 
 function numberProblem(preview) {
@@ -1847,6 +1854,7 @@ function statusMessage() {
   if (!simParamsReady()) return "Enter simulator parameters.";
   if (!sameTimeGrid()) return "Use the same number of time steps for every simulator.";
   if (!measureSitesReady()) return "Pick at least one qubit.";
+  if (countsStatus(false)) return countsStatus(false);
   if (!shotsReady()) return "Enter a shot count.";
   if (!check(checks.backendFieldsReady)) return check(checks.backendFieldStatus, false);
   if (!savePathReady()) return pathMessage(false);
@@ -1927,6 +1935,7 @@ function codeBody() {
     else if (!simParamsReady()) message = "Enter simulator parameters to preview the script.";
     else if (!sameTimeGrid()) message = "Use the same number of time steps to preview the script.";
     else if (!measureSitesReady()) message = "Pick at least one qubit to preview the script.";
+    else if (countsStatus(true)) message = countsStatus(true);
     else if (!shotsReady()) message = "Enter a shot count to preview the script.";
     else if (!check(checks.backendFieldsReady)) message = check(checks.backendFieldStatus, true);
     else message = pathMessage(true);
@@ -2487,6 +2496,7 @@ function runRequest() {
     angles: numberList(angleText, STATE_LIMITS.angle),
     amplitudes: numberList(amplitudeText, STATE_LIMITS.amplitude),
     sites: explicitSites(),
+    ...(selection.measure === "counts" ? { expression: countsExpression.trim() } : {}),
     ...(placedSims[0] ? entryBody(placedSims[0]) : {}),
     simulators: placedSims.map(entryBody),
     then: placedThens[0] ?? null,
@@ -2668,8 +2678,13 @@ function measureFields() {
           checked: chosen.has(site),
           onchange: (event) => {
             toggleMeasureSite(site, event.target.checked);
-            const detail = event.target.closest(".chip")?.querySelector(".measure-detail");
+            const chip = event.target.closest(".chip");
+            const detail = chip?.querySelector(".measure-detail");
             if (detail) detail.textContent = measureDetail(qubitCount());
+            const hint = chip?.querySelector(".counts-hint");
+            if (hint) hint.textContent = countsHint();
+            const input = chip?.querySelector(".counts-field input");
+            if (input) input.placeholder = countsPlaceholder();
             refreshSummaryAndPreview();
           },
         }),
@@ -2678,6 +2693,38 @@ function measureFields() {
     );
   }
   return el("div", { className: "measure-fields" }, ...boxes);
+}
+
+function countsHint() {
+  const sites = selectedSites(qubitCount());
+  if (!sites.length) return "Pick at least one qubit.";
+  const label = sites.length === 1 ? "qubit" : "qubits";
+  return `Keys list ${label} ${sites.join(", ")} in that order. shots is the total.`;
+}
+
+function countsPlaceholder() {
+  const width = Math.max(selectedSites(qubitCount()).length, 1);
+  return `counts["${"0".repeat(width)}"] / shots`;
+}
+
+function countsField() {
+  return el(
+    "label",
+    { className: "counts-field" },
+    "Expression",
+    el("input", {
+      type: "text",
+      "aria-label": "Counts expression",
+      value: countsExpression,
+      placeholder: countsPlaceholder(),
+      spellcheck: "false",
+      oninput: (event) => {
+        countsExpression = event.target.value;
+        refreshSummaryAndPreview();
+      },
+    }),
+    el("span", { className: "counts-hint" }, countsHint()),
+  );
 }
 
 function syncMeasureChip() {
@@ -2691,6 +2738,7 @@ function syncMeasureChip() {
     chip.classList.remove("is-editing");
     chip.querySelector(".done")?.remove();
     chip.querySelector(".measure-fields")?.remove();
+    chip.querySelector(".counts-field")?.remove();
     return;
   }
   if (!measureOpen) return;
@@ -2698,6 +2746,10 @@ function syncMeasureChip() {
   const next = measureFields();
   if (fields) fields.replaceWith(next);
   else chip.append(next);
+  if (selection.measure !== "counts") return;
+  const hint = chip.querySelector(".counts-hint");
+  if (hint) hint.textContent = countsHint();
+  else chip.append(countsField());
 }
 
 function measureChip(block) {
@@ -2754,6 +2806,7 @@ function measureChip(block) {
       ),
     ),
     open ? measureFields() : null,
+    open && block.id === "counts" ? countsField() : null,
   );
 }
 
@@ -3040,6 +3093,7 @@ function boardSnapshot() {
     savePath,
     exportPath,
     measureSites: Array.isArray(measureSites) ? [...measureSites] : null,
+    countsExpression,
   };
 }
 
@@ -3133,6 +3187,7 @@ function applyBoard(snapshot) {
   savePath = storedText(snapshot.savePath, DEFAULT_SAVE_PATH);
   exportPath = storedText(snapshot.exportPath, DEFAULT_EXPORT_PATH);
   measureSites = storedSites(snapshot.measureSites);
+  countsExpression = storedText(snapshot.countsExpression, "");
   stateOpen = false;
   measureOpen = false;
   saveOpen = false;
@@ -3207,6 +3262,7 @@ function emptyBoard() {
   savePath = DEFAULT_SAVE_PATH;
   exportPath = DEFAULT_EXPORT_PATH;
   measureSites = null;
+  countsExpression = "";
   stateOpen = false;
   measureOpen = false;
   saveOpen = false;

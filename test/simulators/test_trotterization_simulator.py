@@ -15,10 +15,13 @@ import shadowsim.backends.aer as aer_backend_module
 import shadowsim.simulators.trotterization_simulator as trotter_module
 from shadowsim.benchmarking import Benchmark
 from shadowsim.core import Hamiltonian, LocalHamiltonian, Operator, State
-from shadowsim.simulators import TrotterizationSimulator, expectation_z, population_one
+from shadowsim.simulators import (
+    Measurement,
+    TrotterizationSimulator,
+    apply_measurements,
+)
 from shadowsim.simulators.simulator import Simulator
 from shadowsim.simulators.trotterization_simulator import (
-    _trace_qubits,
     _trotter_circuit_counts,
     _trotter_slice_unitaries,
 )
@@ -138,86 +141,63 @@ def test_trotterization_simulator_reads_pauli_expectations():
         "seed": 3,
         "circuit_backend": backend,
     }
-    simulator = TrotterizationSimulator(
-        **shared,
-        measurement_groups=[0],
-        reducers=[expectation_z],
-    )
+    simulator = TrotterizationSimulator(**shared)
     expectations = simulator.simulate()
-    populations = TrotterizationSimulator(
-        **shared,
-        measurement_groups=[[0]],
-        reducers=[population_one],
-    ).simulate()
 
     assert expectations.observables[0].tolist() == [0.5, 0.5]
-    assert populations.observables[0].tolist() == [0.25, 0.25]
-    assert backend.qubits == [[0], [0], [0], [0]]
+    assert backend.qubits == [[0], [0]]
     assert backend.measured is False
+    assert expectations.counts is None
     assert "shots=" not in str(simulator)
+    with pytest.raises(ValueError, match="the expectations backend returns Pauli expectations"):
+        apply_measurements(expectations, [Measurement((0,), 'counts["0"] / shots')])
 
 
-def test_trotterization_simulator_rejects_a_boolean_pauli_group():
+def test_expectation_backend_reads_every_qubit_without_groups():
     class Expectations:
         name = "expectations"
 
-    with pytest.raises(ValueError, match="one qubit"):
-        TrotterizationSimulator(
-            [LocalHamiltonian(Z, [0])],
-            [],
-            State(np.array([1.0, 0.0], dtype=np.complex128), 1),
-            num_qubits=1,
-            total_time=0.1,
-            time_steps=1,
-            num_steps=1,
-            measurement_groups=[True],  # type: ignore[list-item]
-            reducers=[population_one],
-            circuit_backend=Expectations(),  # type: ignore[arg-type]
-        ).simulate()
-
-
-def test_trotterization_simulator_rejects_an_unsupported_pauli_reducer():
-    class Expectations:
-        name = "expectations"
+        def __init__(self) -> None:
+            self.qubits: list[list[int]] = []
 
         def z_expectations(self, circuit, qubits, *, shots, seed):
-            raise AssertionError("expectations")
+            self.qubits.append(list(qubits))
+            return [0.5, -0.25]
 
-    with pytest.raises(ValueError, match="Z and X"):
-        TrotterizationSimulator(
-            [LocalHamiltonian(Z, [0])],
-            [],
-            State(np.array([1.0, 0.0], dtype=np.complex128), 1),
-            num_qubits=1,
-            total_time=0.1,
-            time_steps=1,
-            num_steps=1,
-            measurement_groups=[0],
-            reducers=[lambda counts: 0.0],
-            circuit_backend=Expectations(),  # type: ignore[arg-type]
-        ).simulate()
+    backend = Expectations()
+    simulator = TrotterizationSimulator(
+        [LocalHamiltonian(Z, [0])],
+        [],
+        State(np.array([1.0, 0.0, 0.0, 0.0], dtype=np.complex128), 2),
+        num_qubits=2,
+        total_time=0.2,
+        time_steps=2,
+        num_steps=1,
+        circuit_backend=backend,
+    )
+    simulated = simulator.simulate()
+
+    assert backend.qubits == [[0, 1], [0, 1]]
+    assert simulated.metadata["observable_kind"] == "qubit_expectations"
+    assert [curve.tolist() for curve in simulated.observables] == [[0.5, 0.5], [-0.25, -0.25]]
+    measured = simulator.measure([Measurement.population(1), Measurement.expectation(0)])
+    assert [curve.tolist() for curve in measured.observables] == [[0.625, 0.625], [0.5, 0.5]]
+    assert "observable_kind" not in measured.metadata
+    assert simulator.last_result is measured
+    assert [curve.tolist() for curve in simulator.get_results()] == [[0.625, 0.625], [0.5, 0.5]]
+    again = simulator.measure([Measurement.expectation(1)])
+    assert again.observables[0].tolist() == [-0.25, -0.25]
+    with pytest.raises(ValueError, match="returns Pauli expectations, not shot counts"):
+        simulator.measure([Measurement((0,), 'counts["0"] / shots')])
+    with pytest.raises(ValueError, match="returns Pauli expectations, not shot counts"):
+        simulator.measure([Measurement((0, 1), '(counts["00"] - counts["11"]) / shots')])
+    with pytest.raises(ValueError, match="the result has 2 qubits, but this measurement reads qubit 2"):
+        simulator.measure([Measurement.expectation(2)])
 
 
-def test_trotterization_simulator_rejects_a_joint_pauli_group():
-    class Expectations:
-        name = "expectations"
-
-        def z_expectations(self, circuit, qubits, *, shots, seed):
-            raise AssertionError("expectations")
-
-    with pytest.raises(ValueError, match="one qubit"):
-        TrotterizationSimulator(
-            [LocalHamiltonian(Z, [0])],
-            [],
-            State(np.array([1.0, 0.0], dtype=np.complex128), 1),
-            num_qubits=1,
-            total_time=0.1,
-            time_steps=1,
-            num_steps=1,
-            measurement_groups=[[0, 0]],
-            reducers=[population_one],
-            circuit_backend=Expectations(),  # type: ignore[arg-type]
-        ).simulate()
+def test_measure_needs_a_simulation_first():
+    with pytest.raises(ValueError, match="run the simulation first"):
+        _tiny().measure([Measurement.population(0)])
 
 
 def test_trotterization_simulator_rejects_parallel_pauli_runs():
@@ -294,11 +274,6 @@ def test_trotterization_simulator_rejects_non_int_workers():
         _tiny(workers=True)  # type: ignore[arg-type]
 
 
-def test_trotterization_simulator_rejects_reducer_length_mismatch():
-    with pytest.raises(ValueError, match="reducers and measurement_groups"):
-        _tiny(measurement_groups=[0], reducers=[population_one, population_one])
-
-
 def test_trotterization_simulator_forwards_seed(monkeypatch):
     seen_seeds = []
 
@@ -363,7 +338,7 @@ def test_metrics_circuit_matches_the_final_sampling_circuit() -> None:
             return {"0": 1}
 
     backend = Recording()
-    sim = _tiny(circuit_backend=backend, time_steps=3, total_time=0.4, x_qubits=[0])
+    sim = _tiny(circuit_backend=backend, time_steps=3, total_time=0.4, basis="X")
     _trotter_circuit_counts(
         sim.hamiltonians,
         sim.initial_state,
@@ -375,7 +350,7 @@ def test_metrics_circuit_matches_the_final_sampling_circuit() -> None:
         shots=1,
         seed=sim.seed,
         circuit_backend=backend,  # type: ignore[arg-type]
-        x_qubits=sim.x_qubits,
+        basis=sim.basis,
     )
     assert _instruction_signature(sim.metrics_circuit()) == _instruction_signature(backend.circuit)
 
@@ -398,7 +373,7 @@ def test_metrics_circuit_omits_measurement_without_a_shot_budget() -> None:
     assert "measure" not in names
 
 
-def test_trotter_circuit_rotates_x_qubits_before_measurement() -> None:
+def _measured_rotations(basis: str) -> list[tuple[str, int]]:
     class Recording:
         name = "recording"
 
@@ -408,99 +383,105 @@ def test_trotter_circuit_rotates_x_qubits_before_measurement() -> None:
         def run_counts(self, circuit: object, *, shots: int, seed: int | None) -> dict[str, int]:
             del shots, seed
             self.circuit = circuit
-            return {"0": 1}
+            return {"0" * len(basis): 1}
 
     backend = Recording()
+    num_qubits = len(basis)
+    state = np.zeros(2**num_qubits, dtype=np.complex128)
+    state[0] = 1.0
     _trotter_circuit_counts(
         [LocalHamiltonian(Z, [0])],
-        State(np.array([1.0, 0.0, 0.0, 0.0], dtype=np.complex128), 2),
-        2,
+        State(state, num_qubits),
+        num_qubits,
         0.0,
         1,
         shots=1,
         seed=0,
         circuit_backend=backend,  # type: ignore[arg-type]
-        x_qubits=[1],
+        basis=basis,
     )
     circuit = backend.circuit
     assert circuit is not None
-    hadamards = [
-        circuit.find_bit(instruction.qubits[0]).index
+    return [
+        (instruction.operation.name, circuit.find_bit(instruction.qubits[0]).index)
         for instruction in circuit.data
-        if instruction.operation.name == "h"
+        if instruction.operation.name in {"h", "sdg"}
     ]
-    assert hadamards == [1]
 
 
-def test_trotter_circuit_rejects_a_bad_x_qubit() -> None:
+def test_trotter_circuit_rotates_each_qubit_into_its_basis() -> None:
+    assert _measured_rotations("ZXY") == [("h", 1), ("sdg", 2), ("h", 2)]
+
+
+def test_trotter_circuit_measures_z_by_default() -> None:
+    assert _measured_rotations("ZZ") == []
+
+
+@pytest.mark.parametrize("basis", ["Z", "ZZZ", "ZQ", "zx", 7])
+def test_trotter_circuit_rejects_a_bad_basis(basis: object) -> None:
     state = State(np.array([1.0, 0.0, 0.0, 0.0], dtype=np.complex128), 2)
-    with pytest.raises(ValueError, match="x_qubits must be indexes from 0 to 1"):
-        _trotter_circuit_counts([LocalHamiltonian(Z, [0])], state, 2, 0.0, 1, shots=1, seed=0, x_qubits=[2])
+    with pytest.raises(ValueError, match="basis must be 2 letters from X, Y, and Z"):
+        _trotter_circuit_counts(
+            [LocalHamiltonian(Z, [0])],
+            state,
+            2,
+            0.0,
+            1,
+            shots=1,
+            seed=0,
+            basis=basis,  # type: ignore[arg-type]
+        )
 
 
-def test_trotter_circuit_rotates_a_repeated_x_qubit_once() -> None:
-    class Recording:
-        name = "recording"
-
-        def __init__(self) -> None:
-            self.circuit = None
-
-        def run_counts(self, circuit: object, *, shots: int, seed: int | None) -> dict[str, int]:
-            del shots, seed
-            self.circuit = circuit
-            return {"00": 1}
-
-    backend = Recording()
-    _trotter_circuit_counts(
-        [LocalHamiltonian(Z, [0])],
-        State(np.array([1.0, 0.0, 0.0, 0.0], dtype=np.complex128), 2),
-        2,
-        0.0,
-        1,
-        shots=1,
-        seed=0,
-        circuit_backend=backend,  # type: ignore[arg-type]
-        x_qubits=[1, 1],
-    )
-    circuit = backend.circuit
-    assert circuit is not None
-    hadamards = [
-        circuit.find_bit(instruction.qubits[0]).index
-        for instruction in circuit.data
-        if instruction.operation.name == "h"
-    ]
-    assert hadamards == [1]
+def test_trotterization_simulator_rejects_a_bad_basis() -> None:
+    with pytest.raises(ValueError, match="basis must be 1 letters"):
+        _tiny(basis="XZ")
 
 
-def test_trotterization_simulator_grouped_measurement_groups(monkeypatch):
+@pytest.mark.parametrize(
+    ("basis", "expected"),
+    [("Z", 1.0), ("X", 0.0), ("Y", 0.0)],
+)
+def test_trotterization_simulator_reads_the_chosen_basis(basis: str, expected: float) -> None:
+    simulator = _tiny(basis=basis, time_steps=1, total_time=0.0, shots=4000)
+    assert simulator.simulate().metadata["basis"] == basis
+    result = simulator.measure([Measurement.expectation(0)])
+    assert result.observables[0][0] == pytest.approx(expected, abs=0.08)
+
+
+def test_trotterization_simulator_keeps_counts_per_time_point(monkeypatch):
+    seen = iter([{"10": 3, "00": 1}, {"01": 4}])
+
     def fake_counts(*args, **kwargs):
-        return {"0": 7, "1": 3}
+        return next(seen)
 
     monkeypatch.setattr(trotter_module, "_trotter_circuit_counts", fake_counts)
+    state = State(np.array([1.0, 0.0, 0.0, 0.0], dtype=np.complex128), 2)
 
-    results = _tiny(
-        time_steps=1,
-        measurement_groups=[[0]],
-        reducers=[population_one],
-    ).simulate()
+    simulator = _tiny(initial_state=state, num_qubits=2, time_steps=2)
+    result = simulator.simulate()
 
-    assert len(results.observables) == 1
-    assert len(results.observables[0]) == 1
-    assert results.observables[0][0] == pytest.approx(0.3)
+    assert result.counts == [{"01": 3, "00": 1}, {"10": 4}]
+    assert result.observables == []
+    measured = simulator.measure([Measurement.population(1), Measurement((0, 1), 'counts["00"] / shots')])
+    assert [curve.tolist() for curve in measured.observables] == [[0.75, 0.0], [0.25, 0.0]]
 
 
 def test_trotterization_simulator_simulate_smoke():
     sim = _tiny()
     results = sim.simulate()
-    assert len(results.observables) == 1
-    assert len(results.observables[0]) == 3
-    assert all(0.0 <= x <= 1.0 for x in results.observables[0])
+    assert results.observables == []
+    assert results.counts is not None
+    assert len(results.counts) == 3
+    populations = sim.measure([Measurement.population(0)]).observables
+    assert len(populations) == 1
+    assert all(0.0 <= x <= 1.0 for x in populations[0])
 
 
 def test_trotterization_simulator_seed_reproducible():
     a = _tiny(seed=11).simulate()
     b = _tiny(seed=11).simulate()
-    assert np.allclose(a.observables, b.observables)
+    assert a.counts == b.counts
     assert a.seed == b.seed == 11
 
 
@@ -512,15 +493,6 @@ def test_trotterization_simulator_str_and_repr():
     assert "TrotterizationSimulator(" in repr(sim)
     assert "time_steps=3" in repr(sim)
     assert "workers=1" in repr(sim)
-
-
-def test_trace_qubits_accepts_single_int_index():
-    assert _trace_qubits({"01": 3, "11": 2}, 1) == {"1": 5}
-
-
-def test_trace_qubits_grouped_list():
-    traced = _trace_qubits({"01": 3, "11": 2}, [[0], 1])
-    assert traced == [{"0": 3, "1": 2}, {"1": 5}]
 
 
 def test_trotter_circuit_counts_rejects_nonpositive_shots():
@@ -744,14 +716,13 @@ def test_trotterization_qutip_closed_agreement():
         total_time=TOTAL_TIME,
         time_steps=TIME_STEPS,
         num_steps=NUM_STEPS,
-        measurement_groups=[0],
-        reducers=[population_one],
         seed=0,
         circuit_backend=aer_backend_module.AerCircuitBackend(shots=SHOTS),
     )
 
     benchmark = Benchmark(qutip_simulator, trotter_simulator)
     benchmark.run()
+    trotter_simulator.measure([Measurement.population(0)])
 
     metrics = benchmark.error_metrics()
     assert len(metrics) == 1

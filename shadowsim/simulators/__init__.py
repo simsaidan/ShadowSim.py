@@ -5,7 +5,14 @@ from typing import TYPE_CHECKING, Any
 
 from shadowsim._optional import import_optional
 from shadowsim.simulators.job import SimulationJob, SimulationStatus
-from shadowsim.simulators.reducers import cavity_population, expectation_x, expectation_z, population_one
+from shadowsim.simulators.reducers import (
+    Measurement,
+    apply_measurements,
+    cavity_population,
+    expectation_x,
+    expectation_z,
+    population_one,
+)
 from shadowsim.simulators.result import SimulationResult
 from shadowsim.simulators.simulator import Simulator
 
@@ -23,6 +30,7 @@ _EXPORTS: dict[str, tuple[str, str | None]] = {
 }
 
 __all__ = [
+    "Measurement",
     "QutipSimulator",
     "SimulationJob",
     "SimulationResult",
@@ -30,6 +38,7 @@ __all__ = [
     "Simulator",
     "SplitJMatrixSimulator",
     "TrotterizationSimulator",
+    "apply_measurements",
     "cavity_population",
     "expectation_x",
     "expectation_z",

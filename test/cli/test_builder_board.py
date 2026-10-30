@@ -284,6 +284,7 @@ function resetPage() {
   savePath = DEFAULT_SAVE_PATH;
   exportPath = DEFAULT_EXPORT_PATH;
   measureSites = null;
+  countsExpression = "";
   stateOpen = false;
   measureOpen = false;
   saveOpen = false;
@@ -404,6 +405,51 @@ if (request.action === "roundtrip") {
     preexistingId,
     terms: modelTerms.map((term) => ({ id: term.id, matrix: term.matrix, sites: term.sites })),
     sims: placedSims.map((entry) => ({ id: entry.id, backend: entry.backend, shots: entry.shots })),
+  };
+} else if (request.action === "counts") {
+  fillCircuit();
+  BLOCKS.measure = [{ id: "counts", title: "Counts", detail: "Expression on all qubits", phrase: "Counts" }];
+  selection.measure = "counts";
+  measureSites = null;
+  const board = document.createElement("section");
+  board.className = "board";
+  document.documentElement.append(board);
+  draw(board);
+  openChip(board, "measure");
+  const input = labeled(board, "Counts expression");
+  const hint = () => {
+    const node = walk(board, []).find((item) => item.className === "counts-hint");
+    return node.textContent ?? nodeText(node);
+  };
+  const blankStatus = statusMessage();
+  const blankHint = hint();
+  const blankPlaceholder = input.attrs.placeholder;
+  typeInto(input, ' counts["01"] / shots ');
+  const typedStatus = statusMessage();
+  const typedRequest = runRequest().expression;
+  const box = labeled(board, "Qubit 1");
+  box.listeners.change[0]({ target: { ...box, checked: false, closest: (s) => box.closest(s) } });
+  const narrowStatus = statusMessage();
+  const narrowHint = hint();
+  const narrowPlaceholder = input.placeholder;
+  const snap = boardSnapshot();
+  emptyBoard();
+  const cleared = countsExpression;
+  applyBoard(snap);
+  selection.measure = "z";
+  result = {
+    blankStatus,
+    blankHint,
+    blankPlaceholder,
+    typedStatus,
+    typedRequest,
+    narrowStatus,
+    narrowHint,
+    narrowPlaceholder,
+    stored: snap.countsExpression,
+    cleared,
+    restored: countsExpression,
+    zRequest: Object.hasOwn(runRequest(), "expression"),
   };
 } else if (request.action === "launch") {
   fillIsing();
@@ -711,6 +757,22 @@ def test_board_snapshot_round_trip() -> None:
     assert page["before"]["savePath"] == "results/kept"
     assert page["before"]["measureSites"] == [0]
     assert page["refreshedTotal"] == "4"
+
+
+def test_counts_chip_edits_the_expression() -> None:
+    page = _call("counts")
+    assert page["blankStatus"] == "Enter a counts expression."
+    assert page["blankHint"] == "Keys list qubits 0, 1 in that order. shots is the total."
+    assert page["blankPlaceholder"] == 'counts["00"] / shots'
+    assert page["typedStatus"] == "Ready to run."
+    assert page["typedRequest"] == 'counts["01"] / shots'
+    assert page["narrowStatus"] == "Counts keys must be 1 characters of 0 and 1."
+    assert page["narrowHint"] == "Keys list qubit 0 in that order. shots is the total."
+    assert page["narrowPlaceholder"] == 'counts["0"] / shots'
+    assert page["stored"] == ' counts["01"] / shots '
+    assert page["cleared"] == ""
+    assert page["restored"] == ' counts["01"] / shots '
+    assert page["zRequest"] is False
 
 
 def test_a_new_server_drops_the_saved_board() -> None:

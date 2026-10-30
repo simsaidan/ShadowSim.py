@@ -557,6 +557,103 @@
     return `"${value.replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"`;
   }
 
+  function pyQuoted(value) {
+    if (value.includes("'")) return pyString(value);
+    return `'${value.replace(/\\/g, "\\\\")}'`;
+  }
+
+  function expressionTokens(source) {
+    const tokens = [];
+    const pattern =
+      /\s+|(\d+(?:\.\d*)?(?:e[+-]?\d+)?|\.\d+(?:e[+-]?\d+)?)|([A-Za-z_]\w*)|("[^"\\]*"|'[^'\\]*')|(\*\*|[-+*/()[\]])/iy;
+    let index = 0;
+    while (index < source.length) {
+      pattern.lastIndex = index;
+      const match = pattern.exec(source);
+      if (!match) return null;
+      index = pattern.lastIndex;
+      if (match[1]) tokens.push({ kind: "number" });
+      else if (match[2]) tokens.push({ kind: "name", text: match[2] });
+      else if (match[3]) tokens.push({ kind: "string", text: match[3].slice(1, -1) });
+      else if (match[4]) tokens.push({ kind: match[4] });
+    }
+    return tokens;
+  }
+
+  function expressionProblem(text, width) {
+    const source = String(text ?? "").trim();
+    if (!source) return "Enter a counts expression.";
+    if (source.length > 1000) return "Expression must be at most 1000 characters.";
+    const allowed = 'Use numbers, shots, counts["01"], parentheses, and + - * / **.';
+    const tokens = expressionTokens(source);
+    if (!tokens) return allowed;
+    let index = 0;
+    let keyProblem = null;
+    const peek = () => tokens[index]?.kind;
+    const take = (kind) => {
+      if (peek() !== kind) return false;
+      index += 1;
+      return true;
+    };
+    function atom() {
+      const token = tokens[index];
+      if (!token) return false;
+      index += 1;
+      if (token.kind === "number") return true;
+      if (token.kind === "name" && token.text === "shots") return true;
+      if (token.kind === "name" && token.text === "counts") {
+        if (!take("[") || peek() !== "string") return false;
+        const key = tokens[index].text;
+        index += 1;
+        if (key.length !== width || /[^01]/.test(key)) {
+          keyProblem ??= `Counts keys must be ${width} characters of 0 and 1.`;
+        }
+        return take("]");
+      }
+      if (token.kind === "(") return sum() && take(")");
+      return false;
+    }
+    function power() {
+      if (!atom()) return false;
+      return take("**") ? unary() : true;
+    }
+    function unary() {
+      if (take("+") || take("-")) return unary();
+      return power();
+    }
+    function product() {
+      if (!unary()) return false;
+      while (take("*") || take("/")) if (!unary()) return false;
+      return true;
+    }
+    function sum() {
+      if (!product()) return false;
+      while (take("+") || take("-")) if (!product()) return false;
+      return true;
+    }
+    if (!sum() || index !== tokens.length) return allowed;
+    return keyProblem;
+  }
+
+  function countsProblem() {
+    if (page.selection.measure !== "counts") return null;
+    const sampled = page.placedSims.every(
+      (entry) => !isReference(entry) && (!entry.backend || blockById("backend", entry.backend)?.shots),
+    );
+    if (!sampled) return "Counts needs Aer. QuTiP and PauliPropagation return expectations.";
+    const count = qubitCount();
+    if (count == null) return null;
+    const sites = selectedSites(count);
+    if (!sites.length) return null;
+    return expressionProblem(page.countsExpression, sites.length);
+  }
+
+  function countsStatus(preview) {
+    const problem = countsProblem();
+    if (!problem || !preview) return problem;
+    return `${problem.replace(/\.$/, "")} to preview the script.`;
+  }
+
   function qubitBounds() {
     if (usingAddedOperators()) return { min: 1, max: page.maxOperatorQubits };
     // The factory that takes n_qubits is Ising, which requires at least 2.
@@ -596,6 +693,7 @@
       sameTimeGrid() &&
       savePathReady() &&
       measureSitesReady() &&
+      countsProblem() == null &&
       shotsReady() &&
       backendFieldsReady() &&
       !emitterProblem() &&
@@ -770,6 +868,19 @@
     });
   }
 
+  function measurementSetup() {
+    const count = qubitCount();
+    const sites = selectedSites(count);
+    if (page.selection.measure === "counts") {
+      const qubits = sites.length === 1 ? `(${sites[0]},)` : `(${sites.join(", ")})`;
+      return `measurements = [Measurement(${qubits}, ${pyQuoted(String(page.countsExpression ?? "").trim())})]`;
+    }
+    if (count == null || sites.length === count) {
+      return `measurements = [Measurement.expectation(i) for i in range(${systemQubits()})]`;
+    }
+    return `measurements = [${sites.map((site) => `Measurement.expectation(${site})`).join(", ")}]`;
+  }
+
   function observableSetup() {
     const letter = page.selection.measure.toUpperCase();
     const count = qubitCount();
@@ -815,18 +926,22 @@
     return body;
   }
 
+  function xBasis(sites) {
+    const count = qubitCount();
+    if (count == null || sites.length === count) return `"X" * ${systemQubits()}`;
+    const letters = Array.from({ length: count }, (_, qubit) => (sites.includes(qubit) ? "X" : "Z"));
+    return pyString(letters.join(""));
+  }
+
   function simulatorCall(entry, name, backendName) {
     const params = entry.params;
     const block = blockById("simulator", entry.id);
     if (!params || !block) return "";
     if (block.observables) return qutipCall(name, params);
     const className = entry.id === "trotterization" ? "TrotterizationSimulator" : "SplitJMatrixSimulator";
-    const offset = entry.id === "splitjmatrix" ? 1 : 0;
-    const groups = selectedSites(qubitCount()).map((site) => `[${site + offset}]`);
     const orderLine = `,\n    order=${params.order}`;
-    const expectation = page.selection.measure === "x" ? "expectation_x" : "expectation_z";
     const sites = selectedSites(qubitCount());
-    const xLine = page.selection.measure === "x" ? `,\n    x_qubits=[${sites.join(", ")}]` : "";
+    const xLine = page.selection.measure === "x" ? `,\n    basis=${xBasis(sites)}` : "";
     const hamiltonians = usingAddedOperators() ? "circuit_hamiltonians" : "model.local_hamiltonians";
     const lindblads = usingAddedOperators() ? "lindblads" : "model.c_ops_local";
     return `${name} = ${className}(
@@ -838,9 +953,7 @@
     time_steps=${params.timeSteps},
     num_steps=${params.numSteps},
     trotter_depth=${params.trotterDepth}${orderLine},
-    seed=${params.seed},
-    measurement_groups=[${groups.join(", ")}],
-    reducers=[${expectation}] * ${groups.length}${xLine},
+    seed=${params.seed}${xLine},
     circuit_backend=${backendName},
 )`;
   }
@@ -871,6 +984,9 @@
 
   function benchmarkThenLines(names) {
     const lines = [`benchmark = Benchmark(${names.join(", ")})`, "benchmark.run()"];
+    page.placedSims.forEach((entry, index) => {
+      if (!isReference(entry)) lines.push(`${names[index]}.measure(measurements)`);
+    });
     if (hasThen("plot")) lines.push("benchmark.save_result_plot()");
     if (hasThen("save")) {
       names.forEach((name) => {
@@ -885,6 +1001,13 @@
     const exporting = hasThen("export");
     const metrics = resourceMetricsCall();
     const saveLine = `result.save(${pyString(page.savePath.trim())})`;
+    if (!isReference(page.placedSims[0])) {
+      const lines = ["sim.simulate()", "result = sim.measure(measurements)"];
+      if (hasThen("save")) lines.push(saveLine);
+      if (hasThen("plot")) lines.push("sim.plot_results()");
+      if (exporting) lines.push(metrics);
+      return lines;
+    }
     if (hasThen("save") && hasThen("plot")) {
       const lines = ["result = sim.simulate()", saveLine, "sim.plot_results()"];
       if (exporting) lines.push(metrics);
@@ -929,7 +1052,8 @@
       if (!names.includes(className)) names.push(className);
       if (!blockById("simulator", entry.id)?.observables) circuit = true;
     });
-    if (circuit) names.push(page.selection.measure === "x" ? "expectation_x" : "expectation_z");
+    if (circuit) names.push("Measurement");
+    names.sort();
     return names.length ? `from shadowsim.simulators import ${names.join(", ")}` : "";
   }
 
@@ -967,6 +1091,7 @@
     if (page.placedSims.some((entry) => blockById("simulator", entry.id)?.observables)) {
       beforeSimulator.push(observableSetup(), "");
     }
+    if (page.placedSims.some((entry) => !isReference(entry))) beforeSimulator.push(measurementSetup(), "");
     const names = page.placedSims.map((_, index) => (benchmark ? `sim_${index + 1}` : "sim"));
     lines.push(
       ...beforeSimulator,
@@ -1168,6 +1293,9 @@
     localHamiltonianProblem: bind(localHamiltonianProblem),
     localSites: bind(localSites),
     measureSitesReady: bind(measureSitesReady),
+    countsProblem: bind(countsProblem),
+    countsStatus: bind(countsStatus),
+    expressionProblem: bind(expressionProblem),
     missingPaths: bind(missingPaths),
     numberList: bind(numberList),
     numberProblem: bind(numberProblem),

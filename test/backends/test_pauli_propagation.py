@@ -137,7 +137,7 @@ def test_importable_trotter_circuit_matches_the_unitary_state():
         2,
         0.3,
         2,
-        x_qubits=[0],
+        basis="XY",
     )
     imported = _importable_circuit(circuit)
     overlap = np.vdot(Statevector.from_instruction(circuit).data, Statevector.from_instruction(imported).data)

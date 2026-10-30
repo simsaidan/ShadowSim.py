@@ -12,14 +12,9 @@ import scipy.linalg
 import shadowsim.backends.aer as aer_backend_module
 import shadowsim.simulators.splitjmatrix_simulator as splitjmatrix_module
 from shadowsim.core import LocalHamiltonian, LocalOperator, Operator, State
-from shadowsim.simulators import SplitJMatrixSimulator
-from shadowsim.simulators.reducers import expectation_x, expectation_z
-from shadowsim.simulators.splitjmatrix_simulator import (
-    _split_jmatrix,
-    _trace_qubits,
-    cavity_population,
-    population_one,
-)
+from shadowsim.simulators import Measurement, SplitJMatrixSimulator
+from shadowsim.simulators.reducers import cavity_population, expectation_x, expectation_z, population_one
+from shadowsim.simulators.splitjmatrix_simulator import _split_jmatrix
 from shadowsim.simulators.trotterization_simulator import _trotter_slice_unitaries
 
 Z = np.array([[1, 0], [0, -1]], dtype=np.complex128)
@@ -186,10 +181,6 @@ def test_splitjmatrix_simulator_rejects_non_int_workers():
         _simulator(workers=True)  # type: ignore[arg-type]
 
 
-def test_trace_qubits_accepts_single_int_index():
-    assert _trace_qubits({"01": 3, "11": 2}, 1) == {"1": 5}
-
-
 def _instruction_signature(circuit: object) -> list[tuple[str, tuple[int, ...], tuple[bytes, ...]]]:
     """Return gate names, qubit indexes, and parameter bytes, ignoring register names."""
     rows: list[tuple[str, tuple[int, ...], tuple[bytes, ...]]] = []
@@ -223,7 +214,7 @@ def test_metrics_circuit_matches_the_final_executed_circuit() -> None:
         time_steps=3,
         num_steps=2,
         circuit_backend=backend,  # type: ignore[arg-type]
-        x_qubits=[0],
+        basis="X",
     )
     _split_jmatrix(
         sim.hamiltonians,
@@ -238,12 +229,12 @@ def test_metrics_circuit_matches_the_final_executed_circuit() -> None:
         shots=1,
         seed=sim.seed,
         circuit_backend=backend,  # type: ignore[arg-type]
-        x_qubits=sim.x_qubits,
+        basis=sim.basis,
     )
     assert _instruction_signature(sim.metrics_circuit()) == _instruction_signature(backend.circuit)
 
 
-def test_split_j_rotates_the_body_qubit_for_x() -> None:
+def test_split_j_rotates_body_qubits_into_the_basis() -> None:
     class Recording:
         name = "recording"
 
@@ -253,75 +244,70 @@ def test_split_j_rotates_the_body_qubit_for_x() -> None:
         def run_counts(self, circuit: object, *, shots: int, seed: int | None) -> dict[str, int]:
             del shots, seed
             self.circuit = circuit
-            return {"00": 1}
+            return {"000": 1}
 
     backend = Recording()
     _split_jmatrix(
         [],
         [],
-        State(np.array([1.0, 0.0]), 1),
-        num_qubits=1,
+        State(np.array([1.0, 0.0, 0.0, 0.0]), 2),
+        num_qubits=2,
         t=0.0,
         num_steps=1,
         shots=1,
         seed=0,
         circuit_backend=backend,  # type: ignore[arg-type]
-        x_qubits=[0],
+        basis="XY",
     )
     circuit = backend.circuit
     assert circuit is not None
-    hadamards = [
-        circuit.find_bit(instruction.qubits[0]).index
+    rotations = [
+        (instruction.operation.name, circuit.find_bit(instruction.qubits[0]).index)
         for instruction in circuit.data
-        if instruction.operation.name == "h"
+        if instruction.operation.name in {"h", "sdg"}
     ]
-    assert hadamards == [1]
+    assert rotations == [("h", 1), ("sdg", 2), ("h", 2)]
 
 
-def test_split_j_rejects_a_bad_x_qubit() -> None:
+def test_split_j_rejects_a_bad_basis() -> None:
     state = State(np.array([1.0, 0.0]), 1)
-    with pytest.raises(ValueError, match="x_qubits must be indexes from 0 to 0"):
-        _split_jmatrix([], [], state, num_qubits=1, t=0.0, num_steps=1, shots=1, seed=0, x_qubits=[True])
+    with pytest.raises(ValueError, match="basis must be 1 letters from X, Y, and Z"):
+        _split_jmatrix([], [], state, num_qubits=1, t=0.0, num_steps=1, shots=1, seed=0, basis="XX")
+    with pytest.raises(ValueError, match="basis must be 1 letters"):
+        _simulator(basis="Q")
 
 
-def test_split_j_rotates_a_repeated_x_qubit_once() -> None:
-    class Recording:
-        name = "recording"
+def test_splitjmatrix_simulator_keeps_counts_without_the_ancilla(monkeypatch):
+    seen = iter([{"011": 3, "010": 2, "100": 5}, {"001": 4}])
 
-        def __init__(self) -> None:
-            self.circuit = None
+    def fake_split_jmatrix(*args, **kwargs):
+        return next(seen)
 
-        def run_counts(self, circuit: object, *, shots: int, seed: int | None) -> dict[str, int]:
-            del shots, seed
-            self.circuit = circuit
-            return {"00": 1}
+    monkeypatch.setattr(splitjmatrix_module, "_split_jmatrix", fake_split_jmatrix)
 
-    backend = Recording()
-    _split_jmatrix(
+    simulator = SplitJMatrixSimulator(
+        [LocalHamiltonian(Z, [0])],
         [],
-        [],
-        State(np.array([1.0, 0.0]), 1),
-        num_qubits=1,
-        t=0.0,
+        State(np.array([1.0, 0.0, 0.0, 0.0]), 2),
+        num_qubits=2,
+        total_time=1.0,
+        time_steps=2,
         num_steps=1,
-        shots=1,
-        seed=0,
-        circuit_backend=backend,  # type: ignore[arg-type]
-        x_qubits=[0, 0],
+        basis="ZX",
     )
-    circuit = backend.circuit
-    assert circuit is not None
-    hadamards = [
-        circuit.find_bit(instruction.qubits[0]).index
-        for instruction in circuit.data
-        if instruction.operation.name == "h"
-    ]
-    assert hadamards == [1]
+    result = simulator.simulate()
+
+    assert result.counts == [{"10": 5, "01": 5}, {"00": 4}]
+    assert result.observables == []
+    assert result.metadata["basis"] == "ZX"
+    assert simulator.measure([Measurement.population(0)]).observables[0].tolist() == [0.5, 0.0]
 
 
 def test_population_one_and_cavity_population_empty_counts():
     assert population_one({}) == 0.0
     assert cavity_population({}) == 0.0
+    assert population_one({"0": 3, "1": 1}) == 0.25
+    assert cavity_population({"11": 1, "10": 1, "01": 1, "00": 1}) == 1.5
     assert expectation_z({}) == 0.0
     assert expectation_z({"0": 3, "1": 1}) == 0.5
     assert expectation_x({"0": 3, "1": 1}) == 0.5
@@ -550,11 +536,6 @@ def test_splitjmatrix_simulator_rejects_non_local_lindblad():
             time_steps=2,
             num_steps=1,
         )
-
-
-def test_splitjmatrix_simulator_rejects_mismatched_reducers():
-    with pytest.raises(ValueError, match="reducers and measurement_groups must have the same length"):
-        _simulator(measurement_groups=[0], reducers=[population_one, population_one])
 
 
 def test_splitjmatrix_simulator_str_and_repr():

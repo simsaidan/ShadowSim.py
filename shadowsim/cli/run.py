@@ -24,7 +24,7 @@ from shadowsim.encoding.gray import GrayEncoding
 from shadowsim.models.catalog import ListedParam, listed_models
 from shadowsim.models.ising import IsingModel
 from shadowsim.models.tavis_cummings import TavisCummingsModel
-from shadowsim.simulators.reducers import expectation_x, expectation_z
+from shadowsim.simulators.reducers import Measurement
 from shadowsim.simulators.result import SimulationResult, _resource_record, save_resource_metrics
 from shadowsim.simulators.simulator import Simulator
 from shadowsim.utils.hermitian import hermitian
@@ -62,7 +62,11 @@ def build_simulator(selection: Mapping[str, object], *, time_steps: int = 101) -
         selection: Page ids and settings. ``then`` is ignored. A circuit
             simulator's ``backend`` is ``aer`` or ``paulipropagation``. QuTiP
             ignores a missing backend. ``measure`` of ``x`` or ``z`` records that Pauli's
-            expectation on each selected qubit for every simulator.
+            expectation on each selected qubit for every simulator. ``counts``
+            evaluates ``expression`` (see :class:`~shadowsim.simulators.Measurement`)
+            on the shot counts of the selected qubits, in ``sites`` order. It needs
+            the Aer backend, so QuTiP and PauliPropagation reject it. A circuit
+            simulator records counts only; :func:`run_page` reads them.
             ``model`` is a factory name from :func:`shadowsim.models.catalog.listed_models`.
             A non-empty ``terms`` list is the model instead: each item has ``id``
             and ``matrix``, and local terms also have ``sites``. At least one
@@ -135,6 +139,10 @@ def build_simulator(selection: Mapping[str, object], *, time_steps: int = 101) -
     state = _initial_state(state_id, model.num_qubits, _state_data(selection, state_id))
     measure_id = _choice(selection, "measure")
     sites = _measure_sites(selection, model.num_qubits)
+    _measurements(selection, model.num_qubits)
+    if measure_id == "counts" and (simulator_id == "qutip" or backend == "paulipropagation"):
+        name = "QuTiP" if simulator_id == "qutip" else "PauliPropagation"
+        raise ValueError(f"{name} returns Pauli expectations, not shot counts; use Aer for a counts measurement")
     if simulator_id == "qutip":
         steps = _selection_positive_int(selection, "time_steps", time_steps, "time steps")
         return _qutip_simulator(model, state, measure_id, total_time, steps, sites)
@@ -178,7 +186,8 @@ def run_page(selection: Mapping[str, object], *, output_root: Path | None = None
     if isinstance(entries, list) and len(entries) >= 2:
         return _run_benchmark(selection, entries, directory, export_to)
     simulator = build_simulator(selection)
-    result = simulator.simulate()
+    simulator.simulate()
+    result = _measured_result(simulator, selection)
     payload = _result_payload(result, simulator, selection)
     saved = _write_results(directory, [result])
     if saved:
@@ -189,17 +198,32 @@ def run_page(selection: Mapping[str, object], *, output_root: Path | None = None
     return payload
 
 
+def _measured_result(simulator: Simulator, selection: Mapping[str, object]) -> SimulationResult:
+    """Read the page measurements from a simulated circuit simulator and return its result.
+
+    QuTiP already records its Pauli expectations, so its result is returned unchanged.
+
+    Raises:
+        ValueError: ``simulator`` has not been simulated, or the measurement
+            cannot be read from its result.
+    """
+    if getattr(simulator, "circuit_backend", None) is None:
+        if simulator.last_result is None:
+            raise ValueError("Results are not available. Please run the simulation first.")
+        return simulator.last_result
+    return simulator.measure(_measurements(selection, simulator.num_qubits))
+
+
 def _result_payload(
     result: SimulationResult,
     simulator: Simulator,
     selection: Mapping[str, object],
 ) -> dict[str, object]:
     """Return the curves, names, and resource record the page chart draws."""
-    sites = _measure_sites(selection, simulator.num_qubits)
     return {
         "times": result.times.tolist(),
         "observables": [curve.tolist() for curve in result.observables],
-        "labels": _observable_labels(_choice(selection, "measure"), sites),
+        "labels": _observable_labels(selection, simulator.num_qubits),
         "resources": [_resource_record(simulator, result.runtime)],
         "runtime": result.runtime,
         "algorithm": result.algorithm,
@@ -325,17 +349,9 @@ def _run_benchmark(
         simulators.append(build_simulator(merged))
     benchmark = Benchmark(simulators[0], *simulators[1:])
     benchmark.run()
-    recorded: list[SimulationResult] = []
-    for simulator in simulators:
-        result = simulator.last_result
-        if result is None:
-            raise ValueError("benchmark did not record a result")
-        recorded.append(result)
+    recorded = [_measured_result(simulator, selection) for simulator in simulators]
     resources = benchmark.resource_metrics()
-    labels = _observable_labels(
-        _choice(selection, "measure"),
-        _measure_sites(selection, simulators[0].num_qubits),
-    )
+    labels = _observable_labels(selection, simulators[0].num_qubits)
     series: list[dict[str, object]] = []
     for result, resource in zip(recorded, resources, strict=True):
         name = _series_name(str(resource["simulator_id"]))
@@ -402,13 +418,11 @@ def _circuit_simulator(
 ) -> Simulator:
     """Build a Trotter or Split J simulator on Aer or PauliPropagation.
 
-    Z and X each record that Pauli's expectation on every selected qubit.
-    X is measured by rotating those qubits into the X basis first. Split J
-    measures an ancilla first, so those qubit indexes shift by one.
+    X rotates the selected qubits into the X basis before the measurement. Z
+    and counts measure every qubit in Z. The simulator records counts (or Pauli
+    expectations on PauliPropagation), which :func:`_measured_result` reads.
     PauliPropagation runs the closed Trotter circuit and ignores the shot budget.
     """
-    if measure_id not in ("x", "z"):
-        raise ValueError("unknown measurement")
     steps = _selection_positive_int(selection, "time_steps", _CIRCUIT_TIME_STEPS, "time steps")
     num_steps = _selection_positive_int(selection, "num_steps", _CIRCUIT_NUM_STEPS, "product steps")
     depth = _selection_positive_int(selection, "trotter_depth", 1, "Trotter depth")
@@ -416,7 +430,6 @@ def _circuit_simulator(
     order = _selection_order(selection)
     if simulator_id == "trotterization" and model.c_ops_local:
         raise ValueError("Trotterization is closed-system only")
-    groups, reducers = _pauli_expectation_groups(simulator_id, sites, measure_id)
     if backend == "paulipropagation":
         pauli = import_optional("shadowsim.backends.pauli_propagation", extra="pauli_propagation")
         circuit_backend = pauli.PauliPropagationBackend(
@@ -449,11 +462,14 @@ def _circuit_simulator(
         trotter_depth=depth,
         order=order,
         seed=seed,
-        measurement_groups=groups,
-        reducers=reducers,
         circuit_backend=circuit_backend,
-        **({"x_qubits": sites} if measure_id == "x" else {}),
+        **({"basis": _x_basis(model.num_qubits, sites)} if measure_id == "x" else {}),
     )
+
+
+def _x_basis(num_qubits: int, sites: list[int]) -> str:
+    """Return a basis that reads X on ``sites`` and Z on every other qubit."""
+    return "".join("X" if qubit in sites else "Z" for qubit in range(num_qubits))
 
 
 def _selection_basis_gates(selection: Mapping[str, object]) -> list[str] | None:
@@ -939,33 +955,40 @@ def _measure_sites(selection: Mapping[str, object], num_qubits: int) -> list[int
     return sites
 
 
-def _pauli_expectation_groups(
-    simulator_id: str,
-    sites: list[int],
-    measure_id: str,
-) -> tuple[list[list[int]], list[object]]:
-    """Return one single-qubit group per selected site, reduced to ``<Z>`` or ``<X>``."""
-    offset = 1 if simulator_id == "splitjmatrix" else 0
-    groups = [[site + offset] for site in sites]
-    reducer = expectation_x if measure_id == "x" else expectation_z
-    return groups, [reducer for _ in sites]
+def _measurements(selection: Mapping[str, object], num_qubits: int) -> list[Measurement]:
+    """Return the page measurements: one expectation per selected qubit, or one counts expression.
 
-
-def _observable_labels(measure_id: str, sites: list[int]) -> list[str]:
-    """Return one chart name per measured qubit.
-
-    ``z`` on qubits 0 and 1 is ``⟨Z⟩ on 0`` and ``⟨Z⟩ on 1``.
+    Raises:
+        ValueError: ``measure`` is unknown, or the counts ``expression`` is not allowed.
     """
+    measure_id = _choice(selection, "measure")
+    sites = _measure_sites(selection, num_qubits)
+    if measure_id in ("x", "z"):
+        return [Measurement.expectation(site) for site in sites]
+    if measure_id != "counts":
+        raise ValueError("unknown measurement")
+    expression = selection.get("expression")
+    if not isinstance(expression, str):
+        raise ValueError("a counts measurement needs an expression")
+    return [Measurement(tuple(sites), expression)]
+
+
+def _observable_labels(selection: Mapping[str, object], num_qubits: int) -> list[str]:
+    """Return one chart name per curve.
+
+    ``z`` on qubits 0 and 1 is ``⟨Z⟩ on 0`` and ``⟨Z⟩ on 1``. ``counts`` is its expression.
+    """
+    measure_id = _choice(selection, "measure")
+    if measure_id == "counts":
+        return [item.label for item in _measurements(selection, num_qubits)]
     if measure_id not in ("x", "z"):
         raise ValueError("unknown measurement")
     letter = measure_id.upper()
-    return [f"⟨{letter}⟩ on {site}" for site in sites]
+    return [f"⟨{letter}⟩ on {site}" for site in _measure_sites(selection, num_qubits)]
 
 
 def _observables(num_qubits: int, measure_id: str, sites: list[int]) -> list[Operator]:
-    """Return one Pauli on each selected qubit for ``measure_id``."""
-    if measure_id not in ("x", "z"):
-        raise ValueError("unknown measurement")
+    """Return one Pauli on each selected qubit for ``measure_id``, which is ``x`` or ``z``."""
     letter = measure_id.upper()
     observables: list[Operator] = []
     for site in sites:

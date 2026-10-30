@@ -76,7 +76,6 @@ def _describe_simulator(cls: type) -> ListedSimulator:
             "    total_time={total},\n"
             "    time_steps=101,\n"
             "    num_steps=20,\n"
-            "    reducers=list(model.reducers),\n"
             "    circuit_backend=circuit_backend,\n"
             ")"
         )

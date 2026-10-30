@@ -112,19 +112,76 @@ backend.z_expectations(circuit, [0], shots=1, seed=None)  # [cos(0.4)]
 backend.x_expectations(circuit, [0], shots=1, seed=None)  # [0.0]
 ```
 
-`RX(0.4)` applied to `|0⟩` stays in the YZ plane, so ⟨X⟩ is 0. `run_counts` raises `NotImplementedError`. The builder can run a closed Trotter circuit on this backend: product states are prepared with single-qubit gates, the circuit is transpiled into gates the reader accepts, and each requested qubit returns a Z or X expectation. Split JMatrix samples an ancilla and stays on Aer.
+`RX(0.4)` applied to `|0⟩` stays in the YZ plane, so ⟨X⟩ is 0. `run_counts` raises `NotImplementedError`. `TrotterizationSimulator` and the builder can run a closed Trotter circuit on this backend: product states are prepared with single-qubit gates, the circuit is transpiled into gates the reader accepts, and every qubit returns the expectation of its `basis` letter. It is an expectation backend, so it has no shot counts (see [Measurements](#measurements)). Split JMatrix samples an ancilla and stays on Aer.
 
 ### Simulation results
 
 Each backend’s `simulate()` / `run()` returns a `SimulationResult` with:
 
-- `times`, `observables` (expectation traces), optional `states` (usually `None`)
+- `times`, `observables` (one curve per measurement), optional `states` (usually `None`)
+- `counts`: one bitstring-to-shots dict per time point from a sampling backend, otherwise `None`
 - `seed`, `algorithm`, `runtime`, and `metadata` (software version, grid params, backend params)
 
 Serialize and reload with `result.save(path)` / `SimulationResult.load(path)` (directory of
-`times.npy`, numeric `.npz` archives, and `meta.json`). Loading does not unpickle array
-files. Low-level expectation curves remain on `simulator.results`
+`times.npy`, numeric `.npz` archives, `counts.json` when there are counts, and `meta.json`).
+Loading does not unpickle array files. Low-level curves remain on `simulator.results`
 for plotting and benchmarking.
+
+### Measurements
+
+Circuit simulators stop at the measurement. Before measuring, they rotate each
+qubit into its letter of `basis` (default all `Z`; `X` adds a Hadamard, `Y` adds
+`Sdg` then a Hadamard). What comes back depends on the circuit backend:
+
+- **Sampling backends** such as `AerCircuitBackend` have a `shots` budget and
+  return counts. `result.counts` holds one dict per time point, and `observables`
+  stays empty until you measure. Any `Measurement` can read them.
+- **Expectation backends** such as `PauliPropagationBackend` compute Pauli
+  expectation values directly and have no counts. Trotterization fills
+  `observables` with each qubit's ⟨P⟩ for its `basis` letter, so only
+  `Measurement.expectation` and `Measurement.population` can read them.
+
+In every counts key, bit `i` is system qubit `i` (Qiskit's order is reversed
+before the counts are stored). Split JMatrix drops its ancilla bit, so its keys
+cover the system qubits only.
+
+A `Measurement` names some qubits and an arithmetic expression on their counts.
+Keys list those qubits in the order given, and `shots` is the total for that time
+point. Expressions may use numbers, parentheses, `+ - * / **`, `shots`, and
+`counts["01"]`; a bitstring that never appeared is 0. `simulator.measure(...)`
+evaluates a list of measurements at every time point and returns a result with one
+curve per measurement. `apply_measurements(result, ...)` does the same for a
+result you already have.
+
+```python
+from shadowsim.backends import AerCircuitBackend
+from shadowsim.models import ising
+from shadowsim.simulators import Measurement, TrotterizationSimulator
+
+model = ising(n_qubits=3)
+simulator = TrotterizationSimulator(
+    model.local_hamiltonians,
+    [],
+    model.psi0,
+    num_qubits=model.num_qubits,
+    total_time=1.0,
+    time_steps=11,
+    num_steps=4,
+    basis="ZZX",
+    circuit_backend=AerCircuitBackend(shots=1000),
+)
+simulator.simulate()
+result = simulator.measure(
+    [
+        Measurement.expectation(2),  # ⟨X⟩ on qubit 2
+        Measurement((0, 1), '(counts["00"] + counts["11"]) / shots', "qubits 0 and 1 agree"),
+    ]
+)
+```
+
+`Measurement.population(q)` is the fraction of shots where qubit `q` read 1, and
+`Measurement.cavity_population(a, b)` is the mean photon number of a cavity stored
+on two qubits.
 
 `start()` runs that same `simulate()` call on a worker thread and returns a `SimulationJob`
 immediately. Poll `status` (`pending`, `running`, `succeeded`, or `failed`). `result()` waits
@@ -256,7 +313,7 @@ operator embeddings.
 from shadowsim.backends import AerCircuitBackend
 from shadowsim.benchmarking import Benchmark
 from shadowsim.models import tavis_cummings
-from shadowsim.simulators import QutipSimulator, SplitJMatrixSimulator
+from shadowsim.simulators import Measurement, QutipSimulator, SplitJMatrixSimulator
 
 model = tavis_cummings()
 ```
@@ -284,15 +341,15 @@ splitjmatrix_simulator = SplitJMatrixSimulator(
     total_time=0.25,
     time_steps=301,
     num_steps=40,
-    measurement_groups=model.measurement_groups,
-    reducers=list(model.reducers),
     circuit_backend=AerCircuitBackend(shots=10000),
 )
 ```
 
 To easily compare results, we initialize a benchmark with a reference simulator
 and one or more challengers. All simulators must share the same time grid.
-We run the benchmark, which runs the underlying simulations. Numeric L∞ / L2 /
+We run the benchmark, which runs the underlying simulations. Split JMatrix only
+records counts, so we then measure the same quantities as the QuTiP `e_ops`: the
+cavity population on qubits 0 and 1, and the emitter population on qubit 2. Numeric L∞ / L2 /
 MAE / RMSE error metrics vs the reference are available via `error_metrics`.
 Wall-clock time, shot budget (when the circuit backend stores `shots`), and
 circuit metrics are available via `resource_metrics`. Those metrics are the
@@ -318,6 +375,7 @@ order.
 ```python
 benchmark = Benchmark(qutip_simulator, splitjmatrix_simulator)
 benchmark.run()
+splitjmatrix_simulator.measure([Measurement.cavity_population(0, 1), Measurement.population(2)])
 print(benchmark.error_metrics())
 print(benchmark.resource_metrics())
 metrics_path = benchmark.save_error_metrics()

@@ -15,73 +15,19 @@ from shadowsim.core.local_operator import LocalOperator
 from shadowsim.core.operator import _Matrix
 from shadowsim.core.state import State
 from shadowsim.simulators._time_points import map_time_points
-from shadowsim.simulators.reducers import cavity_population, population_one
 from shadowsim.simulators.result import SimulationResult
 from shadowsim.simulators.simulator import Simulator
-from shadowsim.simulators.trotterization_simulator import _check_order, _trotter_slice_unitaries
-from shadowsim.utils.flip_dict import flip_dict
+from shadowsim.simulators.trotterization_simulator import (
+    _check_order,
+    _checked_basis,
+    _rotate_to_basis,
+    _system_counts,
+    _trotter_slice_unitaries,
+)
 
-__all__ = [
-    "SplitJMatrixSimulator",
-    "cavity_population",
-    "population_one",
-]
+__all__ = ["SplitJMatrixSimulator"]
 
 ProgressCallback = Callable[[int, int], None]
-
-
-def _trace_qubits(
-    counts: dict[str, int], qubit_indices: int | List[int] | List[int | List[int]]
-) -> dict[str, int] | list[dict[str, int]]:
-    """Marginalize measurement counts over selected qubits.
-
-    Supports:
-      - int:          `2`
-      - list[int]:    `[0, 1]`
-      - grouped list: `[[0, 1], 2]` -> returns one counts dict per group
-    """
-
-    def _single_group(indices: list[int]) -> dict[str, int]:
-        res: dict[str, int] = {}
-        for bitstring, shot_count in counts.items():
-            projected = "".join(bitstring[i] for i in indices)
-            res[projected] = res.get(projected, 0) + shot_count
-        return res
-
-    if isinstance(qubit_indices, int):
-        return _single_group([qubit_indices])
-
-    items = list(qubit_indices)
-    is_grouped = any(isinstance(item, list) for item in items)
-    if not is_grouped:
-        return _single_group([i for i in items if isinstance(i, int)])
-
-    groups: list[dict[str, int]] = []
-    for item in items:
-        if isinstance(item, list):
-            groups.append(_single_group([int(i) for i in item]))
-        else:
-            groups.append(_single_group([int(item)]))
-    return groups
-
-
-def _checked_x_qubits(x_qubits: list[int] | None, num_qubits: int) -> list[int]:
-    """Return the qubits to rotate into the X basis, without duplicates."""
-    if not x_qubits:
-        return []
-    chosen: list[int] = []
-    for qubit in x_qubits:
-        if isinstance(qubit, bool) or not isinstance(qubit, int) or qubit < 0 or qubit >= num_qubits:
-            raise ValueError(f"x_qubits must be indexes from 0 to {num_qubits - 1}")
-        if qubit not in chosen:
-            chosen.append(qubit)
-    return chosen
-
-
-def _hadamards(circuit: QuantumCircuit, register: QuantumRegister, x_qubits: list[int] | None, num_qubits: int) -> None:
-    """Rotate ``x_qubits`` into the X basis before measurement."""
-    for qubit in _checked_x_qubits(x_qubits, num_qubits):
-        circuit.h(register[qubit])
 
 
 def _make_J_gate(L: _Matrix, t: float, N: int) -> UnitaryGate:
@@ -102,14 +48,16 @@ def _split_jmatrix_circuit(
     trotter_depth: int = 1,
     order: Literal[1, 2] = 1,
     verbose: bool = False,
-    x_qubits: list[int] | None = None,
+    basis: str | None = None,
 ) -> QuantumCircuit:
     """Return one Split JMatrix circuit, including the final measurement.
 
     Each step applies every Lindblad jump once, then ``trotter_depth`` Hamiltonian
     slices. ``order=1`` applies each local term for time
     ``t / (num_steps * trotter_depth)``. ``order=2`` is one Strang step per slice.
-    Either order covers coherent time ``t``.
+    Either order covers coherent time ``t``. Before the measurement, each system
+    qubit is rotated into its letter of ``basis`` (``None`` is all ``Z``).
+    Circuit qubit 0 is the ancilla, and system qubit ``i`` is circuit qubit ``i + 1``.
     """
     if trotter_depth <= 0:
         raise ValueError("trotter_depth must be a positive integer")
@@ -142,7 +90,7 @@ def _split_jmatrix_circuit(
                 circ.append(gate, reversed([body[j] for j in sites]))
 
     circ.barrier()
-    _hadamards(circ, body, x_qubits, num_qubits)
+    _rotate_to_basis(circ, body, basis, num_qubits)
     circ.measure_all()
     return circ
 
@@ -160,9 +108,9 @@ def _split_jmatrix(
     shots: int = 10000,
     seed: int | None = None,
     circuit_backend: CircuitBackend | None = None,
-    x_qubits: list[int] | None = None,
+    basis: str | None = None,
 ) -> dict[str, Any]:
-    """Run one Split JMatrix circuit and return counts.
+    """Run one Split JMatrix circuit and return counts, including the ancilla bit.
 
     The circuit is :func:`_split_jmatrix_circuit`. ``circuit_backend`` executes
     it. Omitting that backend uses :class:`AerCircuitBackend`.
@@ -181,7 +129,7 @@ def _split_jmatrix(
         trotter_depth,
         order=order,
         verbose=verbose,
-        x_qubits=x_qubits,
+        basis=basis,
     )
     counts_backend = circuit_backend if circuit_backend is not None else AerCircuitBackend()
     return counts_backend.run_counts(circ, shots=shots, seed=seed)
@@ -198,7 +146,11 @@ class SplitJMatrixSimulator(Simulator):
     covers coherent time ``t``.
 
     Counts come from ``circuit_backend``. Omitting it uses :class:`AerCircuitBackend`.
-    The shot count is that backend's ``shots`` attribute.
+    The shot count is that backend's ``shots`` attribute. Before the measurement,
+    each system qubit is rotated into its letter of ``basis`` (default all ``Z``).
+    The result keeps one counts dict per time point, where bit ``i`` of a key is
+    system qubit ``i`` and the ancilla bit is dropped.
+    Read those counts with :meth:`measure`.
     With ``workers`` greater than 1, that backend is pickled into each worker process.
 
     Each time point starts from ``initial_state`` and uses the same ``seed``.
@@ -223,14 +175,12 @@ class SplitJMatrixSimulator(Simulator):
         num_steps: int,
         trotter_depth: int = 1,
         order: Literal[1, 2] = 1,
-        measurement_groups: list[int | list[int]] | None = None,
-        reducers: list[Callable[[dict[str, int]], float]] | None = None,
         verbose: bool = False,
         seed: int | None = None,
         progress: ProgressCallback | None = None,
         workers: int = 1,
         circuit_backend: CircuitBackend | None = None,
-        x_qubits: list[int] | None = None,
+        basis: str | None = None,
     ) -> None:
         """Initialize a Split JMatrix simulator for the given model."""
         super().__init__(
@@ -266,33 +216,15 @@ class SplitJMatrixSimulator(Simulator):
         if not backend_samples(self.circuit_backend):
             raise ValueError("Split JMatrix samples an ancilla circuit and needs a backend with a shot budget")
         backend_shots(self.circuit_backend)
-        self.x_qubits = _checked_x_qubits(x_qubits, num_qubits)
+        self.basis = _checked_basis(basis, num_qubits)
         self.progress = progress
         self.workers = workers
-        if measurement_groups is None:
-            measurement_groups = list(range(self.num_qubits))
-        self.measurement_groups = measurement_groups
 
-        if reducers is None:
-            reducers = [population_one for _ in self.measurement_groups]
-        if len(reducers) != len(self.measurement_groups):
-            raise ValueError("reducers and measurement_groups must have the same length")
-        self.reducers = reducers
-
-    def _reduce_counts(self, counts: dict[str, Any]) -> list[float]:
-        """Reduce one time point's counts to one sample per measurement group."""
-        traced = _trace_qubits(flip_dict(counts), self.measurement_groups)
-        if isinstance(traced, dict):
-            groups = [traced]
-        else:
-            groups = traced
-        return [float(reducer(groups[j])) for j, reducer in enumerate(self.reducers)]
-
-    def _on_parallel_result(self, index: int, counts: dict[str, Any]) -> list[float]:
-        """Reduce a finished time point. Runs in the parent process."""
+    def _on_parallel_result(self, index: int, raw: dict[str, int]) -> dict[str, int]:
+        """Return a finished time point's counts without the ancilla bit. Runs in the parent process."""
         if self.verbose:
             print(f"Working on time step {round(self.tlist[index], 3)}")
-        return self._reduce_counts(counts)
+        return _system_counts(raw, skip=1)
 
     def _on_parallel_progress(self, index: int, total: int) -> None:
         """Forward one finished parallel time point to the user and the active job."""
@@ -300,9 +232,9 @@ class SplitJMatrixSimulator(Simulator):
             self.progress(index, total)
         self._report_completed_step(total)
 
-    def _simulate_serial(self) -> list[list[float]]:
-        """Run every time point on this process, in ``tlist`` order."""
-        results: list[list[float]] = [[] for _ in range(len(self.measurement_groups))]
+    def _simulate_serial(self) -> list[dict[str, int]]:
+        """Run every time point on this process and return counts in ``tlist`` order."""
+        counts_by_time: list[dict[str, int]] = []
         total = len(self.tlist)
         self._begin_step_progress(total)
         for i, t in enumerate(self.tlist):
@@ -310,7 +242,7 @@ class SplitJMatrixSimulator(Simulator):
                 self.progress(i, total)
             if self.verbose:
                 print(f"Working on time step {round(t, 3)}")
-            counts = _split_jmatrix(
+            raw = _split_jmatrix(
                 cast(list[LocalHamiltonian], self.hamiltonians),
                 cast(list[LocalOperator], self.lindblads),
                 self.initial_state,
@@ -323,15 +255,14 @@ class SplitJMatrixSimulator(Simulator):
                 shots=backend_shots(self.circuit_backend),
                 seed=self.seed,
                 circuit_backend=self.circuit_backend,
-                x_qubits=self.x_qubits,
+                basis=self.basis,
             )
-            for j, sample in enumerate(self._reduce_counts(counts)):
-                results[j].append(sample)
+            counts_by_time.append(_system_counts(raw, skip=1))
             self._report_completed_step(total)
-        return results
+        return counts_by_time
 
-    def _simulate_parallel(self) -> list[list[float]]:
-        """Run one process-pool task per time point and assemble ``tlist`` order."""
+    def _simulate_parallel(self) -> list[dict[str, int]]:
+        """Run one process-pool task per time point and return counts in ``tlist`` order."""
         self._begin_step_progress(len(self.tlist))
         hamiltonians = cast(list[LocalHamiltonian], self.hamiltonians)
         lindblads = cast(list[LocalOperator], self.lindblads)
@@ -354,13 +285,13 @@ class SplitJMatrixSimulator(Simulator):
                     # Same seed the serial loop passes for this circuit.
                     "seed": self.seed,
                     "circuit_backend": self.circuit_backend,
-                    "x_qubits": self.x_qubits,
+                    "basis": self.basis,
                 },
             )
             for t in self.tlist
         ]
-        samples_by_time = cast(
-            list[list[float]],
+        return cast(
+            list[dict[str, int]],
             map_time_points(
                 self.workers,
                 calls,
@@ -368,8 +299,6 @@ class SplitJMatrixSimulator(Simulator):
                 on_result=self._on_parallel_result,
             ),
         )
-        width = len(self.measurement_groups)
-        return [[samples[j] for samples in samples_by_time] for j in range(width)]
 
     def metrics_circuit(self) -> QuantumCircuit:
         """Return the circuit executed at the final time, including measurement."""
@@ -383,27 +312,25 @@ class SplitJMatrixSimulator(Simulator):
             self.trotter_depth,
             order=self.order,
             verbose=False,
-            x_qubits=self.x_qubits,
+            basis=self.basis,
         )
 
     def simulate(self) -> SimulationResult:
-        """Evolve the system with Split JMatrix and store reduced traces."""
+        """Evolve the system with Split JMatrix and store the counts at each time."""
         started = perf_counter()
-        if self.workers == 1:
-            results = self._simulate_serial()
-        else:
-            results = self._simulate_parallel()
+        counts = self._simulate_serial() if self.workers == 1 else self._simulate_parallel()
         runtime = perf_counter() - started
-        self.results = results
+        self.results = []
         return self._make_result(
-            results,
+            [],
             runtime=runtime,
             seed=self.seed,
+            counts=counts,
             shots=backend_shots(self.circuit_backend),
             num_steps=self.num_steps,
             trotter_depth=self.trotter_depth,
             order=self.order,
-            measurement_group_count=len(self.measurement_groups),
+            basis=self.basis,
             lindblad_count=len(self.lindblads),
             circuit_backend=self.circuit_backend.name,
         )
@@ -435,7 +362,7 @@ class SplitJMatrixSimulator(Simulator):
             f"num_steps={self.num_steps}, "
             f"trotter_depth={self.trotter_depth}, "
             f"order={self.order}, "
-            f"measurement_groups={self.measurement_groups!r}, "
+            f"basis={self.basis!r}, "
             f"verbose={self.verbose!r}, "
             f"shots={backend_shots(self.circuit_backend)}, "
             f"seed={self.seed!r}, "
