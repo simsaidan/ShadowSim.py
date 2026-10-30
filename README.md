@@ -16,7 +16,7 @@ ShadowSim.py is an open-source Python library with two main purposes:
 
 ## Installation
 
-The core package depends only on NumPy. QuTiP, Qiskit, Matplotlib, Julia's PauliPropagation, and Qulacs are optional:
+The core package depends only on NumPy. QuTiP, Qiskit, Matplotlib, Julia's PauliPropagation, Qulacs, and Cirq are optional:
 
 ```bash
 python -m pip install git+https://github.com/simsaidan/ShadowSim.py.git
@@ -25,6 +25,7 @@ python -m pip install "shadowsim[qiskit] @ git+https://github.com/simsaidan/Shad
 python -m pip install "shadowsim[viz] @ git+https://github.com/simsaidan/ShadowSim.py.git"
 python -m pip install "shadowsim[pauli_propagation] @ git+https://github.com/simsaidan/ShadowSim.py.git"
 python -m pip install "shadowsim[qulacs] @ git+https://github.com/simsaidan/ShadowSim.py.git"
+python -m pip install "shadowsim[cirq] @ git+https://github.com/simsaidan/ShadowSim.py.git"
 python -m pip install "shadowsim[all] @ git+https://github.com/simsaidan/ShadowSim.py.git"
 ```
 
@@ -35,7 +36,8 @@ python -m pip install "shadowsim[all] @ git+https://github.com/simsaidan/ShadowS
 | `viz` | Matplotlib plots (`plot_results` and benchmark figures) |
 | `pauli_propagation` | `PauliPropagationBackend` (`juliacall` 0.9.36). Julia 1.10+ and the Julia package are a separate install; see [PauliPropagation](#paulipropagation) |
 | `qulacs` | `QulacsCircuitBackend`. Install the `qiskit` extra as well, because the circuit is a `QuantumCircuit` |
-| `all` | `qutip`, `qiskit`, `viz`, and `qulacs` |
+| `cirq` | `CirqCircuitBackend`. Install the `qiskit` extra as well, because the circuit is a `QuantumCircuit` |
+| `all` | `qutip`, `qiskit`, `viz`, `qulacs`, and `cirq` |
 
 The package can then be imported as `shadowsim`. Importing a backend or plot helper without its extra raises an `ImportError` that names the extra to install.
 
@@ -139,7 +141,8 @@ qubit into its letter of `basis` (default all `Z`; `X` adds a Hadamard, `Y` adds
   return counts. `result.counts` holds one dict per time point, and `observables`
   stays empty until you measure. Any `Measurement` can read them.
 - **Expectation backends** such as `PauliPropagationBackend`,
-  `NumpyCircuitBackend`, and `QulacsCircuitBackend` have no shot budget.
+  `NumpyCircuitBackend`, `QulacsCircuitBackend`, and `CirqCircuitBackend` have
+  no shot budget.
   Trotterization fills `observables` with each qubit's ⟨P⟩ for its `basis`
   letter and leaves
   `counts` empty, so only `Measurement.expectation` and
@@ -215,6 +218,7 @@ backend. The following backends are supported:
 | `NumpyCircuitBackend` | expectation: exact Pauli expectations from a NumPy statevector. `run_counts` can still sample | Trotterization (closed systems) | `qiskit` |
 | `PauliPropagationBackend` | expectation: returns exact Pauli expectations, no counts | Trotterization (closed systems) | `qiskit` and `pauli_propagation` |
 | `QulacsCircuitBackend` | expectation: exact Pauli expectations from a Qulacs statevector. `run_counts` can still sample | Trotterization (closed systems) | `qiskit` and `qulacs` |
+| `CirqCircuitBackend` | expectation: exact Pauli expectations from a Cirq statevector. `run_counts` can still sample | Trotterization (closed systems) | `qiskit` and `cirq` |
 
 `AerCircuitBackend` is the default for both circuit simulators. Split JMatrix
 samples an ancilla, so it needs a sampling backend. See
@@ -267,6 +271,30 @@ from shadowsim.backends import QulacsCircuitBackend
 circuit = QuantumCircuit(1)
 circuit.rx(0.4, 0)
 backend = QulacsCircuitBackend()
+backend.z_expectations(circuit, [0], shots=1, seed=None)  # [cos(0.4)]
+backend.x_expectations(circuit, [0], shots=1, seed=None)  # [0.0]
+```
+
+`CirqCircuitBackend` is the same kind of expectation backend, with the
+statevector evolved by Cirq. Install the `qiskit` extra as well, because the
+circuit is a `QuantumCircuit`. It stores no `shots` attribute, so
+Trotterization reads exact ⟨Z⟩ and ⟨X⟩. `run_counts` still samples the
+computational basis, and the same `seed` repeats those counts. `Reset`, a
+measurement followed by a gate, and circuit metrics are rejected. Split
+JMatrix samples an ancilla with `Reset`, so it uses Aer.
+
+Statevectors agree with `NumpyCircuitBackend` to `1e-8`. One local Hamiltonian
+makes the Trotter product exact: that ⟨Z⟩ curve matches `cos(2t)` to `1e-8`.
+A seeded Hadamard of 4000 shots stays within `0.05` of NumPy and of `1/2`.
+
+```python
+from qiskit import QuantumCircuit
+
+from shadowsim.backends import CirqCircuitBackend
+
+circuit = QuantumCircuit(1)
+circuit.rx(0.4, 0)
+backend = CirqCircuitBackend()
 backend.z_expectations(circuit, [0], shots=1, seed=None)  # [cos(0.4)]
 backend.x_expectations(circuit, [0], shots=1, seed=None)  # [0.0]
 ```

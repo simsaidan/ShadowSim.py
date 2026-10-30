@@ -40,7 +40,7 @@ uv run mkdocs serve
 
 Open the URL printed in the terminal (usually `http://127.0.0.1:8000`).
 
-The API reference is generated from `shadowsim`. Optional backends are imported during the build, so the `qutip` and `qiskit` extras need to be installed. The docs build does not install the `qulacs` extra: `QulacsCircuitBackend` imports Qulacs only when a circuit runs. Tests that need it use the `qulacs` marker, together with `cross_extra`, because they also need Qiskit.
+The API reference is generated from `shadowsim`. Optional backends are imported during the build, so the `qutip` and `qiskit` extras need to be installed. The docs build does not install the `qulacs` or `cirq` extras: `QulacsCircuitBackend` and `CirqCircuitBackend` import those libraries only when a circuit runs. Tests that need them use the `qulacs` or `cirq` marker, together with `cross_extra`, because they also need Qiskit.
 
 ## Customizing this site
 
