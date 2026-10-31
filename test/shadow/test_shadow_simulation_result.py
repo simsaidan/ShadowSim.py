@@ -297,15 +297,35 @@ def test_plot_results_draws_one_curve_per_label(monkeypatch: pytest.MonkeyPatch)
     assert titled == ["shadow"]
 
 
-@pytest.mark.qutip
+def test_shadow_observable_fields_default_empty_and_are_not_saved(tmp_path: Path) -> None:
+    assert _result().shadow_observable_expectations == []
+    assert _result().shadow_observable_labels == []
+
+    source = _result(
+        shadow_observable_expectations=[np.array([0.1, 0.2, 0.3])],
+        shadow_observable_labels=["P_0"],
+    )
+    out = source.save(tmp_path / "with_extras")
+    assert sorted(path.name for path in out.iterdir()) == ["expectations.npy", "meta.json", "times.npy"]
+    assert "shadow_observable_labels" not in json.loads((out / "meta.json").read_text(encoding="utf-8"))
+
+    loaded = ShadowSimulationResult.load(out)
+    assert loaded.shadow_observable_expectations == []
+    assert loaded.shadow_observable_labels == []
+
+
+@pytest.mark.qiskit
 def test_padded_shadow_run_roundtrip(tmp_path: Path) -> None:
-    pytest.importorskip("qutip")
+    pytest.importorskip("qiskit")
+    from shadowsim.backends.numpy import NumpyCircuitBackend
+
     result = run_shadow_simulation(
         Hamiltonian("Z"),
         OperatorSet(["X", "Y", "Z"]),
         State(np.array([1.0, 0.0], dtype=np.complex128), 1),
         total_time=0.5,
         time_steps=5,
+        circuit_backend=NumpyCircuitBackend(),
     )
     assert result.shadow_hamiltonian is not None
     assert result.basis == ["X", "Y", "Z"]

@@ -31,8 +31,8 @@ python -m pip install "shadowsim[all] @ git+https://github.com/simsaidan/ShadowS
 
 | Extra | Provides |
 | --- | --- |
-| `qutip` | `QutipSimulator`, `run_shadow_simulation`, and QuTiP interop (`from_qutip` / `to_qutip`) |
-| `qiskit` | Split JMatrix, Trotterization, and `NumpyCircuitBackend` (`qiskit`, `qiskit-aer`, and `scipy`) |
+| `qutip` | `QutipSimulator` and QuTiP interop (`from_qutip` / `to_qutip`) |
+| `qiskit` | Split JMatrix, Trotterization, `run_shadow_simulation`, and `NumpyCircuitBackend` (`qiskit`, `qiskit-aer`, and `scipy`) |
 | `viz` | Matplotlib plots (`plot_results` and benchmark figures) |
 | `pauli_propagation` | `PauliPropagationBackend` (`juliacall` 0.9.36). Julia 1.10+ and the Julia package are a separate install; see [PauliPropagation](#paulipropagation) |
 | `qulacs` | `QulacsCircuitBackend`. Install the `qiskit` extra as well, because the circuit is a `QuantumCircuit` |
@@ -385,7 +385,27 @@ and can be run after `uv sync --all-extras`:
 uv run python examples/simple_shadow.py
 ```
 That example uses Pauli labels (sparse construction path) and
-`run_shadow_simulation` for the reduced shadow dynamics.
+`run_shadow_simulation` for the reduced shadow dynamics. Pass a circuit backend:
+`NumpyCircuitBackend`, `QulacsCircuitBackend`, and `CirqCircuitBackend` give
+exact curves, and a sampling backend such as `AerCircuitBackend` estimates
+them from its `shots`.
+```python
+from shadowsim.backends.numpy import NumpyCircuitBackend
+
+shadow = run_shadow_simulation(
+    hamiltonians,
+    observables,
+    initial_state,
+    total_time=5.0,
+    time_steps=400,
+    circuit_backend=NumpyCircuitBackend(),
+)
+```
+`shadow.expectations` holds the signed `⟨O_k⟩(t)` for each operator in the
+closure basis, labeled by `shadow.basis`, so the curves line up with a QuTiP
+run on the physical system. Pass `shadow_observables` (for example
+`computational_basis_projectors`) to also get quadratic shadow-space curves in
+`shadow.shadow_observable_expectations`.
 The returned result can `save` and `load` the shadow traces, and `plot_results` draws them.
 Pass `verbose=True` to `run_shadow_simulation` if you want Pauli-set and
 closure sizes printed.
