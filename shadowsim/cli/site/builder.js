@@ -960,10 +960,11 @@ function simulatorChip(entry) {
     simField(params, "timeSteps", "Time steps", false),
   ];
   if (!isReference(entry)) {
-    fields.push(
-      simField(params, "numSteps", "Product steps", false),
-      simField(params, "trotterDepth", "Trotter depth", false),
-      simField(params, "seed", "Seed", true),
+    const trotter = block.trotter !== false;
+    fields.push(simField(params, "numSteps", "Product steps", false));
+    if (trotter) fields.push(simField(params, "trotterDepth", "Trotter depth", false));
+    fields.push(simField(params, "seed", "Seed", true));
+    if (trotter) fields.push(
       el(
         "label",
         {},
@@ -2117,7 +2118,12 @@ function simulatorTitle(name) {
   const hash = text.indexOf("#");
   const base = hash === -1 ? text : text.slice(0, hash);
   const suffix = hash === -1 ? "" : text.slice(hash);
-  const titles = { qutip: "QuTiP", split_jmatrix: "Split J", trotterization: "Trotter" };
+  const titles = {
+    qutip: "QuTiP",
+    split_jmatrix: "Split J",
+    trotterization: "Trotter",
+    hybrid_wml: "Hybrid WML",
+  };
   return `${titles[base] || base}${suffix}`;
 }
 

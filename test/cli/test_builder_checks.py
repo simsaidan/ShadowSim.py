@@ -179,6 +179,43 @@ def test_qutip_without_a_backend_is_ready() -> None:
     assert _call("runAllowed", page) is True
 
 
+def test_hybrid_wml_omits_trotter_controls() -> None:
+    page = _circuit_page()
+    block = page["blocks"]["simulator"][0]
+    block["id"] = "hybridwml"
+    block["trotter"] = False
+    block["samples"] = True
+    block["setup"] = (
+        "{name} = HybridWMLSimulator(\n"
+        "    {hamiltonians},\n"
+        "    {lindblads},\n"
+        "    state,\n"
+        "    num_qubits={qubits},\n"
+        "    total_time={total},\n"
+        "    time_steps={time_steps},\n"
+        "    num_steps={num_steps},\n"
+        "    seed={seed}{basis},\n"
+        "    circuit_backend={backend},\n"
+        ")"
+    )
+    entry = page["placedSims"][0]
+    entry["id"] = "hybridwml"
+    entry["params"]["trotterDepth"] = "0"
+    entry["params"]["order"] = "9"
+    page["selection"]["simulator"] = "hybridwml"
+    assert _call("simParamProblem", page, False) is None
+    assert _call("simParamsReady", page) is True
+    body = _call("entryBody", page, entry)
+    assert body["num_steps"] == "4"
+    assert body["seed"] == "0"
+    assert "trotter_depth" not in body
+    assert "order" not in body
+    preview = _call("previewText", page)
+    assert isinstance(preview, str)
+    assert "HybridWMLSimulator" in preview
+    assert "trotter_depth" not in preview
+
+
 def test_circuit_simulator_without_a_backend_is_not_ready() -> None:
     page = _circuit_page()
     assert _call("runAllowed", page) is True

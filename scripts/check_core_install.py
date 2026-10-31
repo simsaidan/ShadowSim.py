@@ -51,6 +51,7 @@ def main() -> None:
 
     _expect_extra(lambda: simulators.QutipSimulator, "qutip")
     _expect_extra(lambda: interop.from_qutip, "qutip")
+    _expect_extra(lambda: simulators.HybridWMLSimulator, "qiskit")
     _expect_extra(lambda: simulators.SplitJMatrixSimulator, "qiskit")
     _expect_extra(_plot, "viz")
 

@@ -116,7 +116,7 @@ backend.z_expectations(circuit, [0], shots=1, seed=None)  # [cos(0.4)]
 backend.x_expectations(circuit, [0], shots=1, seed=None)  # [0.0]
 ```
 
-`RX(0.4)` applied to `|0⟩` stays in the YZ plane, so ⟨X⟩ is 0. `run_counts` raises `NotImplementedError`. `TrotterizationSimulator` and the builder can run a closed Trotter circuit on this backend: product states are prepared with single-qubit gates, the circuit is transpiled into gates the reader accepts, and every qubit returns the expectation of its `basis` letter. It is an expectation backend, so it has no shot counts (see [Measurements](#measurements)). Split JMatrix samples an ancilla and stays on Aer.
+`RX(0.4)` applied to `|0⟩` stays in the YZ plane, so ⟨X⟩ is 0. `run_counts` raises `NotImplementedError`. `TrotterizationSimulator` and the builder can run a closed Trotter circuit on this backend: product states are prepared with single-qubit gates, the circuit is transpiled into gates the reader accepts, and every qubit returns the expectation of its `basis` letter. It is an expectation backend, so it has no shot counts (see [Measurements](#measurements)). Split JMatrix and Hybrid WML sample an ancilla and stay on Aer.
 
 ### Simulation results
 
@@ -204,7 +204,7 @@ The following simulators are supported by the package:
 | Qutip simulator | classical reference | true |
 | Split JMatrix | quantum-inspired | true |
 | Trotterization | quantum-inspired | false |
-| Wave matrix Lindbladization (coming soon) | — | — |
+| Hybrid wave-matrix Lindbladization | quantum-inspired | true |
 
 ### Backends
 
@@ -214,14 +214,14 @@ backend. The following backends are supported:
 
 | Backend | Kind | Simulators | Extra |
 | --- | --- | --- | --- |
-| `AerCircuitBackend` | sampling: returns shot counts from a `shots` budget | Split JMatrix, Trotterization | `qiskit` |
+| `AerCircuitBackend` | sampling: returns shot counts from a `shots` budget | Split JMatrix, Trotterization, Hybrid WML | `qiskit` |
 | `NumpyCircuitBackend` | expectation: exact Pauli expectations from a NumPy statevector. `run_counts` can still sample | Trotterization (closed systems) | `qiskit` |
 | `PauliPropagationBackend` | expectation: returns exact Pauli expectations, no counts | Trotterization (closed systems) | `qiskit` and `pauli_propagation` |
 | `QulacsCircuitBackend` | expectation: exact Pauli expectations from a Qulacs statevector. `run_counts` can still sample | Trotterization (closed systems) | `qiskit` and `qulacs` |
 | `CirqCircuitBackend` | expectation: exact Pauli expectations from a Cirq statevector. `run_counts` can still sample | Trotterization (closed systems) | `qiskit` and `cirq` |
 
-`AerCircuitBackend` is the default for both circuit simulators. Split JMatrix
-samples an ancilla, so it needs a sampling backend. See
+`AerCircuitBackend` is the default for the circuit simulators. Split JMatrix
+and Hybrid WML sample an ancilla, so they need a sampling backend. See
 [Measurements](#measurements) for what each kind returns and
 [PauliPropagation](#paulipropagation) for the Julia setup.
 
@@ -229,8 +229,8 @@ samples an ancilla, so it needs a sampling backend. See
 readability come before performance. It stores no `shots` attribute, so
 Trotterization reads exact ⟨Z⟩ and ⟨X⟩. `run_counts` still samples the
 computational basis, and the same `seed` repeats those counts. `Reset` and a
-measurement followed by a gate are rejected. Split JMatrix samples an ancilla
-with `Reset`, so it uses Aer.
+measurement followed by a gate are rejected. Split JMatrix and Hybrid WML sample
+an ancilla with `Reset`, so they use Aer.
 
 Checked circuits agree with Aer statevector probabilities to `1e-8`. One local
 Hamiltonian makes the Trotter product exact: that ⟨Z⟩ curve matches `cos(2t)`
@@ -254,8 +254,8 @@ statevector evolved by Qulacs. Install the `qiskit` extra as well, because the
 circuit is a `QuantumCircuit`. It stores no `shots` attribute, so
 Trotterization reads exact ⟨Z⟩ and ⟨X⟩. `run_counts` still samples the
 computational basis, and the same `seed` repeats those counts. `Reset` and a
-measurement followed by a gate are rejected. Split JMatrix samples an ancilla
-with `Reset`, so it uses Aer.
+measurement followed by a gate are rejected. Split JMatrix and Hybrid WML sample
+an ancilla with `Reset`, so they use Aer.
 
 Statevectors agree with `NumpyCircuitBackend` to `1e-8`. One local Hamiltonian
 makes the Trotter product exact: that ⟨Z⟩ curve matches `cos(2t)` to `1e-8`.
@@ -281,7 +281,7 @@ circuit is a `QuantumCircuit`. It stores no `shots` attribute, so
 Trotterization reads exact ⟨Z⟩ and ⟨X⟩. `run_counts` still samples the
 computational basis, and the same `seed` repeats those counts. `Reset`, a
 measurement followed by a gate, and circuit metrics are rejected. Split
-JMatrix samples an ancilla with `Reset`, so it uses Aer.
+JMatrix and Hybrid WML sample an ancilla with `Reset`, so they use Aer.
 
 Statevectors agree with `NumpyCircuitBackend` to `1e-8`. One local Hamiltonian
 makes the Trotter product exact: that ⟨Z⟩ curve matches `cos(2t)` to `1e-8`.

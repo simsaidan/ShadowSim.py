@@ -1247,6 +1247,27 @@ def test_qutip_result_is_already_measured() -> None:
 
 
 @pytest.mark.qiskit
+def test_hybrid_wml_ignores_trotter_settings() -> None:
+    pytest.importorskip("qiskit_aer")
+    simulator = build_simulator(
+        _selection(
+            simulator="hybridwml",
+            time_steps=2,
+            num_steps=3,
+            trotter_depth=0,
+            order=3,
+            shots=16,
+            seed=4,
+        )
+    )
+    assert simulator.num_steps == 3
+    assert simulator.seed == 4
+    assert simulator.circuit_backend.shots == 16
+    assert not hasattr(simulator, "trotter_depth")
+    assert not hasattr(simulator, "order")
+
+
+@pytest.mark.qiskit
 @pytest.mark.parametrize("simulator_id", ["trotterization", "splitjmatrix"])
 def test_circuit_parameters_come_from_the_selection(simulator_id: str) -> None:
     pytest.importorskip("qiskit_aer")
@@ -1881,6 +1902,7 @@ def test_listed_simulators_skips_imports_that_fail(monkeypatch: pytest.MonkeyPat
     assert listed[0]["observables"] is False
     assert listed[0]["samples"] is False
     assert listed[0]["closed_system"] is False
+    assert listed[0]["trotter"] is False
     assert listed[0]["setup"] == (
         "{name} = BareSimulator(\n"
         "    {hamiltonians},\n"
@@ -1890,8 +1912,6 @@ def test_listed_simulators_skips_imports_that_fail(monkeypatch: pytest.MonkeyPat
         "    total_time={total},\n"
         "    time_steps={time_steps},\n"
         "    num_steps={num_steps},\n"
-        "    trotter_depth={trotter_depth},\n"
-        "    order={order},\n"
         "    seed={seed}{basis},\n"
         "    circuit_backend={backend},\n"
         ")"
@@ -1900,6 +1920,7 @@ def test_listed_simulators_skips_imports_that_fail(monkeypatch: pytest.MonkeyPat
     assert listed[1]["observables"] is True
     assert listed[1]["samples"] is False
     assert listed[1]["closed_system"] is False
+    assert listed[1]["trotter"] is False
     assert listed[1]["setup"] == (
         "{name} = NoteSimulator({hamiltonians}, {lindblads}, state,\n"
         "                    e_ops, num_qubits={qubits},\n"
@@ -1918,6 +1939,7 @@ def test_describe_simulator_uses_the_title_without_a_docstring(monkeypatch: pyte
     assert described["observables"] is False
     assert described["samples"] is False
     assert described["closed_system"] is False
+    assert described["trotter"] is False
 
     class ClosedSimulator:
         closed_system = True
@@ -1948,24 +1970,35 @@ def test_listed_simulators_reads_the_package_classes() -> None:
     pytest.importorskip("qutip")
     pytest.importorskip("qiskit_aer")
     listed = listed_simulators()
-    assert [item["id"] for item in listed] == ["qutip", "splitjmatrix", "trotterization"]
-    assert listed[0]["observables"] is True
-    assert listed[0]["samples"] is False
+    assert [item["id"] for item in listed] == ["hybridwml", "qutip", "splitjmatrix", "trotterization"]
+    assert listed[0]["observables"] is False
+    assert listed[0]["samples"] is True
     assert listed[0]["closed_system"] is False
-    assert listed[0]["setup"] == (
+    assert listed[0]["trotter"] is False
+    assert listed[0]["setup"].startswith("{name} = HybridWMLSimulator(\n")
+    assert "trotter_depth" not in listed[0]["setup"]
+    assert "order=" not in listed[0]["setup"]
+    assert listed[1]["observables"] is True
+    assert listed[1]["samples"] is False
+    assert listed[1]["closed_system"] is False
+    assert listed[1]["trotter"] is False
+    assert listed[1]["setup"] == (
         "{name} = QutipSimulator({hamiltonians}, {lindblads}, state,\n"
         "                    e_ops, num_qubits={qubits},\n"
         "                    total_time={total}, time_steps={time_steps})"
     )
-    assert listed[1]["observables"] is False
-    assert listed[1]["samples"] is True
-    assert listed[1]["closed_system"] is False
-    assert listed[1]["setup"].startswith("{name} = SplitJMatrixSimulator(\n")
-    assert "{backend}" in listed[1]["setup"]
-    assert listed[2]["samples"] is False
-    assert listed[2]["closed_system"] is True
-    assert listed[2]["setup"].startswith("{name} = TrotterizationSimulator(\n")
-    assert "QuTiP" in listed[0]["detail"]
+    assert listed[2]["observables"] is False
+    assert listed[2]["samples"] is True
+    assert listed[2]["closed_system"] is False
+    assert listed[2]["trotter"] is True
+    assert "trotter_depth={trotter_depth}" in listed[2]["setup"]
+    assert listed[2]["setup"].startswith("{name} = SplitJMatrixSimulator(\n")
+    assert "{backend}" in listed[2]["setup"]
+    assert listed[3]["samples"] is False
+    assert listed[3]["closed_system"] is True
+    assert listed[3]["trotter"] is True
+    assert listed[3]["setup"].startswith("{name} = TrotterizationSimulator(\n")
+    assert "QuTiP" in listed[1]["detail"]
 
 
 def test_get_models_returns_the_package_factories() -> None:

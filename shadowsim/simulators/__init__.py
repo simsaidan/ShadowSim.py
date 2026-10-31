@@ -10,19 +10,23 @@ from shadowsim.simulators.result import SimulationResult
 from shadowsim.simulators.simulator import Simulator
 
 if TYPE_CHECKING:
+    from shadowsim.simulators.hybrid_wml_simulator import HybridWMLSimulator as HybridWMLSimulator
     from shadowsim.simulators.qutip_simulator import QutipSimulator as QutipSimulator
     from shadowsim.simulators.splitjmatrix_simulator import SplitJMatrixSimulator as SplitJMatrixSimulator
     from shadowsim.simulators.trotterization_simulator import TrotterizationSimulator as TrotterizationSimulator
 
 # Simulators loaded on first access: name -> (module, extra).
 # extra is None when the simulator has no optional dependency.
+# Keep entries alphabetical by module name; the new-simulator command inserts that way.
 _EXPORTS: dict[str, tuple[str, str | None]] = {
+    "HybridWMLSimulator": ("shadowsim.simulators.hybrid_wml_simulator", "qiskit"),
     "QutipSimulator": ("shadowsim.simulators.qutip_simulator", "qutip"),
     "SplitJMatrixSimulator": ("shadowsim.simulators.splitjmatrix_simulator", "qiskit"),
     "TrotterizationSimulator": ("shadowsim.simulators.trotterization_simulator", "qiskit"),
 }
 
 __all__ = [
+    "HybridWMLSimulator",
     "Measurement",
     "QutipSimulator",
     "SimulationJob",

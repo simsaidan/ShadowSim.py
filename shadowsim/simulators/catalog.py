@@ -20,6 +20,7 @@ class ListedSimulator(TypedDict):
     observables: bool
     samples: bool
     closed_system: bool
+    trotter: bool
 
 
 def listed_simulators() -> list[ListedSimulator]:
@@ -30,12 +31,14 @@ def listed_simulators() -> list[ListedSimulator]:
     explicit observables; the others take a circuit backend. ``samples`` is true
     when the class sets ``requires_sampling_backend``, so the page pairs it only
     with a backend that has a shot budget. ``closed_system`` is true when the
-    class sets that attribute.
+    class sets that attribute. ``trotter`` is true when the constructor takes
+    ``trotter_depth``.
     ``setup`` names the class and leaves the page's constructor values as
     placeholders: ``{name}``, ``{hamiltonians}``, ``{lindblads}``, ``{qubits}``,
     ``{total}``, and ``{time_steps}``. A circuit simulator also leaves
-    ``{num_steps}``, ``{trotter_depth}``, ``{order}``, ``{seed}``, ``{basis}``,
-    and ``{backend}``.
+    ``{num_steps}``, ``{seed}``, ``{basis}``, and ``{backend}``. One whose
+    constructor takes ``trotter_depth`` also leaves ``{trotter_depth}`` and
+    ``{order}``.
 
     Returns:
         Simulators the builder page can offer.
@@ -65,9 +68,11 @@ def _describe_simulator(cls: type) -> ListedSimulator:
     title = cls.__name__.removesuffix("Simulator")
     document = inspect.getdoc(cls)
     detail = title if document is None else document.split("\n", 1)[0].replace("``", "")
-    observables = "observables" in inspect.signature(cls).parameters
+    parameters = inspect.signature(cls).parameters
+    observables = "observables" in parameters
     samples = bool(getattr(cls, "requires_sampling_backend", False))
     closed_system = bool(getattr(cls, "closed_system", False))
+    trotter = "trotter_depth" in parameters
     if observables:
         setup = (
             f"{{name}} = {cls.__name__}({{hamiltonians}}, {{lindblads}}, state,\n"
@@ -75,6 +80,7 @@ def _describe_simulator(cls: type) -> ListedSimulator:
             "                    total_time={total}, time_steps={time_steps})"
         )
     else:
+        product = "    trotter_depth={trotter_depth},\n    order={order},\n" if trotter else ""
         setup = (
             f"{{name}} = {cls.__name__}(\n"
             "    {hamiltonians},\n"
@@ -84,8 +90,7 @@ def _describe_simulator(cls: type) -> ListedSimulator:
             "    total_time={total},\n"
             "    time_steps={time_steps},\n"
             "    num_steps={num_steps},\n"
-            "    trotter_depth={trotter_depth},\n"
-            "    order={order},\n"
+            f"{product}"
             "    seed={seed}{basis},\n"
             "    circuit_backend={backend},\n"
             ")"
@@ -99,4 +104,5 @@ def _describe_simulator(cls: type) -> ListedSimulator:
         "observables": observables,
         "samples": samples,
         "closed_system": closed_system,
+        "trotter": trotter,
     }
