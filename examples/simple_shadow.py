@@ -1,5 +1,6 @@
 import numpy as np
 
+from shadowsim.backends.numpy import NumpyCircuitBackend
 from shadowsim.core import Hamiltonian, OperatorSet, State
 from shadowsim.shadow import run_shadow_simulation
 from shadowsim.simulators import QutipSimulator
@@ -46,12 +47,17 @@ shadow = run_shadow_simulation(
     initial_state,
     total_time=5.0,
     time_steps=400,
+    circuit_backend=NumpyCircuitBackend(),
 )
 print("shadow state:", shadow.shadow_state.to_numpy())
 print("H_S:", shadow.shadow_hamiltonian.H_S)
 print("shadow_num_qubits:", shadow.shadow_num_qubits)
 
+# Shadow curves are labeled by closure-basis Pauli, so match them to the QuTiP traces by name.
+qutip_traces = dict(zip([op.name for op in observables], qutip_simulator.get_results(), strict=True))
 for label, trace in zip(shadow.labels, shadow.expectations, strict=True):
     print(f"{label} variation:", float(np.max(trace) - np.min(trace)))
+    if label in qutip_traces:
+        print(f"{label} max |shadow - QuTiP|:", float(np.max(np.abs(trace - qutip_traces[label]))))
 
 shadow.plot_results(title=f"{shadow.shadow_num_qubits}-qubit shadow")

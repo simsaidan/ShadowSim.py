@@ -2,8 +2,9 @@
 
 import json
 from collections.abc import Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import numpy as np
 import numpy.typing as npt
@@ -18,6 +19,11 @@ from shadowsim.shadow.shadow_hamiltonian import ShadowHamiltonian, _infer_num_qu
 from shadowsim.shadow.shadow_state import ShadowState
 from shadowsim.utils.next_power_of_two import next_power_of_two
 
+if TYPE_CHECKING:
+    from qiskit import QuantumCircuit
+
+    from shadowsim.backends.circuit import CircuitBackend
+
 
 @dataclass(frozen=True)
 class ShadowSimulationResult:
@@ -26,12 +32,13 @@ class ShadowSimulationResult:
     ``save`` writes ``times.npy``, ``expectations.npy``, and ``meta.json``.
     ``load`` restores times, curves, labels, basis, and padding, and leaves
     ``shadow_hamiltonian``, ``shadow_state``, and ``H_S_padded`` as ``None``.
+    The shadow-observable curves are not saved, so ``load`` leaves them empty.
     ``plot_results`` draws one expectation curve per label.
 
     Attributes:
         times: Simulation time grid.
-        expectations: One expectation trajectory per shadow-space observable.
-        labels: Names for each trajectory in ``expectations``.
+        expectations: Signed ``⟨O_k⟩(t)`` for each closure-basis operator, in ``basis`` order.
+        labels: Names for each trajectory in ``expectations``. A fresh run uses ``basis``.
         basis: Closure basis order (Pauli labels).
         shadow_num_qubits: Qubit count of the padded shadow Hilbert space.
         h_s_dimension: Unpadded ``H_S`` dimension, ``len(basis)``.
@@ -41,6 +48,10 @@ class ShadowSimulationResult:
             ``None`` when this result was not produced by a fresh run.
         H_S_padded: ``H_S`` embedded in the top-left of a ``2**shadow_num_qubits`` matrix.
             ``None`` when this result was not produced by a fresh run.
+        shadow_observable_expectations: ``⟨ψ_S(t)|M|ψ_S(t)⟩`` for each ``M`` passed as
+            ``shadow_observables``, in that order. Empty when none were passed.
+        shadow_observable_labels: Names for each trajectory in
+            ``shadow_observable_expectations``.
     """
 
     times: npt.NDArray[np.float64]
@@ -52,6 +63,8 @@ class ShadowSimulationResult:
     shadow_hamiltonian: ShadowHamiltonian | None = None
     shadow_state: ShadowState | None = None
     H_S_padded: npt.NDArray[np.complexfloating] | None = None
+    shadow_observable_expectations: list[npt.NDArray[np.float64]] = field(default_factory=list)
+    shadow_observable_labels: list[str] = field(default_factory=list)
 
     def save(self, path: str | Path) -> Path:
         """Write times, expectation curves, and metadata to a directory.
@@ -66,7 +79,8 @@ class ShadowSimulationResult:
         ``expectations.npy`` is a float64 array of shape
         ``(len(labels), len(times))``, one curve per row. ``meta.json`` records
         ``labels``, ``basis``, ``shadow_num_qubits``, and ``h_s_dimension``.
-        The shadow Hamiltonian, shadow state, and padded ``H_S`` are not written.
+        The shadow Hamiltonian, shadow state, padded ``H_S``, and shadow-observable
+        curves are not written.
         Arrays are saved with ``allow_pickle=False``.
         """
         out = Path(path)
@@ -335,6 +349,87 @@ def _validate_physical_dims(
             )
 
 
+def _validate_shadow_observables(shadow_observables: OperatorSet, shadow_nq: int) -> None:
+    if len(shadow_observables) == 0:
+        raise ValueError("shadow simulation: shadow_observables must be non-empty")
+    expected_shadow_dim = 1 << shadow_nq
+    for op in shadow_observables.operators:
+        if int(op.dimension) != expected_shadow_dim:
+            raise ValueError(
+                "shadow simulation: shadow_observables dimension disagrees with shadow space; "
+                f"got dimension {op.dimension}, expected {expected_shadow_dim}"
+            )
+
+
+def _hadamard_test_circuit(
+    psi0: npt.NDArray[np.complexfloating],
+    evolution: npt.NDArray[np.complexfloating],
+    k: int,
+) -> "QuantumCircuit":
+    """Return a circuit whose ancilla ``⟨X⟩`` is ``Re⟨k|evolution|psi0⟩``.
+
+    Circuit qubit 0 is the ancilla and the most significant bit of the joint
+    index, the convention ``_trotter_circuit`` uses. The register starts in
+    ``(|0⟩|psi0⟩ + |1⟩|k⟩) / √2`` and ``evolution`` acts only on the ``|0⟩`` branch.
+    """
+    qiskit = import_optional("qiskit", extra="qiskit")
+    library = import_optional("qiskit.circuit.library", extra="qiskit")
+    dim = int(psi0.shape[0])
+    reference = np.zeros(dim, dtype=np.complex128)
+    reference[k] = 1.0
+    joint = np.concatenate([psi0, reference]) / np.sqrt(2.0)
+    controlled = np.zeros((2 * dim, 2 * dim), dtype=np.complex128)
+    controlled[:dim, :dim] = evolution
+    controlled[dim:, dim:] = np.eye(dim, dtype=np.complex128)
+
+    circuit = qiskit.QuantumCircuit(dim.bit_length())
+    qubits = list(reversed(circuit.qubits))
+    circuit.initialize(joint, qubits)
+    circuit.append(library.UnitaryGate(controlled), qubits)
+    return circuit
+
+
+def _signed_expectations(
+    H_S_padded: npt.NDArray[np.complexfloating],
+    shadow_state: ShadowState,
+    h_s_dimension: int,
+    times: npt.NDArray[np.float64],
+    circuit_backend: "CircuitBackend",
+    *,
+    seed: int | None,
+) -> list[npt.NDArray[np.float64]]:
+    """Return ``√A · ψ_k(t)`` for each closure-basis index ``k``, one curve per index."""
+    linalg = import_optional("scipy.linalg", extra="qiskit")
+    circuit = import_optional("shadowsim.backends.circuit", extra="qiskit")
+    shots = circuit.backend_shots(circuit_backend) if circuit.backend_samples(circuit_backend) else 1
+    psi0 = shadow_state.to_numpy()
+    scale = np.sqrt(shadow_state.A)
+    curves = np.zeros((h_s_dimension, times.shape[0]), dtype=np.float64)
+    for index, t in enumerate(times):
+        evolution = linalg.expm(-1j * H_S_padded * t)
+        for k in range(h_s_dimension):
+            test = _hadamard_test_circuit(psi0, evolution, k)
+            (reading,) = circuit_backend.x_expectations(test, [0], shots=shots, seed=seed)
+            curves[k, index] = scale * float(reading)
+    return list(curves)
+
+
+def _shadow_observable_curves(
+    signed: list[npt.NDArray[np.float64]],
+    shadow_state: ShadowState,
+    shadow_observables: OperatorSet,
+) -> list[npt.NDArray[np.float64]]:
+    """Return ``ψ(t)ᵀ M ψ(t)`` for each ``M``, with ``ψ(t)`` rebuilt from the signed curves.
+
+    ``ψ(t)`` is the signed curves divided by ``√A``, zero-padded to the shadow
+    dimension. Its entries are real, so ``ψ†`` equals ``ψᵀ``.
+    """
+    components = np.stack(signed, axis=1) / np.sqrt(shadow_state.A)
+    psi = np.zeros((components.shape[0], int(shadow_state.state.shape[0])), dtype=np.float64)
+    psi[:, : components.shape[1]] = components
+    return [np.einsum("ti,ij,tj->t", psi, op.matrix, psi).real.astype(np.float64) for op in shadow_observables]
+
+
 def run_shadow_simulation(
     hamiltonians: Hamiltonian | Sequence[Hamiltonian],
     observables: OperatorSet | Sequence[Operator | str],
@@ -342,21 +437,39 @@ def run_shadow_simulation(
     *,
     total_time: float,
     time_steps: int,
+    circuit_backend: "CircuitBackend",
     num_qubits: int | None = None,
     shadow_observables: OperatorSet | None = None,
+    seed: int | None = None,
     tol: float = 1e-10,
     verbose: bool = False,
 ) -> ShadowSimulationResult:
-    """Build the shadow model and evolve it with ``QutipSimulator``.
+    """Build the shadow model and evolve it on ``circuit_backend``.
 
     Constructs ``ShadowHamiltonian`` on the physical system, builds a
-    ``ShadowState`` ordered to match the closure basis of ``H_S``, pads
-    ``H_S`` to a power-of-two Hilbert space, and simulates with QuTiP.
-    Default shadow-space observables are computational-basis projectors.
+    ``ShadowState`` ordered to match the closure basis of ``H_S``, and pads
+    ``H_S`` to a power-of-two Hilbert space. Component ``k`` of the evolved
+    shadow state is ``⟨O_k⟩(t) / √A``, so it is read with a Hadamard test: an
+    ancilla interferes ``exp(-i H_S t)|ψ_S(0)⟩`` with ``|k⟩``, and its ``⟨X⟩``
+    is that component. ``expectations`` holds ``√A`` times each reading, the
+    signed ``⟨O_k⟩(t)`` in ``basis`` order, labeled by ``basis``.
+
+    One circuit runs per closure-basis operator per time point. A backend with
+    a ``shots`` budget estimates each reading from that many shots, so each
+    point carries an error of about ``√(A / shots)``. A backend without one,
+    such as ``NumpyCircuitBackend``, returns exact readings. The circuits use
+    ``initialize`` and dense unitaries, so the backend must accept both.
+
+    ``shadow_observables`` are optional quadratic diagnostics on the shadow
+    register, such as ``computational_basis_projectors(shadow_num_qubits)``.
+    Each curve is ``⟨ψ_S(t)|M|ψ_S(t)⟩``, computed from the signed readings
+    without extra circuits, so it carries their shot noise. The curves fill
+    ``shadow_observable_expectations`` and do not change ``expectations``.
 
     Example:
         ```python
         import numpy as np
+        from shadowsim.backends.numpy import NumpyCircuitBackend
         from shadowsim.core import Hamiltonian, OperatorSet, State
         from shadowsim.shadow import run_shadow_simulation
 
@@ -366,8 +479,9 @@ def run_shadow_simulation(
             State(np.array([1.0, 0.0], dtype=np.complex128), 1),
             total_time=1.0,
             time_steps=11,
+            circuit_backend=NumpyCircuitBackend(),
         )
-        print(result.shadow_num_qubits, result.shadow_hamiltonian.basis)
+        print(result.labels)  # ['Y', 'Z']: ⟨Y⟩ = -sin(2t), ⟨Z⟩ = cos(2t)
         ```
     """
     terms = _as_hamiltonian_list(hamiltonians)
@@ -399,39 +513,34 @@ def run_shadow_simulation(
             f"got state length {shadow_state.state.shape[0]}, H_S shape {H_S_padded.shape}"
         )
 
-    e_ops = shadow_observables if shadow_observables is not None else computational_basis_projectors(shadow_nq)
-    if len(e_ops) == 0:
-        raise ValueError("shadow simulation: shadow_observables must be non-empty")
-    expected_shadow_dim = 1 << shadow_nq
-    for op in e_ops.operators:
-        if int(op.dimension) != expected_shadow_dim:
-            raise ValueError(
-                "shadow simulation: shadow_observables dimension disagrees with shadow space; "
-                f"got dimension {op.dimension}, expected {expected_shadow_dim}"
-            )
+    if shadow_observables is not None:
+        _validate_shadow_observables(shadow_observables, shadow_nq)
 
-    qutip_simulator = import_optional("shadowsim.simulators.qutip_simulator", extra="qutip")
-    simulator = qutip_simulator.QutipSimulator(
-        [Hamiltonian(H_S_padded)],
-        [],
+    times = np.linspace(0, total_time, time_steps)
+    expectations = _signed_expectations(
+        H_S_padded,
         shadow_state,
-        e_ops,
-        num_qubits=shadow_nq,
-        total_time=total_time,
-        time_steps=time_steps,
+        int(shadow_h.H_S.shape[0]),
+        times,
+        circuit_backend,
+        seed=seed,
     )
-    simulator.simulate()
-    expectations = [np.asarray(curve, dtype=np.float64) for curve in simulator.get_results()]
-    labels = [op.name if op.name is not None else str(i) for i, op in enumerate(e_ops)]
+    observable_curves: list[npt.NDArray[np.float64]] = []
+    observable_labels: list[str] = []
+    if shadow_observables is not None:
+        observable_curves = _shadow_observable_curves(expectations, shadow_state, shadow_observables)
+        observable_labels = [op.name if op.name is not None else str(i) for i, op in enumerate(shadow_observables)]
 
     return ShadowSimulationResult(
-        times=np.asarray(simulator.tlist, dtype=np.float64),
+        times=np.asarray(times, dtype=np.float64),
         expectations=expectations,
-        labels=labels,
+        labels=list(shadow_h.basis),
         basis=list(shadow_h.basis),
         shadow_num_qubits=shadow_nq,
         h_s_dimension=int(shadow_h.H_S.shape[0]),
         shadow_hamiltonian=shadow_h,
         shadow_state=shadow_state,
         H_S_padded=H_S_padded,
+        shadow_observable_expectations=observable_curves,
+        shadow_observable_labels=observable_labels,
     )

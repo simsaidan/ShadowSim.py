@@ -68,7 +68,9 @@ def assert_dynamics_agreement(
     time_steps: int = 5,
     tol: float = 1e-10,
 ) -> None:
-    """Compare short QuTiP trajectories for sparse vs densified inputs."""
+    """Compare short NumPy-backend trajectories for sparse vs densified inputs."""
+    from shadowsim.backends.numpy import NumpyCircuitBackend
+
     assert shadow_dynamics_applicable(hamiltonians, operator_set, n_qubits, tol=tol), (
         "dynamics comparison requires basis size >= 2 and unit shadow weight on |0…0⟩"
     )
@@ -79,6 +81,7 @@ def assert_dynamics_agreement(
         state,
         total_time=total_time,
         time_steps=time_steps,
+        circuit_backend=NumpyCircuitBackend(),
         num_qubits=n_qubits,
         tol=tol,
     )
@@ -88,6 +91,7 @@ def assert_dynamics_agreement(
         state,
         total_time=total_time,
         time_steps=time_steps,
+        circuit_backend=NumpyCircuitBackend(),
         num_qubits=n_qubits,
         tol=tol,
     )
@@ -205,14 +209,14 @@ def test_sparse_dense_regression_case(case: RegressionCase):
     assert_shadow_agreement(hamiltonians, operator_set)
 
 
-@pytest.mark.qutip
+@pytest.mark.qiskit
 @pytest.mark.parametrize(
     "case",
     [c for c in REGRESSION_CASES if c.compare_dynamics],
     ids=lambda c: c.id,
 )
 def test_sparse_dense_dynamics_case(case: RegressionCase):
-    pytest.importorskip("qutip")
+    pytest.importorskip("qiskit")
     hamiltonians, operator_set = case.build_sparse()
     if shadow_dynamics_applicable(hamiltonians, operator_set, case.n_qubits):
         assert_dynamics_agreement(hamiltonians, operator_set, case.n_qubits)
@@ -229,9 +233,9 @@ def test_canonical_one_qubit_x_z_seed():
     assert np.allclose(dense.H_S, expected, atol=ATOL, rtol=RTOL)
 
 
-@pytest.mark.qutip
+@pytest.mark.qiskit
 def test_canonical_one_qubit_x_z_seed_dynamics():
-    pytest.importorskip("qutip")
+    pytest.importorskip("qiskit")
     assert_dynamics_agreement(Hamiltonian("X"), OperatorSet(["Z"]), 1)
 
 
@@ -273,9 +277,9 @@ def test_partial_canceling_hamiltonian_terms():
     assert dense.pauli_decomposition["Z"] == pytest.approx(0.5)
 
 
-@pytest.mark.qutip
+@pytest.mark.qiskit
 def test_partial_canceling_hamiltonian_terms_dynamics():
-    pytest.importorskip("qutip")
+    pytest.importorskip("qiskit")
     terms = [
         Hamiltonian("X"),
         Hamiltonian(PauliSum({"X": -1.0, "Z": 0.5})),
@@ -312,9 +316,9 @@ def test_identical_support_merge_in_expression():
     assert dense.pauli_decomposition["X"] == pytest.approx(3 + 0j)
 
 
-@pytest.mark.qutip
+@pytest.mark.qiskit
 def test_identical_support_merge_in_expression_dynamics():
-    pytest.importorskip("qutip")
+    pytest.importorskip("qiskit")
     assert_dynamics_agreement(Hamiltonian("X + 2*X"), OperatorSet(["Z"]), 1)
 
 
