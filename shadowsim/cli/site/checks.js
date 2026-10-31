@@ -52,6 +52,10 @@
     return Boolean(block.observables);
   }
 
+  function usesTrotter(entry) {
+    return blockById("simulator", entry.id)?.trotter !== false;
+  }
+
   function needsBackend() {
     return page.placedSims.some((entry) => !isReference(entry));
   }
@@ -433,13 +437,10 @@
     const params = entry.params;
     if (!positiveIntAtMost(params.timeSteps, page.maxTimeSteps)) return false;
     if (isReference(entry)) return true;
-    if (
-      !positiveIntAtMost(params.numSteps, page.maxNumSteps) ||
-      !positiveIntAtMost(params.trotterDepth, page.maxTrotterDepth)
-    ) {
-      return false;
-    }
+    if (!positiveIntAtMost(params.numSteps, page.maxNumSteps)) return false;
+    if (usesTrotter(entry) && !positiveIntAtMost(params.trotterDepth, page.maxTrotterDepth)) return false;
     if (!/^-?\d+$/.test(params.seed)) return false;
+    if (!usesTrotter(entry)) return true;
     return params.order === "1" || params.order === "2";
   }
 
@@ -451,6 +452,7 @@
       if (isReference(entry)) continue;
       const numSteps = oversizePositiveInt(params.numSteps, "Product steps", page.maxNumSteps, preview);
       if (numSteps) return numSteps;
+      if (!usesTrotter(entry)) continue;
       const depth = oversizePositiveInt(params.trotterDepth, "Trotter depth", page.maxTrotterDepth, preview);
       if (depth) return depth;
     }
@@ -946,9 +948,11 @@
     const body = { simulator: entry.id, time_steps: params.timeSteps };
     if (isReference(entry)) return body;
     body.num_steps = params.numSteps;
-    body.trotter_depth = params.trotterDepth;
     body.seed = params.seed;
-    body.order = params.order;
+    if (usesTrotter(entry)) {
+      body.trotter_depth = params.trotterDepth;
+      body.order = params.order;
+    }
     if (entry.backend) body.backend = entry.backend;
     const backend = blockById("backend", entry.backend);
     if (backend?.shots) body.shots = String(entry.shots ?? "").trim();

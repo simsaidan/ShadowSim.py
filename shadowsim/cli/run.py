@@ -464,12 +464,19 @@ def _circuit_simulator(
     num_steps = _selection_positive_int(
         selection, "num_steps", _CIRCUIT_NUM_STEPS, "product steps", maximum=_MAX_NUM_STEPS
     )
-    depth = _selection_positive_int(selection, "trotter_depth", 1, "Trotter depth", maximum=_MAX_TROTTER_DEPTH)
     seed = _selection_integer(selection, "seed", _CIRCUIT_SEED, "seed")
-    order = _selection_order(selection)
     if getattr(cls, "closed_system", False) and model.c_ops_local:
         raise ValueError(f"{cls.__name__.removesuffix('Simulator')} is closed-system only")
     circuit_backend = _make_backend(record, selection)
+    # Trotter depth and order are constructor arguments only for product-formula simulators.
+    extra: dict[str, Any] = {}
+    if "trotter_depth" in inspect.signature(cls).parameters:
+        extra["trotter_depth"] = _selection_positive_int(
+            selection, "trotter_depth", 1, "Trotter depth", maximum=_MAX_TROTTER_DEPTH
+        )
+        extra["order"] = _selection_order(selection)
+    if measure_id == "x":
+        extra["basis"] = _x_basis(model.num_qubits, sites)
     return cls(
         model.local_hamiltonians,
         model.c_ops_local,
@@ -478,11 +485,9 @@ def _circuit_simulator(
         total_time=total_time,
         time_steps=steps,
         num_steps=num_steps,
-        trotter_depth=depth,
-        order=order,
         seed=seed,
         circuit_backend=circuit_backend,
-        **({"basis": _x_basis(model.num_qubits, sites)} if measure_id == "x" else {}),
+        **extra,
     )
 
 
