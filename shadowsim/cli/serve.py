@@ -45,6 +45,7 @@ _BUSY = "a run is still finishing"
 _TOKEN_COOKIE = "shadowsim-token"
 _PAGE_UNAUTHORIZED = "Open the URL printed when the server started.\n"
 _JSON_REQUIRED = "Content-Type must be application/json"
+_MAX_BODY_BYTES = 8 * 1024 * 1024
 
 
 class _RunPhase(enum.Enum):
@@ -160,7 +161,8 @@ class _Handler(BaseHTTPRequestHandler):
         When the server has a startup token, both routes require that token in a
         cookie or in ``Authorization: Bearer`` before any run is started or stopped.
         ``POST /runs`` also requires ``Content-Type: application/json`` before the
-        body is parsed. ``POST /runs/cancel`` has no body and does not.
+        body is parsed, and rejects a body larger than 8 MiB. ``POST /runs/cancel``
+        has no body and does not.
         """
         path = urlsplit(self.path).path
         if path == "/runs/cancel":
@@ -205,17 +207,8 @@ class _Handler(BaseHTTPRequestHandler):
             _slot.running.release()
 
     def _body(self) -> bytes:
-        """Return the request body, or raise if its length is missing."""
-        length = self.headers.get("Content-Length")
-        if length is None:
-            raise ValueError("request body must be JSON")
-        try:
-            size = int(length)
-        except ValueError:
-            raise ValueError("request body must be JSON") from None
-        if size < 0:
-            raise ValueError("request body must be JSON")
-        return self.rfile.read(size)
+        """Return the request body, or raise if its length is missing or too large."""
+        return _read_body(self.headers, self.rfile)
 
     def log_message(self, format: str, *args: object) -> None:
         """Keep request logs off the terminal."""
@@ -586,6 +579,39 @@ def _load_catalog(key: str) -> Any:
     if key == "simulators":
         return listed_simulators()
     return listed_backends()
+
+
+def _read_body(headers: Any, rfile: Any) -> bytes:
+    """Return the request body, or raise if its length is missing or too large.
+
+    ``Content-Length`` is checked before any bytes are read, so an oversized
+    claim does not fill memory.
+
+    Args:
+        headers: Request headers. ``Content-Length`` must be a non-negative
+            integer of at most ``_MAX_BODY_BYTES``.
+        rfile: The request stream. Only ``size`` bytes are read after the
+            length check.
+
+    Returns:
+        The request body.
+
+    Raises:
+        ValueError: The length is missing, not an integer, negative, or larger
+            than ``_MAX_BODY_BYTES``.
+    """
+    length = headers.get("Content-Length")
+    if length is None:
+        raise ValueError("request body must be JSON")
+    try:
+        size = int(length)
+    except (TypeError, ValueError):
+        raise ValueError("request body must be JSON") from None
+    if size < 0:
+        raise ValueError("request body must be JSON")
+    if size > _MAX_BODY_BYTES:
+        raise ValueError("request body is too large")
+    return rfile.read(size)
 
 
 def _json_object(body: bytes) -> dict[str, Any]:
