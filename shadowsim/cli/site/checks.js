@@ -159,6 +159,17 @@
     return /^[1-9]\d*$/.test(value);
   }
 
+  function positiveIntAtMost(value, maximum) {
+    if (!positiveIntText(value)) return false;
+    return BigInt(value) <= BigInt(maximum);
+  }
+
+  function oversizePositiveInt(text, label, maximum, preview) {
+    if (!positiveIntText(text) || positiveIntAtMost(text, maximum)) return null;
+    const tail = preview ? " to preview the script." : ".";
+    return `${label} must be from 1 to ${maximum}${tail}`;
+  }
+
   function emitterCount() {
     const text = page.emitterText.trim();
     if (!positiveIntText(text)) return null;
@@ -420,11 +431,30 @@
 
   function entryParamsReady(entry) {
     const params = entry.params;
-    if (!positiveIntText(params.timeSteps)) return false;
+    if (!positiveIntAtMost(params.timeSteps, page.maxTimeSteps)) return false;
     if (isReference(entry)) return true;
-    if (!positiveIntText(params.numSteps) || !positiveIntText(params.trotterDepth)) return false;
+    if (
+      !positiveIntAtMost(params.numSteps, page.maxNumSteps) ||
+      !positiveIntAtMost(params.trotterDepth, page.maxTrotterDepth)
+    ) {
+      return false;
+    }
     if (!/^-?\d+$/.test(params.seed)) return false;
     return params.order === "1" || params.order === "2";
+  }
+
+  function simParamProblem(preview) {
+    for (const entry of page.placedSims) {
+      const params = entry.params;
+      const timeSteps = oversizePositiveInt(params.timeSteps, "Time steps", page.maxTimeSteps, preview);
+      if (timeSteps) return timeSteps;
+      if (isReference(entry)) continue;
+      const numSteps = oversizePositiveInt(params.numSteps, "Product steps", page.maxNumSteps, preview);
+      if (numSteps) return numSteps;
+      const depth = oversizePositiveInt(params.trotterDepth, "Trotter depth", page.maxTrotterDepth, preview);
+      if (depth) return depth;
+    }
+    return null;
   }
 
   function simParamsReady() {
@@ -468,8 +498,18 @@
     return page.placedSims.every((entry) => {
       const backend = blockById("backend", entry.backend);
       if (!backend?.shots) return true;
-      return positiveIntText(String(entry.shots ?? "").trim());
+      return positiveIntAtMost(String(entry.shots ?? "").trim(), page.maxShots);
     });
+  }
+
+  function shotsProblem(preview) {
+    for (const entry of page.placedSims) {
+      const backend = blockById("backend", entry.backend);
+      if (!backend?.shots) continue;
+      const problem = oversizePositiveInt(String(entry.shots ?? "").trim(), "Shots", page.maxShots, preview);
+      if (problem) return problem;
+    }
+    return null;
   }
 
   function backendFieldNumber(field, text) {
@@ -1310,7 +1350,9 @@
     selectedSites: bind(selectedSites),
     settingNumber: bind(settingNumber),
     settingsReady: bind(settingsReady),
+    shotsProblem: bind(shotsProblem),
     shotsReady: bind(shotsReady),
+    simParamProblem: bind(simParamProblem),
     simParamsReady: bind(simParamsReady),
     socketStatus: bind(socketStatus),
     squareMatrix: bind(squareMatrix),

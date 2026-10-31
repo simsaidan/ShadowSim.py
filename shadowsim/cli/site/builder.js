@@ -92,6 +92,10 @@ let hoppingText = "0";
 let factoryText = {};
 const MAX_EMITTERS = 13;
 const MAX_OPERATOR_QUBITS = 8;
+const MAX_TIME_STEPS = 500;
+const MAX_NUM_STEPS = 100;
+const MAX_TROTTER_DEPTH = 100;
+const MAX_SHOTS = 100000;
 
 const settings = { qubits: "", total: "" };
 let basisBits = "";
@@ -171,6 +175,10 @@ function currentPage() {
     stateLimits: STATE_LIMITS,
     maxEmitters: MAX_EMITTERS,
     maxOperatorQubits: MAX_OPERATOR_QUBITS,
+    maxTimeSteps: MAX_TIME_STEPS,
+    maxNumSteps: MAX_NUM_STEPS,
+    maxTrotterDepth: MAX_TROTTER_DEPTH,
+    maxShots: MAX_SHOTS,
   };
 }
 
@@ -291,6 +299,10 @@ function freshParams(id) {
   return { timeSteps: "11", numSteps: "4", trotterDepth: "1", seed: "0", order: "1" };
 }
 
+function simParamProblem(preview) {
+  return check(checks.simParamProblem, preview);
+}
+
 function simParamsReady() {
   return check(checks.simParamsReady);
 }
@@ -313,6 +325,10 @@ function qubitCount() {
 
 function selectedSites(count) {
   return check(checks.selectedSites, count);
+}
+
+function shotsProblem(preview) {
+  return check(checks.shotsProblem, preview);
 }
 
 function shotsReady() {
@@ -1857,10 +1873,12 @@ function statusMessage() {
   if (stateInputProblem() === "amplitude") return "Enter a non-zero amplitude list and total time.";
   const numbers = numberProblem(false);
   if (numbers) return numbers;
+  if (simParamProblem(false)) return simParamProblem(false);
   if (!simParamsReady()) return "Enter simulator parameters.";
   if (!sameTimeGrid()) return "Use the same number of time steps for every simulator.";
   if (!measureSitesReady()) return "Pick at least one qubit.";
   if (countsStatus(false)) return countsStatus(false);
+  if (shotsProblem(false)) return shotsProblem(false);
   if (!shotsReady()) return "Enter a shot count.";
   if (!check(checks.backendFieldsReady)) return check(checks.backendFieldStatus, false);
   if (!savePathReady()) return pathMessage(false);
@@ -1938,10 +1956,12 @@ function codeBody() {
       message = "Enter a non-zero amplitude list and total time to preview the script.";
     }
     else if (numbers) message = numbers;
+    else if (simParamProblem(true)) message = simParamProblem(true);
     else if (!simParamsReady()) message = "Enter simulator parameters to preview the script.";
     else if (!sameTimeGrid()) message = "Use the same number of time steps to preview the script.";
     else if (!measureSitesReady()) message = "Pick at least one qubit to preview the script.";
     else if (countsStatus(true)) message = countsStatus(true);
+    else if (shotsProblem(true)) message = shotsProblem(true);
     else if (!shotsReady()) message = "Enter a shot count to preview the script.";
     else if (!check(checks.backendFieldsReady)) message = check(checks.backendFieldStatus, true);
     else message = pathMessage(true);

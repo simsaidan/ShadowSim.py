@@ -122,6 +122,10 @@ def _qutip_page() -> dict[str, Any]:
         "stateLimits": {"basis": 15, "gray": 15, "angle": 15, "amplitude": 16},
         "maxEmitters": 13,
         "maxOperatorQubits": 8,
+        "maxTimeSteps": 500,
+        "maxNumSteps": 100,
+        "maxTrotterDepth": 100,
+        "maxShots": 100000,
     }
 
 
@@ -188,6 +192,43 @@ def test_circuit_row_without_shots_is_not_ready() -> None:
     page["placedSims"][0]["shots"] = ""
     assert _call("shotsReady", page) is False
     assert _call("runAllowed", page) is False
+
+
+def test_page_workload_maxima_stay_ready() -> None:
+    qutip = _qutip_page()
+    qutip["placedSims"][0]["params"]["timeSteps"] = "500"
+    assert _call("runAllowed", qutip) is True
+    assert _call("simParamProblem", qutip, False) is None
+    circuit = _circuit_page()
+    circuit["placedSims"][0]["params"]["timeSteps"] = "500"
+    circuit["placedSims"][0]["params"]["numSteps"] = "100"
+    circuit["placedSims"][0]["params"]["trotterDepth"] = "100"
+    circuit["placedSims"][0]["shots"] = "100000"
+    assert _call("runAllowed", circuit) is True
+    assert _call("simParamProblem", circuit, False) is None
+    assert _call("shotsProblem", circuit, False) is None
+
+
+def test_oversize_simulator_parameters_block_the_run() -> None:
+    page = _qutip_page()
+    page["placedSims"][0]["params"]["timeSteps"] = "501"
+    assert _call("runAllowed", page) is False
+    assert _call("simParamProblem", page, False) == "Time steps must be from 1 to 500."
+    assert _call("simParamProblem", page, True) == "Time steps must be from 1 to 500 to preview the script."
+    circuit = _circuit_page()
+    circuit["placedSims"][0]["params"]["numSteps"] = "101"
+    assert _call("runAllowed", circuit) is False
+    assert _call("simParamProblem", circuit, False) == "Product steps must be from 1 to 100."
+    circuit["placedSims"][0]["params"]["numSteps"] = "100"
+    circuit["placedSims"][0]["params"]["trotterDepth"] = "101"
+    assert _call("simParamProblem", circuit, False) == "Trotter depth must be from 1 to 100."
+    circuit["placedSims"][0]["params"]["trotterDepth"] = "1"
+    circuit["placedSims"][0]["shots"] = "100001"
+    assert _call("shotsReady", circuit) is False
+    assert _call("shotsProblem", circuit, False) == "Shots must be from 1 to 100000."
+    assert _call("shotsProblem", circuit, True) == "Shots must be from 1 to 100000 to preview the script."
+    circuit["placedSims"][0]["shots"] = "1" + "0" * 20
+    assert _call("shotsProblem", circuit, False) == "Shots must be from 1 to 100000."
 
 
 def test_split_j_rejects_a_backend_without_shots() -> None:

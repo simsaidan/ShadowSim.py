@@ -42,6 +42,10 @@ _CIRCUIT_SEED = 0
 _DEFAULT_SAVE_PATH = "results/run1"
 _DEFAULT_EXPORT_DIR = "results"
 _MAX_OPERATOR_QUBITS = 8
+_MAX_TIME_STEPS = 500
+_MAX_NUM_STEPS = 100
+_MAX_TROTTER_DEPTH = 100
+_MAX_SHOTS = 100000
 
 
 @dataclass(frozen=True)
@@ -98,10 +102,11 @@ def build_simulator(selection: Mapping[str, object], *, time_steps: int = 101) -
             padded vector must use the model's qubit count.
             ``sites`` lists qubit indexes to measure. Missing ``sites`` measures
             every qubit.
-            ``time_steps`` in ``selection`` overrides the ``time_steps`` argument.
-            Shot-based simulators also read ``num_steps``, ``trotter_depth``,
-            ``order`` (1 or 2), and ``seed``. A backend with a shot budget reads
-            ``shots``. A posted ``time_steps`` value is checked before the
+            ``time_steps`` in ``selection`` overrides the ``time_steps`` argument
+            and must be from 1 to 500. Shot-based simulators also read
+            ``num_steps`` (1 to 100), ``trotter_depth`` (1 to 100), ``order`` (1 or
+            2), and ``seed``. A backend with a shot budget reads ``shots`` (1 to
+            100000). A posted ``time_steps`` value is checked before the
             simulator extra is imported. A posted ``shots`` value is checked
             then too when that backend has a shot budget, and also when no
             backend module can be imported. A gate-list field, such as Aer's
@@ -112,7 +117,7 @@ def build_simulator(selection: Mapping[str, object], *, time_steps: int = 101) -
             with ``closed_system`` set rejects Lindblad operators. Missing
             shot-based values use the page budget.
         time_steps: Points on the QuTiP solver grid when ``selection`` omits
-            ``time_steps``. Defaults to the page preview.
+            ``time_steps``. Must be from 1 to 500. Defaults to the page preview.
 
     Returns:
         A simulator that has not been run.
@@ -123,6 +128,8 @@ def build_simulator(selection: Mapping[str, object], *, time_steps: int = 101) -
     """
     if isinstance(time_steps, bool) or not isinstance(time_steps, int) or time_steps < 1:
         raise ValueError("time_steps must be a positive integer")
+    if time_steps > _MAX_TIME_STEPS:
+        raise ValueError(f"time_steps must be from 1 to {_MAX_TIME_STEPS}")
     simulator_id = _choice(selection, "simulator")
     class_name, module_name, extra = _simulator_export(simulator_id)
     backend = _choice(selection, "backend")
@@ -151,16 +158,16 @@ def build_simulator(selection: Mapping[str, object], *, time_steps: int = 101) -
     _measurements(selection, model.num_qubits)
     if class_name == "QutipSimulator":
         _reject_counts(measure_id, "QuTiP")
-        steps = _selection_positive_int(selection, "time_steps", time_steps, "time steps")
+        steps = _selection_positive_int(selection, "time_steps", time_steps, "time steps", maximum=_MAX_TIME_STEPS)
         return _qutip_simulator(model, state, measure_id, total_time, steps, sites)
     if "time_steps" in selection:
-        _selection_positive_int(selection, "time_steps", time_steps, "time steps")
+        _selection_positive_int(selection, "time_steps", time_steps, "time steps", maximum=_MAX_TIME_STEPS)
     if backend and "shots" in selection and _backend_has_shot_budget(backend):
-        _selection_positive_int(selection, "shots", _CIRCUIT_SHOTS, "shots")
+        _selection_positive_int(selection, "shots", _CIRCUIT_SHOTS, "shots", maximum=_MAX_SHOTS)
     cls = _load_exported(module_name, extra, class_name, "unknown simulator")
     if "observables" in inspect.signature(cls).parameters:
         _reject_counts(measure_id, class_name.removesuffix("Simulator"))
-        steps = _selection_positive_int(selection, "time_steps", time_steps, "time steps")
+        steps = _selection_positive_int(selection, "time_steps", time_steps, "time steps", maximum=_MAX_TIME_STEPS)
         return _qutip_simulator(model, state, measure_id, total_time, steps, sites, cls)
     if not backend:
         raise ValueError("unknown backend")
@@ -453,9 +460,11 @@ def _circuit_simulator(
     expectations when the backend has no shot budget, which
     :func:`_measured_result` reads.
     """
-    steps = _selection_positive_int(selection, "time_steps", _CIRCUIT_TIME_STEPS, "time steps")
-    num_steps = _selection_positive_int(selection, "num_steps", _CIRCUIT_NUM_STEPS, "product steps")
-    depth = _selection_positive_int(selection, "trotter_depth", 1, "Trotter depth")
+    steps = _selection_positive_int(selection, "time_steps", _CIRCUIT_TIME_STEPS, "time steps", maximum=_MAX_TIME_STEPS)
+    num_steps = _selection_positive_int(
+        selection, "num_steps", _CIRCUIT_NUM_STEPS, "product steps", maximum=_MAX_NUM_STEPS
+    )
+    depth = _selection_positive_int(selection, "trotter_depth", 1, "Trotter depth", maximum=_MAX_TROTTER_DEPTH)
     seed = _selection_integer(selection, "seed", _CIRCUIT_SEED, "seed")
     order = _selection_order(selection)
     if getattr(cls, "closed_system", False) and model.c_ops_local:
@@ -562,7 +571,7 @@ def _make_backend(record: ListedBackend, selection: Mapping[str, object]) -> Any
     cls = _backend_class(record["setup"])
     kwargs: dict[str, object] = {}
     if record["shots"]:
-        kwargs["shots"] = _selection_positive_int(selection, "shots", _CIRCUIT_SHOTS, "shots")
+        kwargs["shots"] = _selection_positive_int(selection, "shots", _CIRCUIT_SHOTS, "shots", maximum=_MAX_SHOTS)
     for field in record["fields"]:
         if field.get("kind") == "gates":
             kwargs[field["name"]] = _selection_basis_gates(selection, field["name"])
@@ -649,13 +658,27 @@ def _selection_nonnegative(
     return number
 
 
-def _selection_positive_int(selection: Mapping[str, object], key: str, default: int, name: str) -> int:
-    """Return a positive integer from ``selection``, or ``default`` when the key is absent."""
+def _selection_positive_int(selection: Mapping[str, object], key: str, default: int, name: str, *, maximum: int) -> int:
+    """Return a positive integer from ``selection``, or ``default`` when the key is absent.
+
+    Args:
+        selection: Posted builder fields.
+        key: Field to read.
+        default: Value when ``key`` is absent. Callers pass a page budget.
+        name: Label used in the error.
+        maximum: Inclusive upper bound for a posted value.
+
+    Raises:
+        ValueError: The posted value is not a positive integer, or is larger
+            than ``maximum``.
+    """
     if key not in selection:
         return default
     number = _named_integer(selection[key], name)
     if number < 1:
         raise ValueError(f"{name} must be a positive integer")
+    if number > maximum:
+        raise ValueError(f"{name} must be from 1 to {maximum}")
     return number
 
 

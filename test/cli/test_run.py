@@ -11,6 +11,7 @@ import urllib.error
 import urllib.request
 from collections.abc import Mapping, Sequence
 from http.server import HTTPServer
+from io import BytesIO
 from pathlib import Path
 from typing import Literal, Protocol, Union
 
@@ -19,17 +20,22 @@ import pytest
 
 from shadowsim.backends import listed_backends
 from shadowsim.cli.run import (
+    _MAX_NUM_STEPS,
+    _MAX_SHOTS,
+    _MAX_TIME_STEPS,
+    _MAX_TROTTER_DEPTH,
     _backend_class,
     _backend_record,
     _initial_state,
     _measured_result,
     _measurements,
     _observable_labels,
+    _selection_positive_int,
     _series_name,
     build_simulator,
     run_page,
 )
-from shadowsim.cli.serve import _Handler
+from shadowsim.cli.serve import _MAX_BODY_BYTES, _Handler, _read_body
 from shadowsim.models import (
     ising,
     jaynes_cummings,
@@ -1422,6 +1428,42 @@ def test_post_runs_rejects_a_json_list() -> None:
     assert payload["error"] == "request body must be a JSON object"
 
 
+def test_read_body_rejects_a_missing_or_invalid_length() -> None:
+    stream = BytesIO(b"{}")
+    with pytest.raises(ValueError, match="request body must be JSON"):
+        _read_body({}, stream)
+    with pytest.raises(ValueError, match="request body must be JSON"):
+        _read_body({"Content-Length": "nope"}, stream)
+    with pytest.raises(ValueError, match="request body must be JSON"):
+        _read_body({"Content-Length": "-1"}, stream)
+    with pytest.raises(ValueError, match="request body must be JSON"):
+        _read_body({"Content-Length": ["4"]}, stream)
+
+
+def test_read_body_rejects_an_oversize_claim_without_reading() -> None:
+    stream = BytesIO(b"x")
+    with pytest.raises(ValueError, match="request body is too large"):
+        _read_body({"Content-Length": str(_MAX_BODY_BYTES + 1)}, stream)
+    assert stream.tell() == 0
+
+
+def test_read_body_reads_up_to_the_limit() -> None:
+    class _Limit:
+        def read(self, size: int) -> bytes:
+            assert size == _MAX_BODY_BYTES
+            return b"ok"
+
+    assert _read_body({"Content-Length": str(_MAX_BODY_BYTES)}, _Limit()) == b"ok"
+    assert _read_body({"Content-Length": "4"}, BytesIO(b"abcd")) == b"abcd"
+
+
+def test_post_runs_rejects_oversize_time_steps() -> None:
+    status, body = _post(json.dumps(_selection(time_steps=_MAX_TIME_STEPS + 1)).encode())
+    payload = json.loads(body)
+    assert status == 400
+    assert payload["error"] == f"time steps must be from 1 to {_MAX_TIME_STEPS}"
+
+
 def test_post_elsewhere_is_not_found() -> None:
     status, _body = _post(b"{}", path="/other")
     assert status == 404
@@ -2129,6 +2171,70 @@ def test_ignored_actions_and_bad_numbers_fail_before_import(forbid_qutip: None) 
         build_simulator(_selection(simulator="trotterization", time_steps=None))
     with pytest.raises(ValueError, match="shots must be a positive integer"):
         build_simulator(_selection(simulator="trotterization", time_steps=2.0, shots=0))
+
+
+def test_posted_workload_limits_fail_before_import(forbid_qutip: None) -> None:
+    with pytest.raises(ValueError, match=f"time_steps must be from 1 to {_MAX_TIME_STEPS}"):
+        build_simulator(_selection(), time_steps=_MAX_TIME_STEPS + 1)
+    with pytest.raises(ValueError, match=f"time steps must be from 1 to {_MAX_TIME_STEPS}"):
+        build_simulator(_selection(time_steps=_MAX_TIME_STEPS + 1))
+    with pytest.raises(ValueError, match=f"time steps must be from 1 to {_MAX_TIME_STEPS}"):
+        build_simulator(_selection(simulator="trotterization", time_steps=_MAX_TIME_STEPS + 1))
+    with pytest.raises(ValueError, match=f"shots must be from 1 to {_MAX_SHOTS}"):
+        build_simulator(_selection(simulator="trotterization", time_steps=2, shots=_MAX_SHOTS + 1))
+
+
+def test_selection_positive_int_enforces_the_page_maximum() -> None:
+    assert (
+        _selection_positive_int(
+            {"time_steps": _MAX_TIME_STEPS}, "time_steps", 11, "time steps", maximum=_MAX_TIME_STEPS
+        )
+        == _MAX_TIME_STEPS
+    )
+    assert _selection_positive_int({}, "num_steps", 4, "product steps", maximum=_MAX_NUM_STEPS) == 4
+    with pytest.raises(ValueError, match=f"product steps must be from 1 to {_MAX_NUM_STEPS}"):
+        _selection_positive_int(
+            {"num_steps": _MAX_NUM_STEPS + 1}, "num_steps", 4, "product steps", maximum=_MAX_NUM_STEPS
+        )
+    with pytest.raises(ValueError, match=f"Trotter depth must be from 1 to {_MAX_TROTTER_DEPTH}"):
+        _selection_positive_int(
+            {"trotter_depth": _MAX_TROTTER_DEPTH + 1},
+            "trotter_depth",
+            1,
+            "Trotter depth",
+            maximum=_MAX_TROTTER_DEPTH,
+        )
+
+
+@pytest.mark.qiskit
+def test_circuit_workload_limits_are_enforced() -> None:
+    pytest.importorskip("qiskit_aer")
+    with pytest.raises(ValueError, match=f"product steps must be from 1 to {_MAX_NUM_STEPS}"):
+        build_simulator(_selection(simulator="trotterization", time_steps=2, num_steps=_MAX_NUM_STEPS + 1))
+    with pytest.raises(ValueError, match=f"Trotter depth must be from 1 to {_MAX_TROTTER_DEPTH}"):
+        build_simulator(
+            _selection(simulator="trotterization", time_steps=2, num_steps=1, trotter_depth=_MAX_TROTTER_DEPTH + 1)
+        )
+    simulator = build_simulator(
+        _selection(
+            simulator="trotterization",
+            time_steps=_MAX_TIME_STEPS,
+            num_steps=_MAX_NUM_STEPS,
+            trotter_depth=_MAX_TROTTER_DEPTH,
+            shots=_MAX_SHOTS,
+        )
+    )
+    assert simulator.time_steps == _MAX_TIME_STEPS
+    assert simulator.num_steps == _MAX_NUM_STEPS
+    assert simulator.trotter_depth == _MAX_TROTTER_DEPTH
+    assert simulator.circuit_backend.shots == _MAX_SHOTS
+
+
+@pytest.mark.qutip
+def test_qutip_accepts_the_time_step_limit() -> None:
+    pytest.importorskip("qutip")
+    simulator = build_simulator(_selection(time_steps=_MAX_TIME_STEPS))
+    assert simulator.time_steps == _MAX_TIME_STEPS
 
 
 def test_added_operator_details_fail_before_import(forbid_qutip: None) -> None:
