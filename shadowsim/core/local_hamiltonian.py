@@ -6,7 +6,6 @@ from shadowsim.core.hamiltonian import Hamiltonian
 from shadowsim.core.local_operator import LocalOperator
 from shadowsim.core.operator import _Matrix
 from shadowsim.utils.hermitian import hermitian
-from shadowsim.utils.tensor import tensor
 
 
 class LocalHamiltonian(LocalOperator, Hamiltonian):
@@ -30,27 +29,15 @@ class LocalHamiltonian(LocalOperator, Hamiltonian):
         super().__init__(matrix, sites, local_dim)
 
     def to_full_hamiltonian(self, total_sites: int) -> Hamiltonian:
-        """Return a FullHamiltonian for this local term on the given sites.
+        """Return this local term embedded on ``total_sites`` sites.
+
+        The embedding is `LocalOperator.to_full_operator`: ``sites[0]`` is the
+        first tensor factor of the stored matrix.
 
         Parameter total_sites: The total number of sites in the full system.
         Precondition: total_sites is a positive integer.
         """
-        if not isinstance(total_sites, int):
-            raise TypeError(f"total_sites must be an integer; got {type(total_sites)!r}")
-        if total_sites < 1:
-            raise ValueError(f"total_sites must be positive; got {total_sites}")
-
-        lo, hi = min(self.sites), max(self.sites)
-        if lo < 0:
-            raise ValueError(f"site indices must be non-negative; got {self.sites}")
-        if hi >= total_sites:
-            raise ValueError(f"total_sites={total_sites} is too small for local sites {self.sites}")
-
-        eye = np.eye(self.local_dim, dtype=self.matrix.dtype)
-        left_id = [eye] * lo
-        right_id = [eye] * (total_sites - hi - 1)
-        full_matrix = tensor(left_id + [self.matrix] + right_id)
-        return Hamiltonian(full_matrix)
+        return Hamiltonian(self.to_full_operator(total_sites).matrix)
 
     def get_sites(self) -> list[int]:
         """Return the sites on which the local Hamiltonian acts non-trivially."""

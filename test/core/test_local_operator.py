@@ -51,6 +51,23 @@ def test_local_operator_to_full_operator_handles_high_index_block():
     assert np.allclose(full.matrix, expected)
 
 
+def test_local_operator_to_full_operator_follows_site_order():
+    z_matrix = np.diag([1.0, -1.0])
+    x_matrix = np.array([[0.0, 1.0], [1.0, 0.0]])
+    y_matrix = np.array([[0.0, -1j], [1j, 0.0]])
+    zx = np.kron(z_matrix, x_matrix)
+
+    reversed_sites = LocalOperator(zx, sites=[1, 0], local_dim=2)
+    assert np.allclose(reversed_sites.to_full_operator(2).matrix, np.kron(x_matrix, z_matrix))
+    increasing = LocalOperator(zx, sites=[0, 1], local_dim=2)
+    assert np.allclose(increasing.to_full_operator(2).matrix, zx)
+
+    stored = np.kron(np.kron(z_matrix, x_matrix), y_matrix)
+    permuted = LocalOperator(stored, sites=[0, 2, 1], local_dim=2)
+    expected = np.kron(np.kron(z_matrix, y_matrix), x_matrix)
+    assert np.allclose(permuted.to_full_operator(3).matrix, expected)
+
+
 def test_local_operator_to_full_operator_validates_total_sites():
     local = LocalOperator(np.eye(4), sites=[1, 2], local_dim=2)
     with pytest.raises(TypeError, match="total_sites must be an integer"):
