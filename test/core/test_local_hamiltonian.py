@@ -6,6 +6,24 @@ from shadowsim.core import Hamiltonian, LocalHamiltonian
 Z = np.diag([1.0, -1.0]).astype(np.complex128)
 
 
+def test_local_hamiltonian_to_full_follows_site_order():
+    x_matrix = np.array([[0.0, 1.0], [1.0, 0.0]], dtype=np.complex128)
+    y_matrix = np.array([[0.0, -1j], [1j, 0.0]], dtype=np.complex128)
+    zx = np.kron(Z, x_matrix)
+
+    reversed_sites = LocalHamiltonian(zx, sites=[1, 0])
+    full = reversed_sites.to_full_hamiltonian(2)
+    assert isinstance(full, Hamiltonian)
+    assert np.allclose(full.matrix, np.kron(x_matrix, Z))
+    increasing = LocalHamiltonian(zx, sites=[0, 1])
+    assert np.allclose(increasing.to_full_hamiltonian(2).matrix, zx)
+
+    stored = np.kron(np.kron(Z, x_matrix), y_matrix)
+    permuted = LocalHamiltonian(stored, sites=[0, 2, 1])
+    expected = np.kron(np.kron(Z, y_matrix), x_matrix)
+    assert np.allclose(permuted.to_full_hamiltonian(3).matrix, expected)
+
+
 def test_local_hamiltonian_to_full_and_accessors():
     local = LocalHamiltonian(Z, sites=[1], local_dim=2)
     full = local.to_full_hamiltonian(total_sites=3)

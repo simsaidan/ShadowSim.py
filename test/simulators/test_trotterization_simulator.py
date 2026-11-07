@@ -10,6 +10,7 @@ pytest.importorskip("qiskit_aer")
 pytest.importorskip("scipy")
 
 import scipy.linalg
+from qiskit.quantum_info import Statevector
 
 import shadowsim.backends.aer as aer_backend_module
 import shadowsim.simulators.trotterization_simulator as trotter_module
@@ -22,6 +23,7 @@ from shadowsim.simulators import (
 )
 from shadowsim.simulators.simulator import Simulator
 from shadowsim.simulators.trotterization_simulator import (
+    _trotter_circuit,
     _trotter_circuit_counts,
     _trotter_slice_unitaries,
 )
@@ -621,6 +623,25 @@ def test_single_term_product_is_exact(order):
     got = _product_unitary(term, t, num_steps, trotter_depth, order)
     exact = scipy.linalg.expm(-1j * X * t)
     assert np.linalg.norm(got - exact) < 1e-8
+
+
+def test_reversed_sites_match_the_embedded_matrix():
+    eye = np.eye(2, dtype=np.complex128)
+    term = LocalHamiltonian(np.kron(Z, eye), [1, 0])
+    plus = np.array([1.0, 1.0], dtype=np.complex128) / np.sqrt(2.0)
+    zero = np.array([1.0, 0.0], dtype=np.complex128)
+    psi0 = np.kron(plus, zero)
+    t = 0.3
+    embedded = scipy.linalg.expm(-1j * term.to_full_hamiltonian(2).matrix * t) @ psi0
+    z_on_qubit_zero = scipy.linalg.expm(-1j * np.kron(Z, eye) * t) @ psi0
+
+    circuit = _trotter_circuit([term], State(psi0, 2), 2, t, num_steps=1)
+    raw = np.asarray(Statevector.from_instruction(circuit).data)
+    # Qiskit qubit 0 is the least significant bit. Package qubit 0 is most significant.
+    circuit_state = np.transpose(raw.reshape(2, 2)).reshape(-1)
+
+    assert np.linalg.norm(embedded - z_on_qubit_zero) > 0.1
+    assert np.linalg.norm(embedded - circuit_state) < 1e-8
 
 
 def test_order_two_is_closer_than_order_one_for_noncommuting_terms():

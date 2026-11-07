@@ -6,10 +6,32 @@ from shadowsim.core.operator import Operator, _Matrix
 from shadowsim.utils.tensor import tensor
 
 
+def _matrix_on_increasing_sites(matrix: _Matrix, sites: list[int], local_dim: int) -> _Matrix:
+    """Return ``matrix`` with tensor factors ordered by increasing site index.
+
+    ``sites[i]`` is tensor factor ``i`` of ``matrix``, and factor 0 is the most
+    significant factor. Embedding places the first factor of the result on
+    ``min(sites)``. A sorted ``sites`` list is returned unchanged.
+    """
+    ordered = sorted(sites)
+    if sites == ordered:
+        return matrix
+    factor_of_site = {site: index for index, site in enumerate(sites)}
+    permutation = [factor_of_site[site] for site in ordered]
+    width = len(sites)
+    reshaped = np.asarray(matrix).reshape((local_dim,) * (2 * width))
+    axes = permutation + [index + width for index in permutation]
+    permuted = np.transpose(reshaped, axes).reshape(matrix.shape)
+    return np.ascontiguousarray(permuted)
+
+
 class LocalOperator(Operator):
     """Represent an operator that acts non-trivially on given sites.
 
     The operator acts on the given ``sites`` of a tensor-product space.
+    ``sites[i]`` is tensor factor ``i`` of ``matrix``, and factor 0 is the most
+    significant factor, in the same order as ``tensor``. The sites are one
+    contiguous block, so ``[0, 1]`` and ``[1, 0]`` name different operators.
     """
 
     def __init__(self, matrix: _Matrix, sites: list[int], local_dim: int = 2) -> None:
@@ -18,7 +40,8 @@ class LocalOperator(Operator):
         Parameter matrix: The matrix representation of the operator.
         Precondition: matrix is a numpy array.
 
-        Parameter sites: The sites on which the operator acts non-trivially.
+        Parameter sites: The sites on which the operator acts non-trivially, in
+            tensor-factor order. ``sites[0]`` is the first factor of ``matrix``.
         Precondition: sites is a list of contiguous integers.
 
         Parameter local_dim: The local dimension of the operator.
@@ -76,7 +99,10 @@ class LocalOperator(Operator):
         """Embed this local operator into a full system of ``total_sites``.
 
         The operator acts on its contiguous block ``self.sites`` and identity
-        acts on all other sites.
+        acts on all other sites. ``sites[0]`` is the first tensor factor of the
+        stored matrix. A site list that is not in increasing order is permuted
+        into that order before the block is placed between ``min(sites)`` and
+        ``max(sites)``.
 
         Parameter total_sites: The total number of sites in the full system.
         Precondition: total_sites is a positive integer.
@@ -95,7 +121,8 @@ class LocalOperator(Operator):
         eye = np.eye(self.local_dim, dtype=self.matrix.dtype)
         left_id = [eye] * lo
         right_id = [eye] * (total_sites - hi - 1)
-        full_matrix = tensor(left_id + [self.matrix] + right_id)
+        ordered = _matrix_on_increasing_sites(self.matrix, self.sites, self.local_dim)
+        full_matrix = tensor(left_id + [ordered] + right_id)
         return Operator(full_matrix)
 
     def __str__(self) -> str:

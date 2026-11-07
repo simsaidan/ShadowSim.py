@@ -31,6 +31,15 @@ def test_combined_hamiltonian_matrix_embeds_local_with_identity_padding():
     assert np.allclose(out, expected)
 
 
+def test_combined_hamiltonian_matrix_follows_reversed_site_order():
+    z_matrix = np.diag([1.0, -1.0])
+    x_matrix = np.array([[0.0, 1.0], [1.0, 0.0]])
+    local = LocalHamiltonian(np.kron(z_matrix, x_matrix), sites=[1, 0], local_dim=2)
+    out = combined_hamiltonian_matrix([local], num_qubits=2)
+    assert np.allclose(out, local.to_full_hamiltonian(2).matrix)
+    assert np.allclose(out, np.kron(x_matrix, z_matrix))
+
+
 def test_combined_hamiltonian_matrix_rejects_disagreeing_dimensions():
     local = LocalHamiltonian(np.diag([1.0, -1.0]), sites=[0], local_dim=2)
     full = Hamiltonian(np.eye(4, dtype=np.complex128))

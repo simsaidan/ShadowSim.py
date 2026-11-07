@@ -13,8 +13,9 @@ def combined_hamiltonian_matrix(
 ) -> npt.NDArray[np.complexfloating]:
     r"""Sum Hamiltonian terms on the full ``num_qubits``-site tensor space.
 
-    ``LocalHamiltonian`` terms are embedded with identities on the remaining
-    sites; full-domain ``Hamiltonian`` matrices are added as-is. All terms must
+    ``LocalHamiltonian`` terms are embedded with ``to_full_hamiltonian``, so
+    ``sites[0]`` is the first tensor factor and identities fill the remaining
+    sites. Full-domain ``Hamiltonian`` matrices are added as-is. All terms must
     match a common Hilbert-space dimension (``local_dim ** num_qubits`` for
     locals, or the matrix size of bare terms).
 
@@ -28,7 +29,8 @@ def combined_hamiltonian_matrix(
 
     Raises:
         ValueError: If ``LocalHamiltonian`` terms use mixed ``local_dim`` values,
-            or if term dimensions disagree for the requested ``num_qubits``.
+            if term dimensions disagree for the requested ``num_qubits``, or if a
+            local term's sites do not fit in ``0 .. num_qubits - 1``.
         AssertionError: If ``hamiltonians`` / ``num_qubits`` fail basic type and
             positivity checks.
 
@@ -72,16 +74,7 @@ def combined_hamiltonian_matrix(
     H_tot = np.zeros((target_dim, target_dim), dtype=np.complex128)
     for h in hamiltonians:
         if isinstance(h, LocalHamiltonian):
-            ld = h.local_dim
-            lo, hi = min(h.sites), max(h.sites)
-            n_before = lo
-            n_after = num_qubits - 1 - hi
-            term = np.asarray(h.matrix, dtype=np.complex128)
-            if n_before > 0:
-                term = np.kron(np.eye(ld**n_before, dtype=np.complex128), term)
-            if n_after > 0:
-                term = np.kron(term, np.eye(ld**n_after, dtype=np.complex128))
-            H_tot += term
+            H_tot += h.to_full_hamiltonian(num_qubits).matrix
         else:
             H_tot += np.asarray(h.matrix, dtype=np.complex128)
     return H_tot
