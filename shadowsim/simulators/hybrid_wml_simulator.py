@@ -5,8 +5,7 @@ import math
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from functools import lru_cache
-from time import perf_counter
-from typing import cast
+from typing import Any, cast
 
 import numpy as np
 import scipy.linalg
@@ -14,16 +13,14 @@ from qiskit import ClassicalRegister, QuantumCircuit, QuantumRegister
 from qiskit.circuit.library import UnitaryGate
 
 from shadowsim.backends.aer import AerCircuitBackend
-from shadowsim.backends.circuit import CircuitBackend, backend_samples, backend_shots
+from shadowsim.backends.circuit import CircuitBackend, backend_shots
 from shadowsim.core.hamiltonian import Hamiltonian
 from shadowsim.core.local_hamiltonian import LocalHamiltonian
 from shadowsim.core.local_operator import LocalOperator
 from shadowsim.core.operator import Operator
 from shadowsim.core.state import State
-from shadowsim.simulators._time_points import map_time_points
-from shadowsim.simulators.result import SimulationResult
-from shadowsim.simulators.simulator import Simulator
-from shadowsim.simulators.trotterization_simulator import _checked_basis, _rotate_to_basis, _system_counts
+from shadowsim.simulators._time_points import TimeCall
+from shadowsim.simulators.product_formula_simulator import ProductFormulaSimulator, _rotate_to_basis
 
 __all__ = ["HybridWMLSimulator"]
 
@@ -384,7 +381,7 @@ def _hybrid_wml(
     return counts_backend.run_counts(circuit, shots=shots, seed=_sequence_seed(seed, time_index))
 
 
-class HybridWMLSimulator(Simulator):
+class HybridWMLSimulator(ProductFormulaSimulator):
     """Simulate open-system dynamics with hybrid wave-matrix Lindbladization.
 
     Each of the ``num_steps`` samples one term. The weight of a Hamiltonian
@@ -413,6 +410,7 @@ class HybridWMLSimulator(Simulator):
     """
 
     requires_sampling_backend: bool = True
+    sampling_backend_error: str = "Hybrid WML samples a circuit and needs a backend with a shot budget"
 
     def __init__(
         self,
@@ -450,99 +448,46 @@ class HybridWMLSimulator(Simulator):
             time_steps=time_steps,
             id="hybrid_wml_simulator",
         )
-        _check_seed(seed)
-        self.num_steps = _positive_int("num_steps", num_steps)
-        self.workers = _positive_int("workers", workers)
         if self.total_time < 0.0:
             raise ValueError("total_time must be non-negative")
-        self.verbose = verbose
-        self.seed = seed
-        self.circuit_backend = circuit_backend if circuit_backend is not None else AerCircuitBackend()
-        if not backend_samples(self.circuit_backend):
-            raise ValueError("Hybrid WML samples a circuit and needs a backend with a shot budget")
-        backend_shots(self.circuit_backend)
-        self.basis = _checked_basis(basis, num_qubits)
-        self.progress = progress
+        self._configure_run(
+            num_steps=_positive_int("num_steps", num_steps),
+            verbose=verbose,
+            seed=seed,
+            progress=progress,
+            workers=workers,
+            circuit_backend=circuit_backend,
+            basis=basis,
+        )
         _prepare(self.hamiltonians, self.lindblads, self.num_qubits)
 
-    def _on_parallel_result(self, index: int, raw: dict[str, int]) -> dict[str, int]:
-        """Return a finished time point's system counts. Runs in the parent process."""
-        if self.verbose:
-            print(f"Working on time step {round(self.tlist[index], 3)}")
-        return _system_counts(raw, skip=0)
-
-    def _on_parallel_progress(self, index: int, total: int) -> None:
-        """Forward one finished parallel time point to the user and the active job."""
-        if self.progress is not None:
-            self.progress(index, total)
-        self._report_completed_step(total)
-
-    def _simulate_serial(self) -> list[dict[str, int]]:
-        """Run every time point on this process and return counts in ``tlist`` order."""
-        counts_by_time: list[dict[str, int]] = []
-        total = len(self.tlist)
-        self._begin_step_progress(total)
+    def _time_point_call(self, t: float, index: int) -> TimeCall:
+        """Return the hybrid WML counts call for time ``t`` at ``index``."""
         hamiltonians = cast(list[LocalHamiltonian], self.hamiltonians)
         lindblads = cast(list[LocalOperator], self.lindblads)
-        for index, t in enumerate(self.tlist):
-            if self.progress is not None:
-                self.progress(index, total)
-            if self.verbose:
-                print(f"Working on time step {round(float(t), 3)}")
-            raw = _hybrid_wml(
+        return (
+            _hybrid_wml,
+            (
                 hamiltonians,
                 lindblads,
                 self.initial_state,
                 self.num_qubits,
-                float(t),
+                t,
                 self.num_steps,
-                verbose=self.verbose,
-                shots=backend_shots(self.circuit_backend),
-                seed=self.seed,
-                time_index=index,
-                circuit_backend=self.circuit_backend,
-                basis=self.basis,
-            )
-            counts_by_time.append(_system_counts(raw, skip=0))
-            self._report_completed_step(total)
-        return counts_by_time
-
-    def _simulate_parallel(self) -> list[dict[str, int]]:
-        """Run one process-pool task per time point and return counts in ``tlist`` order."""
-        self._begin_step_progress(len(self.tlist))
-        hamiltonians = cast(list[LocalHamiltonian], self.hamiltonians)
-        lindblads = cast(list[LocalOperator], self.lindblads)
-        calls = [
-            (
-                _hybrid_wml,
-                (
-                    hamiltonians,
-                    lindblads,
-                    self.initial_state,
-                    self.num_qubits,
-                    float(t),
-                    self.num_steps,
-                ),
-                {
-                    "verbose": self.verbose,
-                    "shots": backend_shots(self.circuit_backend),
-                    "seed": self.seed,
-                    "time_index": index,
-                    "circuit_backend": self.circuit_backend,
-                    "basis": self.basis,
-                },
-            )
-            for index, t in enumerate(self.tlist)
-        ]
-        return cast(
-            list[dict[str, int]],
-            map_time_points(
-                self.workers,
-                calls,
-                progress=self._on_parallel_progress,
-                on_result=self._on_parallel_result,
             ),
+            {
+                "verbose": self.verbose,
+                "shots": backend_shots(self.circuit_backend),
+                "seed": self.seed,
+                "time_index": index,
+                "circuit_backend": self.circuit_backend,
+                "basis": self.basis,
+            },
         )
+
+    def _extra_metadata(self) -> dict[str, Any]:
+        """Return the Lindblad count stored on the result."""
+        return {"lindblad_count": len(self.lindblads)}
 
     def metrics_circuit(self) -> QuantumCircuit:
         """Return the circuit executed at the final time, including measurement."""
@@ -557,54 +502,4 @@ class HybridWMLSimulator(Simulator):
             seed=self.seed,
             time_index=len(self.tlist) - 1,
             basis=self.basis,
-        )
-
-    def simulate(self) -> SimulationResult:
-        """Evolve the system with hybrid WML and store the counts at each time."""
-        started = perf_counter()
-        counts = self._simulate_serial() if self.workers == 1 else self._simulate_parallel()
-        runtime = perf_counter() - started
-        self.results = []
-        return self._make_result(
-            [],
-            runtime=runtime,
-            seed=self.seed,
-            counts=counts,
-            shots=backend_shots(self.circuit_backend),
-            num_steps=self.num_steps,
-            basis=self.basis,
-            lindblad_count=len(self.lindblads),
-            circuit_backend=self.circuit_backend.name,
-        )
-
-    def __str__(self) -> str:
-        """Return a string representation of the HybridWMLSimulator."""
-        return (
-            "HybridWMLSimulator("
-            f"num_qubits={self.num_qubits}, "
-            f"num_steps={self.num_steps}, "
-            f"time_steps={self.time_steps}, "
-            f"shots={backend_shots(self.circuit_backend)}, "
-            f"seed={self.seed}"
-            ")"
-        )
-
-    def __repr__(self) -> str:
-        """Return a string representation of the HybridWMLSimulator."""
-        return (
-            "HybridWMLSimulator("
-            f"hamiltonians={self.hamiltonians!r}, "
-            f"lindblads={self.lindblads!r}, "
-            f"initial_state={self.initial_state!r}, "
-            f"num_qubits={self.num_qubits}, "
-            f"total_time={self.total_time}, "
-            f"time_steps={self.time_steps}, "
-            f"num_steps={self.num_steps}, "
-            f"basis={self.basis!r}, "
-            f"verbose={self.verbose!r}, "
-            f"shots={backend_shots(self.circuit_backend)}, "
-            f"seed={self.seed!r}, "
-            f"workers={self.workers}, "
-            f"progress={self.progress!r}"
-            ")"
         )

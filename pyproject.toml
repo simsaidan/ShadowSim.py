@@ -133,6 +133,7 @@ module = [
     "shadowsim.encoding.state_encoder",
     "shadowsim.simulators",
     "shadowsim.simulators.job",
+    "shadowsim.simulators.product_formula_simulator",
     "shadowsim.simulators.qutip_simulator",
     "shadowsim.simulators.reducers",
     "shadowsim.simulators.result",

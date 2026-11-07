@@ -1,6 +1,5 @@
 """Split JMatrix quantum-inspired simulator."""
 
-from time import perf_counter
 from typing import Any, Callable, List, Literal, cast
 
 import numpy as np
@@ -9,21 +8,14 @@ from qiskit import QuantumCircuit, QuantumRegister
 from qiskit.circuit.library import UnitaryGate
 
 from shadowsim.backends.aer import AerCircuitBackend
-from shadowsim.backends.circuit import CircuitBackend, backend_samples, backend_shots
+from shadowsim.backends.circuit import CircuitBackend, backend_shots
 from shadowsim.core.local_hamiltonian import LocalHamiltonian
 from shadowsim.core.local_operator import LocalOperator
 from shadowsim.core.operator import _Matrix
 from shadowsim.core.state import State
-from shadowsim.simulators._time_points import map_time_points
-from shadowsim.simulators.result import SimulationResult
-from shadowsim.simulators.simulator import Simulator
-from shadowsim.simulators.trotterization_simulator import (
-    _check_order,
-    _checked_basis,
-    _rotate_to_basis,
-    _system_counts,
-    _trotter_slice_unitaries,
-)
+from shadowsim.simulators._time_points import TimeCall
+from shadowsim.simulators.product_formula_simulator import ProductFormulaSimulator, _check_order, _rotate_to_basis
+from shadowsim.simulators.trotterization_simulator import _trotter_slice_unitaries
 
 __all__ = ["SplitJMatrixSimulator"]
 
@@ -135,7 +127,7 @@ def _split_jmatrix(
     return counts_backend.run_counts(circ, shots=shots, seed=seed)
 
 
-class SplitJMatrixSimulator(Simulator):
+class SplitJMatrixSimulator(ProductFormulaSimulator):
     """Simulate open-system dynamics with the Split JMatrix method.
 
     Each of the ``num_steps`` applies every Lindblad jump once, then
@@ -162,6 +154,8 @@ class SplitJMatrixSimulator(Simulator):
     """
 
     requires_sampling_backend: bool = True
+    sampling_backend_error: str = "Split JMatrix samples an ancilla circuit and needs a backend with a shot budget"
+    counts_skip: int = 1
 
     def __init__(
         self,
@@ -198,107 +192,47 @@ class SplitJMatrixSimulator(Simulator):
                     "SplitJMatrixSimulator `lindblads` must be LocalOperator (with "
                     f"`sites` on the register); got {type(L).__name__}."
                 )
-        if seed is not None and not isinstance(seed, int):
-            raise TypeError("seed must be an int or None")
-        if isinstance(workers, bool) or not isinstance(workers, int):
-            raise TypeError("workers must be an int")
-        if workers < 1:
-            raise ValueError("workers must be a positive integer")
-        if trotter_depth <= 0:
-            raise ValueError("trotter_depth must be a positive integer")
-        _check_order(order)
-        self.num_steps = num_steps
-        self.trotter_depth = trotter_depth
-        self.order = order
-        self.verbose = verbose
-        self.seed = seed
-        self.circuit_backend = circuit_backend if circuit_backend is not None else AerCircuitBackend()
-        if not backend_samples(self.circuit_backend):
-            raise ValueError("Split JMatrix samples an ancilla circuit and needs a backend with a shot budget")
-        backend_shots(self.circuit_backend)
-        self.basis = _checked_basis(basis, num_qubits)
-        self.progress = progress
-        self.workers = workers
+        self._configure_run(
+            num_steps=num_steps,
+            trotter_depth=trotter_depth,
+            order=order,
+            verbose=verbose,
+            seed=seed,
+            progress=progress,
+            workers=workers,
+            circuit_backend=circuit_backend,
+            basis=basis,
+        )
 
-    def _on_parallel_result(self, index: int, raw: dict[str, int]) -> dict[str, int]:
-        """Return a finished time point's counts without the ancilla bit. Runs in the parent process."""
-        if self.verbose:
-            print(f"Working on time step {round(self.tlist[index], 3)}")
-        return _system_counts(raw, skip=1)
-
-    def _on_parallel_progress(self, index: int, total: int) -> None:
-        """Forward one finished parallel time point to the user and the active job."""
-        if self.progress is not None:
-            self.progress(index, total)
-        self._report_completed_step(total)
-
-    def _simulate_serial(self) -> list[dict[str, int]]:
-        """Run every time point on this process and return counts in ``tlist`` order."""
-        counts_by_time: list[dict[str, int]] = []
-        total = len(self.tlist)
-        self._begin_step_progress(total)
-        for i, t in enumerate(self.tlist):
-            if self.progress is not None:
-                self.progress(i, total)
-            if self.verbose:
-                print(f"Working on time step {round(t, 3)}")
-            raw = _split_jmatrix(
-                cast(list[LocalHamiltonian], self.hamiltonians),
-                cast(list[LocalOperator], self.lindblads),
+    def _time_point_call(self, t: float, _index: int) -> TimeCall:
+        """Return the ancilla-circuit counts call for time ``t``."""
+        hamiltonians = cast(list[LocalHamiltonian], self.hamiltonians)
+        lindblads = cast(list[LocalOperator], self.lindblads)
+        return (
+            _split_jmatrix,
+            (
+                hamiltonians,
+                lindblads,
                 self.initial_state,
                 self.num_qubits,
                 t,
                 self.num_steps,
                 self.trotter_depth,
-                order=self.order,
-                verbose=self.verbose,
-                shots=backend_shots(self.circuit_backend),
-                seed=self.seed,
-                circuit_backend=self.circuit_backend,
-                basis=self.basis,
-            )
-            counts_by_time.append(_system_counts(raw, skip=1))
-            self._report_completed_step(total)
-        return counts_by_time
-
-    def _simulate_parallel(self) -> list[dict[str, int]]:
-        """Run one process-pool task per time point and return counts in ``tlist`` order."""
-        self._begin_step_progress(len(self.tlist))
-        hamiltonians = cast(list[LocalHamiltonian], self.hamiltonians)
-        lindblads = cast(list[LocalOperator], self.lindblads)
-        calls = [
-            (
-                _split_jmatrix,
-                (
-                    hamiltonians,
-                    lindblads,
-                    self.initial_state,
-                    self.num_qubits,
-                    t,
-                    self.num_steps,
-                    self.trotter_depth,
-                ),
-                {
-                    "order": self.order,
-                    "verbose": self.verbose,
-                    "shots": backend_shots(self.circuit_backend),
-                    # Same seed the serial loop passes for this circuit.
-                    "seed": self.seed,
-                    "circuit_backend": self.circuit_backend,
-                    "basis": self.basis,
-                },
-            )
-            for t in self.tlist
-        ]
-        return cast(
-            list[dict[str, int]],
-            map_time_points(
-                self.workers,
-                calls,
-                progress=self._on_parallel_progress,
-                on_result=self._on_parallel_result,
             ),
+            {
+                "order": self.order,
+                "verbose": self.verbose,
+                "shots": backend_shots(self.circuit_backend),
+                # Same seed the serial loop passes for this circuit.
+                "seed": self.seed,
+                "circuit_backend": self.circuit_backend,
+                "basis": self.basis,
+            },
         )
+
+    def _extra_metadata(self) -> dict[str, Any]:
+        """Return the Lindblad count stored on the result."""
+        return {"lindblad_count": len(self.lindblads)}
 
     def metrics_circuit(self) -> QuantumCircuit:
         """Return the circuit executed at the final time, including measurement."""
@@ -313,60 +247,4 @@ class SplitJMatrixSimulator(Simulator):
             order=self.order,
             verbose=False,
             basis=self.basis,
-        )
-
-    def simulate(self) -> SimulationResult:
-        """Evolve the system with Split JMatrix and store the counts at each time."""
-        started = perf_counter()
-        counts = self._simulate_serial() if self.workers == 1 else self._simulate_parallel()
-        runtime = perf_counter() - started
-        self.results = []
-        return self._make_result(
-            [],
-            runtime=runtime,
-            seed=self.seed,
-            counts=counts,
-            shots=backend_shots(self.circuit_backend),
-            num_steps=self.num_steps,
-            trotter_depth=self.trotter_depth,
-            order=self.order,
-            basis=self.basis,
-            lindblad_count=len(self.lindblads),
-            circuit_backend=self.circuit_backend.name,
-        )
-
-    def __str__(self) -> str:
-        """Return a string representation of the SplitJMatrixSimulator."""
-        return (
-            "SplitJMatrixSimulator("
-            f"num_qubits={self.num_qubits}, "
-            f"num_steps={self.num_steps}, "
-            f"trotter_depth={self.trotter_depth}, "
-            f"order={self.order}, "
-            f"time_steps={self.time_steps}, "
-            f"shots={backend_shots(self.circuit_backend)}, "
-            f"seed={self.seed}"
-            ")"
-        )
-
-    def __repr__(self) -> str:
-        """Return a string representation of the SplitJMatrixSimulator."""
-        return (
-            "SplitJMatrixSimulator("
-            f"hamiltonians={self.hamiltonians!r}, "
-            f"lindblads={self.lindblads!r}, "
-            f"initial_state={self.initial_state!r}, "
-            f"num_qubits={self.num_qubits}, "
-            f"total_time={self.total_time}, "
-            f"time_steps={self.time_steps}, "
-            f"num_steps={self.num_steps}, "
-            f"trotter_depth={self.trotter_depth}, "
-            f"order={self.order}, "
-            f"basis={self.basis!r}, "
-            f"verbose={self.verbose!r}, "
-            f"shots={backend_shots(self.circuit_backend)}, "
-            f"seed={self.seed!r}, "
-            f"workers={self.workers}, "
-            f"progress={self.progress!r}"
-            ")"
         )
