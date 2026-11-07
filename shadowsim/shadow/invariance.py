@@ -10,9 +10,8 @@ This module diagnoses whether a user-supplied ``S`` is already closed under
 close it.  It does not change ``ShadowHamiltonian`` construction, which still
 auto-closes.
 
-TODO: Suggest a change-of-basis ``A`` so that the transformed shadow matrix
-``A H_S`` (or equivalent on ``A O``) is Hermitian when IP holds but ``H_S`` is
-not (paper Sec. 2 / bosonic example).
+For a quadratic Hamiltonian whose shadow matrix is not Hermitian, use
+``change_of_basis`` to build the Sec. 2 matrix ``A`` and the Hermitian ``H_S``.
 """
 
 from collections.abc import Sequence
