@@ -142,6 +142,7 @@ module = [
     "shadowsim.simulators.splitjmatrix_simulator",
     "shadowsim.simulators.trotterization_simulator",
     "shadowsim.shadow",
+    "shadowsim.shadow.change_of_basis",
     "shadowsim.shadow.invariance",
     "shadowsim.shadow.run_shadow_simulation",
     "shadowsim.shadow.shadow_hamiltonian",
