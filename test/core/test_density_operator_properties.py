@@ -13,8 +13,8 @@ from hypothesis import strategies as st
 from strategies.pauli_random import ATOL, MAX_PROPERTY_QUBITS, RTOL, normalize_state_vector, normalized_states
 
 from shadowsim.core import DensityOperator, State
+from shadowsim.utils.definiteness import positive_semidefinite
 from shadowsim.utils.hermitian import hermitian
-from shadowsim.utils.positive_semidefinite import positive_semidefinite
 
 
 @given(normalized_states())

@@ -1,11 +1,16 @@
 import numpy as np
 
-from shadowsim.utils.positive_semidefinite import positive_semidefinite
+from shadowsim.utils.definiteness import positive_semidefinite
 
 
 def test_positive_semidefinite_true_cases():
     assert positive_semidefinite(np.eye(3))
     assert positive_semidefinite(np.diag([0.0, 1.0, 4.0]))
+
+
+def test_positive_semidefinite_treats_tiny_negative_eigenvalue_as_zero():
+    assert positive_semidefinite(np.diag([-1e-12, 1.0]))
+    assert not positive_semidefinite(np.diag([-1e-9, 1e-9]))
 
 
 def test_positive_semidefinite_false_for_indefinite_matrix():

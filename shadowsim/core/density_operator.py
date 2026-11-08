@@ -7,8 +7,8 @@ import numpy.typing as npt
 
 from shadowsim.core.operator import Operator, _matrices_close
 from shadowsim.core.state import State
+from shadowsim.utils.definiteness import positive_semidefinite
 from shadowsim.utils.hermitian import hermitian
-from shadowsim.utils.positive_semidefinite import positive_semidefinite
 
 
 def _as_valid_density_matrix(matrix: npt.NDArray[np.complexfloating]) -> npt.NDArray[np.complexfloating]:

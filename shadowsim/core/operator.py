@@ -9,10 +9,8 @@ import numpy.typing as npt
 
 from shadowsim.core.pauli_string import PauliString
 from shadowsim.core.pauli_sum import PauliSum, parse_pauli_expression
+from shadowsim.utils.definiteness import indefinite, negative_semidefinite, positive_semidefinite
 from shadowsim.utils.hermitian import hermitian
-from shadowsim.utils.indefinite import indefinite
-from shadowsim.utils.negative_semidefinite import negative_semidefinite
-from shadowsim.utils.positive_semidefinite import positive_semidefinite
 from shadowsim.utils.unitary import unitary
 
 if TYPE_CHECKING:
