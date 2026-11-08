@@ -29,6 +29,7 @@ from shadowsim.cli.run import (
     _initial_state,
     _measured_result,
     _measurements,
+    _model,
     _observable_labels,
     _selection_positive_int,
     _series_name,
@@ -482,6 +483,28 @@ def test_factory_arguments_are_rejected_before_import(
 ) -> None:
     with pytest.raises(ValueError, match=match):
         build_simulator(_selection(**overrides))
+
+
+@pytest.mark.parametrize("qubits", [16, 40])
+def test_ising_qubit_count_is_capped_before_the_factory(
+    forbid_qutip: None,
+    monkeypatch: pytest.MonkeyPatch,
+    qubits: int,
+) -> None:
+    import shadowsim.cli.run as page_run
+
+    def blocked(*, n_qubits: int, **_kwargs: object) -> None:
+        raise AssertionError(f"ising was called with {n_qubits} qubits")
+
+    blocked.__module__ = "shadowsim.models.ising"
+    monkeypatch.setattr(page_run.models, "ising", blocked)
+    with pytest.raises(ValueError, match="at most 15"):
+        build_simulator(_selection(qubits=qubits))
+
+
+def test_ising_accepts_fifteen_qubits() -> None:
+    model = _model("ising", 15)
+    assert model.num_qubits == 15
 
 
 @pytest.mark.qutip

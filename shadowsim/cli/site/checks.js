@@ -698,8 +698,8 @@
 
   function qubitBounds() {
     if (usingAddedOperators()) return { min: 1, max: page.maxOperatorQubits };
-    // The factory that takes n_qubits is Ising, which requires at least 2.
-    if (page.selection.model === "preexisting" && chosenFactory()?.qubits) return { min: 2, max: null };
+    // The factory that takes n_qubits is Ising: at least 2, at most 15.
+    if (page.selection.model === "preexisting" && chosenFactory()?.qubits) return { min: 2, max: 15 };
     return { min: 1, max: null };
   }
 
@@ -709,7 +709,7 @@
     const { min, max } = qubitBounds();
     const tail = preview ? " to preview the script." : ".";
     if (!Number.isInteger(value) || value < min) return `Qubits must be an integer of at least ${min}${tail}`;
-    if (max != null && value > max) return `Qubits must be from 1 to ${max}${tail}`;
+    if (max != null && value > max) return `Qubits must be from ${min} to ${max}${tail}`;
     return null;
   }
 
