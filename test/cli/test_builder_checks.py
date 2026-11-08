@@ -173,6 +173,16 @@ def test_fractional_qubits_are_not_ready() -> None:
     assert _call("runAllowed", page) is False
 
 
+@pytest.mark.parametrize(
+    ("qubits", "problem"),
+    [("15", None), ("16", "Qubits must be from 2 to 15.")],
+)
+def test_ising_qubit_count_is_capped_on_the_page(qubits: str, problem: str | None) -> None:
+    page = _qutip_page()
+    page["settings"]["qubits"] = qubits
+    assert _call("qubitProblem", page, False) == problem
+
+
 def test_qutip_without_a_backend_is_ready() -> None:
     page = _qutip_page()
     assert page["selection"]["backend"] is None

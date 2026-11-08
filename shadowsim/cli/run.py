@@ -42,6 +42,7 @@ _CIRCUIT_SEED = 0
 _DEFAULT_SAVE_PATH = "results/run1"
 _DEFAULT_EXPORT_DIR = "results"
 _MAX_OPERATOR_QUBITS = 8
+_MAX_FACTORY_QUBITS = 15
 _MAX_TIME_STEPS = 500
 _MAX_NUM_STEPS = 100
 _MAX_TROTTER_DEPTH = 100
@@ -82,7 +83,7 @@ def build_simulator(selection: Mapping[str, object], *, time_steps: int = 101) -
             A non-empty ``terms`` list is the model instead: each item has ``id``
             and ``matrix``, and local terms also have ``sites``. At least one
             Hamiltonian term is required.
-            Factories that require ``n_qubits`` read ``qubits``. Jaynes–Cummings is
+            Factories that require ``n_qubits`` read ``qubits``, at most 15. Jaynes–Cummings is
             always 3 qubits and ignores ``qubits``. Tavis–Cummings reads
             ``emitters`` (1 to 13, default 1) and uses ``2 + emitters`` qubits.
             Tavis–Cummings–Hubbard reads ``cavities`` (default 1), ``emitters``
@@ -1052,7 +1053,7 @@ def _model(
 ) -> IsingModel | TavisCummingsModel:
     """Build the selected factory.
 
-    Ising reads ``qubits``. Jaynes–Cummings is always 3 qubits. Tavis–Cummings
+    Ising reads ``qubits``, at most 15. Jaynes–Cummings is always 3 qubits. Tavis–Cummings
     reads ``emitters`` and uses two cavity qubits plus one qubit per emitter.
     Tavis–Cummings–Hubbard repeats that block once per cavity and reads ``nu``.
     Jaynes–Cummings–Hubbard is that model with one emitter per cavity.
@@ -1066,14 +1067,14 @@ def _model(
         emitter_count = _emitter_count(emitters)
         cavity_count = _cavity_count(cavities)
         qubit_count = cavity_count * (2 + emitter_count)
-        if qubit_count > 15:
-            raise ValueError("cavities and emitters must use at most 15 qubits")
+        if qubit_count > _MAX_FACTORY_QUBITS:
+            raise ValueError(f"cavities and emitters must use at most {_MAX_FACTORY_QUBITS} qubits")
         kwargs = _factory_kwargs(record["params"], factory, n_emitters=emitter_count)
         built = build(n_emitters=emitter_count, n_cavities=cavity_count, nu=_hopping(nu), **kwargs)
     elif model_id == "jaynes_cummings_hubbard":
         cavity_count = _cavity_count(cavities)
-        if cavity_count * 3 > 15:
-            raise ValueError("cavities must use at most 15 qubits")
+        if cavity_count * 3 > _MAX_FACTORY_QUBITS:
+            raise ValueError(f"cavities must use at most {_MAX_FACTORY_QUBITS} qubits")
         kwargs = _factory_kwargs(record["params"], factory, n_emitters=1)
         built = build(n_cavities=cavity_count, nu=_hopping(nu), **kwargs)
     elif model_id == "tavis_cummings":
@@ -1081,8 +1082,11 @@ def _model(
         kwargs = _factory_kwargs(record["params"], factory, n_emitters=emitter_count)
         built = build(n_emitters=emitter_count, **kwargs)
     elif record["qubits"]:
+        num_qubits = _integer(qubits)
+        if num_qubits > _MAX_FACTORY_QUBITS:
+            raise ValueError(f"qubits must be at most {_MAX_FACTORY_QUBITS}")
         kwargs = _factory_kwargs(record["params"], factory, n_emitters=None)
-        built = build(n_qubits=_integer(qubits), **kwargs)
+        built = build(n_qubits=num_qubits, **kwargs)
     else:
         kwargs = _factory_kwargs(record["params"], factory, n_emitters=1)
         built = build(**kwargs)

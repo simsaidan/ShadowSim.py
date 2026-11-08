@@ -166,6 +166,7 @@ def _assert_disabled(page: dict[str, Any], status: str) -> None:
         pytest.param("-1", "1", "Qubits must be an integer of at least 2.", id="negative-qubits"),
         pytest.param("1.5", "1", "Qubits must be an integer of at least 2.", id="fractional-qubits"),
         pytest.param("1", "1", "Qubits must be an integer of at least 2.", id="ising-one-qubit"),
+        pytest.param("16", "1", "Qubits must be from 2 to 15.", id="ising-too-many-qubits"),
         pytest.param("2", "0", "Total time must be a positive number.", id="zero-time"),
         pytest.param("2", "-1", "Total time must be a positive number.", id="negative-time"),
     ],
