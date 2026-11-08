@@ -12,10 +12,8 @@ from hypothesis import given
 from strategies.pauli_random import ATOL, RTOL, real_pauli_sums
 
 from shadowsim.core import Operator, PauliSum
+from shadowsim.utils.definiteness import indefinite, negative_semidefinite, positive_semidefinite
 from shadowsim.utils.hermitian import hermitian
-from shadowsim.utils.indefinite import indefinite
-from shadowsim.utils.negative_semidefinite import negative_semidefinite
-from shadowsim.utils.positive_semidefinite import positive_semidefinite
 from shadowsim.utils.unitary import unitary
 
 

@@ -23,8 +23,8 @@ from shadowsim.core.density_operator import DensityOperator
 from shadowsim.core.hamiltonian import Hamiltonian
 from shadowsim.core.operator import Operator
 from shadowsim.core.state import State
+from shadowsim.utils.definiteness import positive_semidefinite
 from shadowsim.utils.hermitian import hermitian
-from shadowsim.utils.positive_semidefinite import positive_semidefinite
 
 Kind = Literal["state", "hamiltonian", "operator", "density"]
 _VALID_KINDS = frozenset({"state", "hamiltonian", "operator", "density"})
