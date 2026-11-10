@@ -2,6 +2,7 @@
 
 import json
 import multiprocessing
+import socket
 import threading
 import time
 import urllib.error
@@ -286,13 +287,32 @@ def _open(
         return exc.code, exc.headers, exc.read()
 
 
-def _open_server() -> tuple[Any, threading.Thread]:
+def _open_server(**kwargs: Any) -> tuple[Any, threading.Thread]:
     from shadowsim.cli.serve import HTTPServer as ThreadedServer
 
-    server = ThreadedServer(("127.0.0.1", 0), _Handler)
+    server = ThreadedServer(("127.0.0.1", 0), _Handler, **kwargs)
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
     return server, thread
+
+
+def _assert_dropped(client: socket.socket, limit: float) -> None:
+    client.settimeout(0.2)
+    deadline = time.monotonic() + limit
+    data = bytearray()
+    while time.monotonic() < deadline:
+        try:
+            chunk = client.recv(4096)
+        except TimeoutError:
+            continue
+        except OSError:
+            return
+        if chunk == b"":
+            assert not bytes(data).startswith(b"HTTP/")
+            return
+        data += chunk
+        assert not bytes(data).startswith(b"HTTP/")
+    raise AssertionError(bytes(data))
 
 
 def _close_server(server: Any, thread: threading.Thread) -> None:
@@ -654,3 +674,167 @@ def test_a_posted_run_uses_the_output_directory(monkeypatch: pytest.MonkeyPatch,
     assert status == 200
     assert json.loads(body) == {"ok": True}
     assert seen["output_root"] == root
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [b"", b"GET /session HTTP/1.1\r\nHost: 127.0.0.1\r\n"],
+    ids=["silent", "partial-headers"],
+)
+def test_a_stalled_request_is_closed(payload: bytes) -> None:
+    server, thread = _open_server(request_timeout=0.2)
+    port = server.server_address[1]
+    client: socket.socket | None = None
+    try:
+        client = socket.create_connection(("127.0.0.1", port), timeout=2)
+        if payload:
+            client.sendall(payload)
+        _assert_dropped(client, 2)
+        status, _headers, body = _open(port, "/session")
+        assert status == 200
+        assert isinstance(json.loads(body)["id"], str)
+    finally:
+        if client is not None:
+            client.close()
+        _close_server(server, thread)
+
+
+def test_a_stalled_authenticated_body_is_closed() -> None:
+    server, thread = _open_server(request_timeout=0.2)
+    server.token = "test-token"
+    port = server.server_address[1]
+    client: socket.socket | None = None
+    try:
+        client = socket.create_connection(("127.0.0.1", port), timeout=2)
+        client.sendall(
+            b"POST /runs HTTP/1.1\r\n"
+            b"Host: 127.0.0.1\r\n"
+            b"Authorization: Bearer test-token\r\n"
+            b"Content-Type: application/json\r\n"
+            b"Content-Length: 100\r\n"
+            b"\r\n"
+            b'{"partial"'
+        )
+        _assert_dropped(client, 2)
+        status, _headers, body = _open(port, "/session")
+        assert status == 200
+        assert isinstance(json.loads(body)["id"], str)
+    finally:
+        if client is not None:
+            client.close()
+        _close_server(server, thread)
+
+
+def test_a_missing_token_does_not_wait_for_the_body() -> None:
+    server, thread = _open_server(request_timeout=5)
+    server.token = "test-token"
+    port = server.server_address[1]
+    client: socket.socket | None = None
+    try:
+        client = socket.create_connection(("127.0.0.1", port), timeout=2)
+        client.settimeout(1)
+        started = time.monotonic()
+        client.sendall(
+            b"POST /runs HTTP/1.1\r\nHost: 127.0.0.1\r\nContent-Type: application/json\r\nContent-Length: 100\r\n\r\n"
+        )
+        data = bytearray()
+        while b"unauthorized" not in data:
+            chunk = client.recv(4096)
+            if chunk == b"":
+                break
+            data += chunk
+        elapsed = time.monotonic() - started
+    finally:
+        if client is not None:
+            client.close()
+        _close_server(server, thread)
+    assert elapsed < 1
+    assert data.startswith(b"HTTP/1.0 401")
+    assert b"unauthorized" in data
+
+
+def test_a_full_handler_cap_closes_the_next_connection(monkeypatch: pytest.MonkeyPatch) -> None:
+    started = threading.Event()
+    release = threading.Event()
+
+    def hold(selection: dict[str, object], output_root: object = None) -> tuple[str, dict[str, bool]]:
+        started.set()
+        assert release.wait(timeout=5)
+        return ("ok", {"ok": True})
+
+    monkeypatch.setattr("shadowsim.cli.serve._run_in_child", hold)
+    server, thread = _open_server(max_handlers=1)
+    port = server.server_address[1]
+    outcome: dict[str, tuple[int, bytes]] = {}
+    extra: socket.socket | None = None
+
+    def post_run() -> None:
+        outcome["result"] = _exchange(port, "POST", "/runs", b"{}")
+
+    poster = threading.Thread(target=post_run)
+    poster.start()
+    try:
+        assert started.wait(timeout=2)
+        extra = socket.create_connection(("127.0.0.1", port), timeout=2)
+        try:
+            extra.sendall(b"GET /session HTTP/1.1\r\nHost: 127.0.0.1\r\n\r\n")
+        except OSError:
+            pass
+        _assert_dropped(extra, 2)
+        release.set()
+        poster.join(timeout=5)
+        assert outcome["result"] == (200, b'{"ok": true}')
+        status, _headers, body = _open(port, "/session")
+        assert status == 200
+        assert isinstance(json.loads(body)["id"], str)
+    finally:
+        release.set()
+        poster.join(timeout=5)
+        if extra is not None:
+            extra.close()
+        _close_server(server, thread)
+
+
+def test_a_long_run_is_not_cut_off(monkeypatch: pytest.MonkeyPatch) -> None:
+    from shadowsim.cli import serve as serve_cli
+
+    seen: dict[str, Any] = {}
+    end_read_timeout = serve_cli._end_read_timeout
+
+    def spy(handler: Any) -> None:
+        end_read_timeout(handler)
+        seen["handler"] = handler
+
+    def hold(selection: dict[str, object], output_root: object = None) -> tuple[str, dict[str, bool]]:
+        seen["timeout"] = seen["handler"].connection.gettimeout()
+        time.sleep(0.5)
+        return ("ok", {"ok": True})
+
+    monkeypatch.setattr(serve_cli, "_end_read_timeout", spy)
+    monkeypatch.setattr(serve_cli, "_run_in_child", hold)
+    server, thread = _open_server(request_timeout=0.2)
+    port = server.server_address[1]
+    try:
+        status, body = _exchange(port, "POST", "/runs", b"{}")
+    finally:
+        _close_server(server, thread)
+    assert status == 200
+    assert json.loads(body) == {"ok": True}
+    assert seen["timeout"] is None
+
+
+def test_a_handler_that_fails_to_start_releases_its_slot(monkeypatch: pytest.MonkeyPatch) -> None:
+    from shadowsim.cli.serve import HTTPServer as ThreadedServer
+
+    def boom(self: object, request: object, client_address: object) -> None:
+        raise RuntimeError("start failed")
+
+    monkeypatch.setattr("shadowsim.cli.serve.ThreadingMixIn.process_request", boom)
+    server = ThreadedServer(("127.0.0.1", 0), _Handler, max_handlers=1)
+    try:
+        with pytest.raises(RuntimeError, match="start failed"):
+            server.process_request(object(), ("127.0.0.1", 9))
+        assert server._handler_slots.acquire(blocking=False)
+        server._handler_slots.release()
+    finally:
+        server.server_close()
