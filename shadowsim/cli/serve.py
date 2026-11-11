@@ -46,6 +46,8 @@ _TOKEN_COOKIE = "shadowsim-token"
 _PAGE_UNAUTHORIZED = "Open the URL printed when the server started.\n"
 _JSON_REQUIRED = "Content-Type must be application/json"
 _MAX_BODY_BYTES = 8 * 1024 * 1024
+_REQUEST_TIMEOUT = 10.0
+_MAX_HANDLERS = 16
 
 
 class _RunPhase(enum.Enum):
@@ -74,22 +76,74 @@ class HTTPServer(ThreadingMixIn, _HTTPServer):
 
     ``session`` is a new id for this process. The builder keeps a saved board only
     while that id still matches, so launching the server again starts empty.
+    ``request_timeout`` is how long, in seconds, a client may take to send the
+    request line, the headers, and an authenticated body. At most
+    ``_MAX_HANDLERS`` connections are handled at once. A further connection is
+    closed so the accept loop can keep serving the page.
     """
 
     daemon_threads = True
     token: str | None = None
     output_root: Path | None = None
     session: str
+    request_timeout: float
+    _handler_slots: threading.BoundedSemaphore
 
     def __init__(
         self,
         server_address: tuple[str, int],
         request_handler_class: type[BaseHTTPRequestHandler],
         bind_and_activate: bool = True,
+        *,
+        request_timeout: float = _REQUEST_TIMEOUT,
+        max_handlers: int = _MAX_HANDLERS,
     ) -> None:
-        """Bind the server and assign this process its board id."""
+        """Bind the server and assign this process its board id.
+
+        Args:
+            server_address: Address and port to bind.
+            request_handler_class: Handler for each accepted connection.
+            bind_and_activate: Bind and listen during construction.
+            request_timeout: Seconds allowed for the request line, the headers,
+                and an authenticated body.
+            max_handlers: How many connections may be handled at once. A further
+                connection is closed.
+        """
         super().__init__(server_address, request_handler_class, bind_and_activate)
         self.session = secrets.token_urlsafe(16)
+        self.request_timeout = request_timeout
+        self._handler_slots = threading.BoundedSemaphore(max_handlers)
+
+    def process_request(self, request: Any, client_address: Any) -> None:
+        """Handle one connection on a daemon thread.
+
+        When every handler thread is busy, the connection is closed and the
+        accept loop continues.
+
+        Args:
+            request: Accepted client socket.
+            client_address: Address of the client.
+        """
+        if not self._handler_slots.acquire(blocking=False):
+            self.shutdown_request(request)
+            return
+        try:
+            super().process_request(request, client_address)
+        except BaseException:
+            self._handler_slots.release()
+            raise
+
+    def process_request_thread(self, request: Any, client_address: Any) -> None:
+        """Handle one request, then free its handler slot.
+
+        Args:
+            request: Accepted client socket.
+            client_address: Address of the client.
+        """
+        try:
+            super().process_request_thread(request, client_address)
+        finally:
+            self._handler_slots.release()
 
 
 def _site_asset(url_path: str) -> tuple[Path, str] | None:
@@ -114,14 +168,26 @@ def _site_asset(url_path: str) -> tuple[Path, str] | None:
 class _Handler(BaseHTTPRequestHandler):
     """Serve the builder page, list package choices, and run a posted selection."""
 
+    def setup(self) -> None:
+        """Apply the server read timeout before the request line is read.
+
+        A server without ``request_timeout`` uses ``_REQUEST_TIMEOUT``. The
+        timeout covers the request line, the headers, and an authenticated body.
+        """
+        super().setup()
+        timeout = getattr(self.server, "request_timeout", _REQUEST_TIMEOUT)
+        self.connection.settimeout(timeout)
+
     def do_GET(self) -> None:
         """Return a site asset, a package catalog, or this process id.
 
         ``GET /`` is the one route that honors ``?token=``. A matching token is
         exchanged for a cookie and the browser is sent to ``/``. When the server
         has a token, any other ``GET /`` needs that cookie. ``GET /session``
-        returns the id created when this process started.
+        returns the id created when this process started. The read timeout is
+        cleared first, because the headers have already arrived.
         """
+        _end_read_timeout(self)
         path = urlsplit(self.path).path
         if path == "/" and not _authorize_page(self):
             return
@@ -161,11 +227,13 @@ class _Handler(BaseHTTPRequestHandler):
         When the server has a startup token, both routes require that token in a
         cookie or in ``Authorization: Bearer`` before any run is started or stopped.
         ``POST /runs`` also requires ``Content-Type: application/json`` before the
-        body is parsed, and rejects a body larger than 8 MiB. ``POST /runs/cancel``
-        has no body and does not.
+        body is parsed, and rejects a body larger than 8 MiB. The read timeout
+        stays until that body arrives, then it is cleared before the run starts.
+        ``POST /runs/cancel`` has no body, so its timeout is cleared first.
         """
         path = urlsplit(self.path).path
         if path == "/runs/cancel":
+            _end_read_timeout(self)
             if not _authorize_post(self):
                 return
             if not _cancel_run():
@@ -182,7 +250,9 @@ class _Handler(BaseHTTPRequestHandler):
             _send_json(self, 415, {"error": _JSON_REQUIRED})
             return
         try:
-            selection = _json_object(self._body())
+            body = self._body()
+            _end_read_timeout(self)
+            selection = _json_object(body)
         except ValueError as exc:
             _send_json(self, 400, {"error": str(exc)})
             return
@@ -213,6 +283,15 @@ class _Handler(BaseHTTPRequestHandler):
     def log_message(self, format: str, *args: object) -> None:
         """Keep request logs off the terminal."""
         return
+
+
+def _end_read_timeout(handler: BaseHTTPRequestHandler) -> None:
+    """Remove the socket timeout once the guarded read has finished.
+
+    Header and body reads use ``request_timeout``. Writing a response and waiting
+    for a simulation do not.
+    """
+    handler.connection.settimeout(None)
 
 
 def _detach_process_group() -> None:
