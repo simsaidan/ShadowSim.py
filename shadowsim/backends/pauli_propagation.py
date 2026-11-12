@@ -11,6 +11,7 @@ from qiskit import QuantumCircuit, qasm2, transpile
 from qiskit.circuit import CircuitInstruction
 
 from shadowsim._optional import import_optional
+from shadowsim.backends._arguments import _qubit_indexes, _UnsupportedCircuitMetrics
 
 # OpenQASMInterface exists on this revision, not on the package's current main branch.
 _QASM_REVISION = 'Pkg.add(url="https://github.com/SparqleSim/PauliPropagation.jl", rev="6e8c1ae")'
@@ -47,7 +48,7 @@ _QASM_BASIS = (
 )
 
 
-class PauliPropagationBackend:
+class PauliPropagationBackend(_UnsupportedCircuitMetrics):
     """Propagate one Pauli observable per requested qubit.
 
     The circuit is written as OpenQASM 2 and read by
@@ -148,67 +149,6 @@ class PauliPropagationBackend:
         del shots, seed
         return _expectations(self, circuit, qubits, "X")
 
-    def depth(self, circuit: QuantumCircuit) -> int:
-        """Reject a request for transpiled circuit depth.
-
-        Args:
-            circuit: Unused. PauliPropagation does not count gates.
-
-        Raises:
-            NotImplementedError: PauliPropagation does not support circuit metrics.
-        """
-        _reject_circuit_metric(circuit)
-
-    def width(self, circuit: QuantumCircuit) -> int:
-        """Reject a request for transpiled qubit count.
-
-        Args:
-            circuit: Unused. PauliPropagation does not count gates.
-
-        Raises:
-            NotImplementedError: PauliPropagation does not support circuit metrics.
-        """
-        _reject_circuit_metric(circuit)
-
-    def gate_count(self, circuit: QuantumCircuit) -> int:
-        """Reject a request for a transpiled instruction count.
-
-        Args:
-            circuit: Unused. PauliPropagation does not count gates.
-
-        Raises:
-            NotImplementedError: PauliPropagation does not support circuit metrics.
-        """
-        _reject_circuit_metric(circuit)
-
-    def t_count(self, circuit: QuantumCircuit) -> int:
-        """Reject a request for a transpiled ``t`` count.
-
-        Args:
-            circuit: Unused. PauliPropagation does not count gates.
-
-        Raises:
-            NotImplementedError: PauliPropagation does not support circuit metrics.
-        """
-        _reject_circuit_metric(circuit)
-
-    def toffoli_count(self, circuit: QuantumCircuit) -> int:
-        """Reject a request for a transpiled Toffoli count.
-
-        Args:
-            circuit: Unused. PauliPropagation does not count gates.
-
-        Raises:
-            NotImplementedError: PauliPropagation does not support circuit metrics.
-        """
-        _reject_circuit_metric(circuit)
-
-
-def _reject_circuit_metric(circuit: QuantumCircuit) -> NoReturn:
-    """Raise because PauliPropagation does not count gates."""
-    del circuit
-    raise NotImplementedError("PauliPropagation does not support circuit metrics")
-
 
 def _expectations(
     backend: PauliPropagationBackend,
@@ -217,7 +157,7 @@ def _expectations(
     pauli: Literal["Z", "X"],
 ) -> list[float]:
     """Return one propagated expectation for each index in ``qubits``."""
-    indexes = _qubit_indexes(circuit, qubits)
+    indexes = _qubit_indexes(qubits, circuit.num_qubits, register="circuit")
     if not indexes:
         return []
     prepared = _importable_circuit(circuit)
@@ -246,16 +186,6 @@ def _nonnegative_real(value: object, name: str, *, allow_inf: bool) -> float:
     if math.isnan(number) or number < 0 or (math.isinf(number) and not allow_inf):
         raise ValueError(f"{name} must be a non-negative number")
     return number
-
-
-def _qubit_indexes(circuit: QuantumCircuit, qubits: Sequence[int]) -> tuple[int, ...]:
-    """Return ``qubits`` when every entry is an index in ``circuit``."""
-    indexes: list[int] = []
-    for qubit in qubits:
-        if isinstance(qubit, bool) or not isinstance(qubit, int) or qubit < 0 or qubit >= circuit.num_qubits:
-            raise ValueError(f"qubit {qubit!r} is outside a circuit of {circuit.num_qubits} qubits")
-        indexes.append(qubit)
-    return tuple(indexes)
 
 
 def _julia_module() -> Any:

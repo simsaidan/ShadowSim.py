@@ -11,7 +11,7 @@ least significant bit. Cirq rotations use the same sign as Qiskit.
 
 import warnings
 from collections.abc import Sequence
-from typing import Any, Literal, NoReturn
+from typing import Any, Literal
 
 import numpy as np
 from qiskit import QuantumCircuit
@@ -19,6 +19,12 @@ from qiskit.circuit import Instruction
 from qiskit.circuit.exceptions import CircuitError
 
 from shadowsim._optional import import_optional
+from shadowsim.backends._arguments import (
+    _qubit_indexes,
+    _require_seed,
+    _require_shots,
+    _UnsupportedCircuitMetrics,
+)
 
 _Pauli = Literal["X", "Z"]
 _ONE_QUBIT = frozenset({"h", "x", "y", "z", "s", "sdg", "t", "tdg", "sx", "sxdg"})
@@ -26,7 +32,7 @@ _TWO_QUBIT = frozenset({"cz", "swap"})
 _ROTATIONS = frozenset({"rx", "ry", "rz"})
 
 
-class CirqCircuitBackend:
+class CirqCircuitBackend(_UnsupportedCircuitMetrics):
     """Evolve one circuit with the Cirq statevector simulator.
 
     ``z_expectations`` and ``x_expectations`` are exact, so ``shots`` and
@@ -73,8 +79,8 @@ class CirqCircuitBackend:
                 ``|0...0>``.
             ImportError: The ``cirq`` extra is not installed.
         """
-        _check_shots(shots)
-        _check_seed(seed)
+        _require_shots(shots)
+        _require_seed(seed)
         state = _state(circuit)
         return _sample(_cirq(), state, shots=shots, seed=seed)
 
@@ -136,65 +142,10 @@ class CirqCircuitBackend:
         del shots, seed
         return _expectations(circuit, qubits, "X")
 
-    def depth(self, circuit: QuantumCircuit) -> int:
-        """Reject a request for transpiled circuit depth.
-
-        Args:
-            circuit: Unused. This backend does not count gates.
-
-        Raises:
-            NotImplementedError: This backend does not support circuit metrics.
-        """
-        _reject_circuit_metric(circuit)
-
-    def width(self, circuit: QuantumCircuit) -> int:
-        """Reject a request for transpiled qubit count.
-
-        Args:
-            circuit: Unused. This backend does not count gates.
-
-        Raises:
-            NotImplementedError: This backend does not support circuit metrics.
-        """
-        _reject_circuit_metric(circuit)
-
-    def gate_count(self, circuit: QuantumCircuit) -> int:
-        """Reject a request for a transpiled instruction count.
-
-        Args:
-            circuit: Unused. This backend does not count gates.
-
-        Raises:
-            NotImplementedError: This backend does not support circuit metrics.
-        """
-        _reject_circuit_metric(circuit)
-
-    def t_count(self, circuit: QuantumCircuit) -> int:
-        """Reject a request for a transpiled ``t`` count.
-
-        Args:
-            circuit: Unused. This backend does not count gates.
-
-        Raises:
-            NotImplementedError: This backend does not support circuit metrics.
-        """
-        _reject_circuit_metric(circuit)
-
-    def toffoli_count(self, circuit: QuantumCircuit) -> int:
-        """Reject a request for a transpiled Toffoli count.
-
-        Args:
-            circuit: Unused. This backend does not count gates.
-
-        Raises:
-            NotImplementedError: This backend does not support circuit metrics.
-        """
-        _reject_circuit_metric(circuit)
-
 
 def _expectations(circuit: QuantumCircuit, qubits: Sequence[int], pauli: _Pauli) -> list[float]:
     """Return one exact expectation for each index in ``qubits``."""
-    indexes = _qubit_indexes(circuit, qubits)
+    indexes = _qubit_indexes(qubits, circuit.num_qubits, register="circuit")
     cirq = _cirq()
     compiled, state, lines = _translate(cirq, circuit)
     if not indexes:
@@ -540,37 +491,3 @@ def _is_ground(state: np.ndarray) -> bool:
     ground = np.zeros_like(state)
     ground[0] = 1.0
     return bool(np.allclose(state, ground))
-
-
-def _qubit_indexes(circuit: QuantumCircuit, qubits: Sequence[int]) -> tuple[int, ...]:
-    """Return ``qubits`` when every entry is an index in ``circuit``.
-
-    Raises:
-        ValueError: An entry is outside ``circuit``.
-    """
-    indexes: list[int] = []
-    for qubit in qubits:
-        if isinstance(qubit, bool) or not isinstance(qubit, int) or qubit < 0 or qubit >= circuit.num_qubits:
-            raise ValueError(f"qubit {qubit!r} is outside a circuit of {circuit.num_qubits} qubits")
-        indexes.append(qubit)
-    return tuple(indexes)
-
-
-def _check_shots(shots: int) -> None:
-    """Raise unless ``shots`` is a positive integer."""
-    if isinstance(shots, bool) or not isinstance(shots, int) or shots <= 0:
-        raise ValueError("shots must be a positive integer")
-
-
-def _check_seed(seed: int | None) -> None:
-    """Raise unless ``seed`` is an ``int`` or ``None``."""
-    if seed is None:
-        return
-    if isinstance(seed, bool) or not isinstance(seed, int):
-        raise TypeError("seed must be an int or None")
-
-
-def _reject_circuit_metric(circuit: QuantumCircuit) -> NoReturn:
-    """Raise because this backend does not count gates."""
-    del circuit
-    raise NotImplementedError("Cirq does not support circuit metrics")

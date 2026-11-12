@@ -9,6 +9,7 @@ from qiskit.circuit import Instruction
 from qiskit.circuit.exceptions import CircuitError
 from qiskit.circuit.library import Initialize, UnitaryGate
 
+from shadowsim.backends._arguments import _require_shots
 from shadowsim.backends.program import (
     Barrier,
     Hadamard,
@@ -191,10 +192,7 @@ def backend_shots(backend: object) -> int:
     Raises:
         ValueError: ``shots`` is missing or not a positive integer.
     """
-    shots = getattr(backend, "shots", None)
-    if isinstance(shots, bool) or not isinstance(shots, int) or shots <= 0:
-        raise ValueError("shots must be a positive integer")
-    return shots
+    return _require_shots(getattr(backend, "shots", None))
 
 
 def from_qiskit(circuit: QuantumCircuit) -> Program:

@@ -15,6 +15,7 @@ from typing import Literal
 import numpy as np
 import numpy.typing as npt
 
+from shadowsim.backends._arguments import _qubit_indexes, _require_seed, _require_shots
 from shadowsim.backends.program import Barrier, Hadamard, Measure, Prepare, Program, Reset, Unitary
 
 _Pauli = Literal["X", "Z"]
@@ -69,7 +70,7 @@ def expectations(program: Program, qubits: Sequence[int], pauli: _Pauli) -> list
     if pauli not in ("X", "Z"):
         raise ValueError("pauli must be 'X' or 'Z'")
     state = statevector(program)
-    indexes = _qubit_indexes(qubits, program.num_qubits)
+    indexes = _qubit_indexes(qubits, program.num_qubits, register="program")
     return [_expectation(state, index, pauli) for index in indexes]
 
 
@@ -96,8 +97,8 @@ def sample_counts(program: Program, *, shots: int, seed: int | None) -> dict[str
         NotImplementedError: ``program`` uses an operation :func:`statevector`
             cannot apply.
     """
-    _check_shots(shots)
-    _check_seed(seed)
+    shots = _require_shots(shots)
+    seed = _require_seed(seed)
     probabilities = _probabilities(statevector(program))
     outcomes = np.random.default_rng(seed).choice(probabilities.shape[0], size=shots, p=probabilities)
     counts: dict[str, int] = {}
@@ -209,31 +210,3 @@ def _probabilities(state: npt.NDArray[np.complex128]) -> npt.NDArray[np.float64]
     if not np.isclose(total, 1.0):
         raise ValueError("statevector probabilities must sum to 1")
     return np.asarray(weights / total, dtype=np.float64)
-
-
-def _qubit_indexes(qubits: Sequence[int], num_qubits: int) -> tuple[int, ...]:
-    """Return ``qubits`` when every entry is an index in a register of ``num_qubits``.
-
-    Raises:
-        ValueError: An entry is not an index in the register.
-    """
-    indexes: list[int] = []
-    for qubit in qubits:
-        if isinstance(qubit, bool) or not isinstance(qubit, int) or qubit < 0 or qubit >= num_qubits:
-            raise ValueError(f"qubit {qubit!r} is outside a program of {num_qubits} qubits")
-        indexes.append(qubit)
-    return tuple(indexes)
-
-
-def _check_shots(shots: int) -> None:
-    """Raise unless ``shots`` is a positive integer."""
-    if isinstance(shots, bool) or not isinstance(shots, int) or shots <= 0:
-        raise ValueError("shots must be a positive integer")
-
-
-def _check_seed(seed: int | None) -> None:
-    """Raise unless ``seed`` is an ``int`` or ``None``."""
-    if seed is None:
-        return
-    if isinstance(seed, bool) or not isinstance(seed, int):
-        raise TypeError("seed must be an int or None")
