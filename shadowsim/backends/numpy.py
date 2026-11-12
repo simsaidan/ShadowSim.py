@@ -1,17 +1,18 @@
 """Run a circuit on a NumPy statevector."""
 
 from collections.abc import Sequence
-from typing import Literal, NoReturn
+from typing import Literal
 
 from qiskit import QuantumCircuit
 
+from shadowsim.backends._arguments import _qubit_indexes, _UnsupportedCircuitMetrics
 from shadowsim.backends.circuit import from_qiskit
 from shadowsim.backends.numpy_statevector import expectations, sample_counts
 
 _Pauli = Literal["X", "Z"]
 
 
-class NumpyCircuitBackend:
+class NumpyCircuitBackend(_UnsupportedCircuitMetrics):
     """Evolve one circuit with a NumPy statevector.
 
     This is the reference for small circuits. Correctness and readability come
@@ -116,83 +117,8 @@ class NumpyCircuitBackend:
         del shots, seed
         return _expectations(circuit, qubits, "X")
 
-    def depth(self, circuit: QuantumCircuit) -> int:
-        """Reject a request for transpiled circuit depth.
-
-        Args:
-            circuit: Unused. This backend does not count gates.
-
-        Raises:
-            NotImplementedError: This backend does not support circuit metrics.
-        """
-        _reject_circuit_metric(circuit)
-
-    def width(self, circuit: QuantumCircuit) -> int:
-        """Reject a request for transpiled qubit count.
-
-        Args:
-            circuit: Unused. This backend does not count gates.
-
-        Raises:
-            NotImplementedError: This backend does not support circuit metrics.
-        """
-        _reject_circuit_metric(circuit)
-
-    def gate_count(self, circuit: QuantumCircuit) -> int:
-        """Reject a request for a transpiled instruction count.
-
-        Args:
-            circuit: Unused. This backend does not count gates.
-
-        Raises:
-            NotImplementedError: This backend does not support circuit metrics.
-        """
-        _reject_circuit_metric(circuit)
-
-    def t_count(self, circuit: QuantumCircuit) -> int:
-        """Reject a request for a transpiled ``t`` count.
-
-        Args:
-            circuit: Unused. This backend does not count gates.
-
-        Raises:
-            NotImplementedError: This backend does not support circuit metrics.
-        """
-        _reject_circuit_metric(circuit)
-
-    def toffoli_count(self, circuit: QuantumCircuit) -> int:
-        """Reject a request for a transpiled Toffoli count.
-
-        Args:
-            circuit: Unused. This backend does not count gates.
-
-        Raises:
-            NotImplementedError: This backend does not support circuit metrics.
-        """
-        _reject_circuit_metric(circuit)
-
 
 def _expectations(circuit: QuantumCircuit, qubits: Sequence[int], pauli: _Pauli) -> list[float]:
     """Return one exact expectation for each index in ``qubits``."""
-    _qubit_indexes(circuit, qubits)
+    _qubit_indexes(qubits, circuit.num_qubits, register="circuit")
     return expectations(from_qiskit(circuit), qubits, pauli)
-
-
-def _qubit_indexes(circuit: QuantumCircuit, qubits: Sequence[int]) -> tuple[int, ...]:
-    """Return ``qubits`` when every entry is an index in ``circuit``.
-
-    Raises:
-        ValueError: An entry is outside ``circuit``.
-    """
-    indexes: list[int] = []
-    for qubit in qubits:
-        if isinstance(qubit, bool) or not isinstance(qubit, int) or qubit < 0 or qubit >= circuit.num_qubits:
-            raise ValueError(f"qubit {qubit!r} is outside a circuit of {circuit.num_qubits} qubits")
-        indexes.append(qubit)
-    return tuple(indexes)
-
-
-def _reject_circuit_metric(circuit: QuantumCircuit) -> NoReturn:
-    """Raise because this backend does not count gates."""
-    del circuit
-    raise NotImplementedError("NumPy does not support circuit metrics")

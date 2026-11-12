@@ -9,6 +9,7 @@ from qiskit.transpiler.exceptions import TranspilerError
 from qiskit_aer import AerSimulator
 from qiskit_aer.backends.backend_utils import BASIS_GATES
 
+from shadowsim.backends._arguments import _qubit_indexes, _require_shots
 from shadowsim.backends.circuit import from_qiskit, to_qiskit
 from shadowsim.utils.flip_dict import flip_dict
 
@@ -54,10 +55,8 @@ class AerCircuitBackend:
                 not a sequence of gate names, the sequence is empty, or a name
                 is not a gate Aer can compile into.
         """
-        if isinstance(shots, bool) or not isinstance(shots, int) or shots <= 0:
-            raise ValueError("shots must be a positive integer")
         self.name = "aer"
-        self.shots = shots
+        self.shots = _require_shots(shots)
         self.basis_gates = _basis_gates(basis_gates)
 
     def run_counts(self, circuit: QuantumCircuit, *, shots: int, seed: int | None) -> dict[str, int]:
@@ -287,7 +286,7 @@ def _expectations(
     basis: str,
 ) -> list[float]:
     """Measure ``qubits`` in ``basis`` and return one Pauli expectation per index."""
-    indexes = _qubit_indexes(circuit, qubits)
+    indexes = _qubit_indexes(qubits, circuit.num_qubits, register="circuit")
     if not indexes:
         return []
     measured = circuit.copy()
@@ -301,16 +300,6 @@ def _expectations(
     counts = backend.run_counts(measured, shots=shots, seed=seed)
     flipped = flip_dict(counts)
     return [_outcome_difference(flipped, offset + slot) / shots for slot in range(len(indexes))]
-
-
-def _qubit_indexes(circuit: QuantumCircuit, qubits: Sequence[int]) -> tuple[int, ...]:
-    """Return ``qubits`` when every entry is an index in ``circuit``."""
-    indexes: list[int] = []
-    for qubit in qubits:
-        if isinstance(qubit, bool) or not isinstance(qubit, int) or qubit < 0 or qubit >= circuit.num_qubits:
-            raise ValueError(f"qubit {qubit!r} is outside a circuit of {circuit.num_qubits} qubits")
-        indexes.append(qubit)
-    return tuple(indexes)
 
 
 def _outcome_difference(counts: dict[str, int], bit: int) -> int:
