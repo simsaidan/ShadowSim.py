@@ -202,13 +202,16 @@ class _Handler(BaseHTTPRequestHandler):
         and the browser is sent to ``/``. When the server has a token but does
         not accept a query token, ``GET /`` without the cookie returns a form and
         any ``?token=`` is refused. Any other ``GET /`` on a server with a token
-        needs that cookie. ``GET /session`` returns the id created when this
+        needs that cookie. Every other read needs that cookie too, and does not
+        accept a query token. ``GET /session`` returns the id created when this
         process started. The read timeout is cleared first, because the headers
         have already arrived.
         """
         _end_read_timeout(self)
         path = urlsplit(self.path).path
         if path == "/" and not _authorize_page(self):
+            return
+        if path != "/" and not _authorize_read(self):
             return
         if path == "/session":
             session = getattr(self.server, "session", None)
@@ -655,6 +658,28 @@ def _authorize_page(handler: BaseHTTPRequestHandler) -> bool:
     if not _accepts_query_token(handler):
         _send_token_form(handler)
         return False
+    _send_text(handler, 401, _PAGE_UNAUTHORIZED)
+    return False
+
+
+def _authorize_read(handler: BaseHTTPRequestHandler) -> bool:
+    """Return whether a read other than the page bootstrap may proceed.
+
+    A server with no token allows the read. Otherwise the cookie must match.
+    A query token is not accepted.
+
+    Args:
+        handler: Request for a path other than ``/``.
+
+    Returns:
+        ``True`` when the caller should write the response. ``False`` when this
+        function already wrote ``401``.
+    """
+    expected = _server_token(handler)
+    if expected is None:
+        return True
+    if _same_token(_cookie_token(handler), expected):
+        return True
     _send_text(handler, 401, _PAGE_UNAUTHORIZED)
     return False
 
