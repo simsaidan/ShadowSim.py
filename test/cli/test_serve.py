@@ -2,18 +2,31 @@
 
 import json
 import multiprocessing
+import shutil
 import socket
+import ssl
+import subprocess
 import threading
 import time
 import urllib.error
 import urllib.request
 from http.server import HTTPServer
+from io import BytesIO
 from pathlib import Path
 from typing import Any
 
 import pytest
 
-from shadowsim.cli.serve import _Handler, _park_until_killed, _send_json, _terminate_process, main, serve
+from shadowsim.cli.serve import (
+    _MAX_AUTH_BODY_BYTES,
+    _Handler,
+    _park_until_killed,
+    _read_auth_body,
+    _send_json,
+    _terminate_process,
+    main,
+    serve,
+)
 
 
 def test_index_serves_the_builder_page():
@@ -62,12 +75,16 @@ def test_main_serve_uses_the_requested_bind(monkeypatch: pytest.MonkeyPatch):
         open_browser: bool,
         allow_remote: bool,
         output_dir: str = "results",
+        tls_cert: str | None = None,
+        tls_key: str | None = None,
     ) -> int:
         seen["host"] = host
         seen["port"] = port
         seen["open_browser"] = open_browser
         seen["allow_remote"] = allow_remote
         seen["output_dir"] = output_dir
+        seen["tls_cert"] = tls_cert
+        seen["tls_key"] = tls_key
         return 0
 
     monkeypatch.setattr("shadowsim.cli.serve.serve", fake_serve)
@@ -78,12 +95,17 @@ def test_main_serve_uses_the_requested_bind(monkeypatch: pytest.MonkeyPatch):
         "open_browser": False,
         "allow_remote": False,
         "output_dir": "results",
+        "tls_cert": None,
+        "tls_key": None,
     }
     assert main(["serve", "--host", "0.0.0.0", "--allow-remote", "--no-browser"]) == 0
     assert seen["host"] == "0.0.0.0"
     assert seen["allow_remote"] is True
     assert main(["serve", "--output-dir", "runs", "--no-browser"]) == 0
     assert seen["output_dir"] == "runs"
+    assert main(["serve", "--tls-cert", "cert.pem", "--tls-key", "key.pem", "--no-browser"]) == 0
+    assert seen["tls_cert"] == "cert.pem"
+    assert seen["tls_key"] == "key.pem"
 
 
 def test_main_opens_the_browser_by_default(monkeypatch: pytest.MonkeyPatch):
@@ -96,6 +118,8 @@ def test_main_opens_the_browser_by_default(monkeypatch: pytest.MonkeyPatch):
         open_browser: bool,
         allow_remote: bool,
         output_dir: str = "results",
+        tls_cert: str | None = None,
+        tls_key: str | None = None,
     ) -> int:
         seen["open_browser"] = open_browser
         seen["output_dir"] = output_dir
@@ -134,7 +158,9 @@ def test_serve_accepts_loopback_without_allow_remote(
     captured = capsys.readouterr()
     assert "refusing to bind" not in captured.err
     assert "warning:" not in captured.err
-    assert "Serving ShadowSim at" in captured.out
+    assert "Serving ShadowSim at http://" in captured.out
+    assert "?token=" in captured.out
+    assert "Startup token:" not in captured.out
 
 
 @pytest.mark.parametrize("host", ["0.0.0.0", "::", "192.168.1.10", "example.com", ""])
@@ -155,14 +181,263 @@ def test_serve_refuses_a_non_loopback_host(
     assert opened == []
 
 
-def test_serve_warns_when_remote_bind_is_allowed(monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]):
-    monkeypatch.setattr("shadowsim.cli.serve.HTTPServer", _QuietServer)
-    assert serve("0.0.0.0", 8000, open_browser=False, allow_remote=True) == 0
+def test_serve_refuses_remote_without_tls(monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
+    def fail(*_args: object, **_kwargs: object) -> None:
+        raise AssertionError("should not bind")
+
+    monkeypatch.setattr("shadowsim.cli.serve.HTTPServer", fail)
+    assert serve("0.0.0.0", 8000, open_browser=False, allow_remote=True) == 1
+    error = capsys.readouterr().err
+    assert "refusing to bind" in error
+    assert "cleartext" in error
+    assert "--tls-cert" in error
+
+
+@pytest.mark.parametrize(("tls_cert", "tls_key"), [("cert.pem", None), (None, "key.pem")])
+def test_serve_refuses_a_single_tls_file(
+    tls_cert: str | None,
+    tls_key: str | None,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    def fail(*_args: object, **_kwargs: object) -> None:
+        raise AssertionError("should not bind")
+
+    monkeypatch.setattr("shadowsim.cli.serve.HTTPServer", fail)
+    assert serve("127.0.0.1", 8000, open_browser=False, tls_cert=tls_cert, tls_key=tls_key) == 1
+    assert "must be passed together" in capsys.readouterr().err
+
+
+def test_serve_prints_a_remote_https_url_without_the_token(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    created: list[_QuietServer] = []
+    opened: list[str] = []
+
+    class _RecordingQuiet(_QuietServer):
+        def __init__(self, server_address: tuple[str, int], request_handler_class: type[_Handler]) -> None:
+            super().__init__(server_address, request_handler_class)
+            created.append(self)
+
+    monkeypatch.setattr("shadowsim.cli.serve.HTTPServer", _RecordingQuiet)
+    monkeypatch.setattr("shadowsim.cli.serve._server_tls", lambda certfile, keyfile: object())
+    monkeypatch.setattr("shadowsim.cli.serve._install_tls", lambda server, context: None)
+    monkeypatch.setattr("shadowsim.cli.serve.webbrowser.open", lambda url: opened.append(url) or True)
+    assert (
+        serve(
+            "0.0.0.0",
+            8000,
+            open_browser=True,
+            allow_remote=True,
+            tls_cert="cert.pem",
+            tls_key="key.pem",
+        )
+        == 0
+    )
     captured = capsys.readouterr()
     assert "warning:" in captured.err
     assert "0.0.0.0" in captured.err
     assert "startup token" in captured.err
-    assert "Serving ShadowSim at http://0.0.0.0:8000/?token=" in captured.out
+    url = "https://0.0.0.0:8000/"
+    assert f"Serving ShadowSim at {url}" in captured.out
+    assert "?token=" not in captured.out
+    token_line = next(line for line in captured.out.splitlines() if line.startswith("Startup token: "))
+    assert token_line.removeprefix("Startup token: ")
+    assert opened == [url]
+    assert created[0].tls is True
+    assert created[0].accept_query_token is False
+
+
+def test_serve_uses_https_on_loopback_when_tls_files_are_set(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], tmp_path: Path
+) -> None:
+    from shadowsim.cli.serve import HTTPServer as ThreadedServer
+
+    contexts: list[Any] = []
+    servers: list[ThreadedServer] = []
+
+    class _Context:
+        def __init__(self, protocol: int) -> None:
+            self.protocol = protocol
+            self.minimum_version: ssl.TLSVersion | None = None
+            self.loaded: tuple[object, object] | None = None
+            self.server_side = False
+            contexts.append(self)
+
+        def load_cert_chain(self, certfile: object, keyfile: object) -> None:
+            self.loaded = (certfile, keyfile)
+
+        def wrap_socket(self, sock: socket.socket, server_side: bool = False) -> socket.socket:
+            self.server_side = server_side
+            return sock
+
+    class _Stop(ThreadedServer):
+        def serve_forever(self, poll_interval: float = 0.5) -> None:
+            servers.append(self)
+            raise KeyboardInterrupt
+
+    monkeypatch.setattr("shadowsim.cli.serve.ssl.SSLContext", _Context)
+    monkeypatch.setattr("shadowsim.cli.serve.HTTPServer", _Stop)
+    cert = tmp_path / "cert.pem"
+    key = tmp_path / "key.pem"
+    assert serve("127.0.0.1", 0, open_browser=False, tls_cert=cert, tls_key=key) == 0
+    output = capsys.readouterr().out
+    url_line = next(line for line in output.splitlines() if line.startswith("Serving ShadowSim at "))
+    assert url_line.startswith("Serving ShadowSim at https://127.0.0.1:")
+    assert "?token=" in url_line
+    assert "Startup token:" not in output
+    assert contexts[0].protocol == ssl.PROTOCOL_TLS_SERVER
+    assert contexts[0].minimum_version == ssl.TLSVersion.TLSv1_2
+    assert contexts[0].loaded == (cert, key)
+    assert contexts[0].server_side is True
+    assert servers[0].tls is True
+    assert servers[0].accept_query_token is True
+
+
+def test_serve_closes_the_socket_when_the_certificate_cannot_be_loaded(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], tmp_path: Path
+) -> None:
+    from shadowsim.cli.serve import HTTPServer as ThreadedServer
+
+    created: list[ThreadedServer] = []
+
+    class _Recording(ThreadedServer):
+        def __init__(self, *args: Any, **kwargs: Any) -> None:
+            super().__init__(*args, **kwargs)
+            created.append(self)
+
+    monkeypatch.setattr("shadowsim.cli.serve.HTTPServer", _Recording)
+    cert = tmp_path / "cert.pem"
+    key = tmp_path / "key.pem"
+    cert.write_text("not a certificate\n")
+    key.write_text("not a key\n")
+    assert serve("127.0.0.1", 0, open_browser=False, tls_cert=cert, tls_key=key) == 1
+    captured = capsys.readouterr()
+    assert "could not load TLS certificate" in captured.err
+    assert "Serving ShadowSim" not in captured.out
+    assert created[0].socket.fileno() == -1
+
+
+def _certificate(directory: Path) -> tuple[Path, Path]:
+    """Return a throwaway certificate and key written under ``directory``."""
+    openssl = shutil.which("openssl")
+    if openssl is None:
+        pytest.skip("openssl is required to generate a throwaway certificate")
+    cert = directory / "cert.pem"
+    key = directory / "key.pem"
+    subprocess.run(
+        [
+            openssl,
+            "req",
+            "-x509",
+            "-newkey",
+            "rsa:2048",
+            "-keyout",
+            str(key),
+            "-out",
+            str(cert),
+            "-days",
+            "1",
+            "-nodes",
+            "-subj",
+            "/CN=localhost",
+        ],
+        check=True,
+        capture_output=True,
+        timeout=30,
+    )
+    return cert, key
+
+
+def _https(
+    opener: urllib.request.OpenerDirector,
+    port: int,
+    path: str,
+    body: bytes | None = None,
+    headers: dict[str, str] | None = None,
+) -> tuple[int, Any, bytes]:
+    request_headers = dict(headers or {})
+    if body is not None:
+        request_headers.setdefault("Content-Type", "application/x-www-form-urlencoded")
+    request = urllib.request.Request(
+        f"https://127.0.0.1:{port}{path}",
+        data=body,
+        headers=request_headers,
+        method="POST" if body is not None else "GET",
+    )
+    try:
+        with opener.open(request, timeout=15) as response:
+            return response.status, response.headers, response.read()
+    except urllib.error.HTTPError as exc:
+        return exc.code, exc.headers, exc.read()
+
+
+def test_a_remote_server_completes_the_token_exchange_over_tls(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], tmp_path: Path
+) -> None:
+    from shadowsim.cli.serve import HTTPServer as ThreadedServer
+
+    cert, key = _certificate(tmp_path)
+    started = threading.Event()
+    servers: list[ThreadedServer] = []
+
+    class _Recording(ThreadedServer):
+        def serve_forever(self, poll_interval: float = 0.5) -> None:
+            servers.append(self)
+            started.set()
+            super().serve_forever(poll_interval)
+
+    monkeypatch.setattr("shadowsim.cli.serve.HTTPServer", _Recording)
+    result: dict[str, int] = {}
+
+    def run() -> None:
+        result["code"] = serve(
+            "0.0.0.0",
+            0,
+            open_browser=False,
+            allow_remote=True,
+            tls_cert=cert,
+            tls_key=key,
+        )
+
+    thread = threading.Thread(target=run)
+    thread.start()
+    try:
+        assert started.wait(timeout=5)
+        server = servers[0]
+        port = server.server_address[1]
+        token = server.token
+        assert isinstance(token, str) and token
+        assert server.tls is True
+        assert server.accept_query_token is False
+        output = capsys.readouterr().out
+        url_line = next(line for line in output.splitlines() if line.startswith("Serving ShadowSim at "))
+        assert url_line == f"Serving ShadowSim at https://0.0.0.0:{port}/"
+        assert f"Startup token: {token}" in output
+
+        context = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+        context.check_hostname = False
+        context.verify_mode = ssl.CERT_NONE
+        opener = urllib.request.build_opener(urllib.request.HTTPSHandler(context=context), _NoRedirect)
+        status, _headers, body = _https(opener, port, "/")
+        assert status == 200
+        assert b'action="/auth"' in body
+        assert token.encode() not in body
+
+        status, headers, body = _https(opener, port, "/auth", f"token={token}".encode())
+        assert status == 303
+        assert headers["Location"] == "/"
+        assert headers["Set-Cookie"] == f"shadowsim-token={token}; HttpOnly; SameSite=Strict; Secure; Path=/"
+        assert body == b""
+
+        status, _headers, body = _https(opener, port, "/", headers={"Cookie": f"shadowsim-token={token}"})
+        assert status == 200
+        assert b"ShadowSim.py Simulation Builder" in body
+    finally:
+        if servers:
+            servers[0].shutdown()
+        thread.join(timeout=5)
+    assert result["code"] == 0
 
 
 def test_serve_reports_a_busy_port(capsys: pytest.CaptureFixture[str]):
@@ -271,6 +546,29 @@ class _NoRedirect(urllib.request.HTTPRedirectHandler):
         newurl: str,
     ) -> urllib.request.Request | None:
         raise urllib.error.HTTPError(req.full_url, code, msg, headers, fp)
+
+
+def _submit(
+    port: int,
+    path: str,
+    body: bytes,
+    headers: dict[str, str] | None = None,
+) -> tuple[int, Any, bytes]:
+    request_headers = {"Content-Type": "application/x-www-form-urlencoded"}
+    if headers:
+        request_headers.update(headers)
+    request = urllib.request.Request(
+        f"http://127.0.0.1:{port}{path}",
+        data=body,
+        headers=request_headers,
+        method="POST",
+    )
+    opener = urllib.request.build_opener(_NoRedirect)
+    try:
+        with opener.open(request, timeout=15) as response:
+            return response.status, response.headers, response.read()
+    except urllib.error.HTTPError as exc:
+        return exc.code, exc.headers, exc.read()
 
 
 def _open(
@@ -534,6 +832,114 @@ def test_the_page_exchanges_a_query_token_for_a_cookie() -> None:
         assert b"models" in models
     finally:
         _close_server(server, thread)
+
+
+def test_post_auth_is_not_found_when_query_tokens_are_accepted() -> None:
+    server, thread = _open_server()
+    server.token = "test-token"
+    port = server.server_address[1]
+    try:
+        status, _headers, _body = _submit(port, "/auth", b"token=test-token")
+    finally:
+        _close_server(server, thread)
+    assert status == 404
+
+
+def test_a_remote_server_exchanges_a_posted_token_for_a_secure_cookie() -> None:
+    server, thread = _open_server()
+    server.token = "test-token"
+    server.accept_query_token = False
+    server.tls = True
+    port = server.server_address[1]
+    secure = "shadowsim-token=test-token; HttpOnly; SameSite=Strict; Secure; Path=/"
+    try:
+        status, headers, body = _open(port, "/")
+        assert status == 200
+        assert headers["Content-Type"].startswith("text/html")
+        assert "Set-Cookie" not in headers
+        assert b'action="/auth"' in body
+        assert b'type="password"' in body
+        assert b"<script" not in body.lower()
+        assert b"test-token" not in body
+
+        status, headers, _body = _open(port, "/?token=test-token")
+        assert status == 401
+        assert "Set-Cookie" not in headers
+        status, headers, _body = _open(port, "/?token=test-token", {"Cookie": "shadowsim-token=test-token"})
+        assert status == 401
+        assert "Set-Cookie" not in headers
+
+        status, headers, body = _submit(port, "/auth", b"token=nope")
+        assert status == 401
+        assert body == b"Open the URL printed when the server started.\n"
+        assert "Set-Cookie" not in headers
+        status, headers, body = _submit(port, "/auth?token=test-token", b"token=nope")
+        assert status == 401
+        assert "Set-Cookie" not in headers
+
+        status, _headers, body = _submit(port, "/auth", b"other=1")
+        assert status == 400
+        assert body == b"request body must include one token\n"
+        status, _headers, body = _submit(port, "/auth", b"token=one&token=two")
+        assert status == 400
+        assert body == b"request body must include one token\n"
+        status, _headers, body = _submit(port, "/auth", b"token=\xff")
+        assert status == 400
+        assert body == b"request body must include one token\n"
+        status, _headers, body = _submit(port, "/auth", b"a" * (_MAX_AUTH_BODY_BYTES + 1))
+        assert status == 400
+        assert body == b"request body is too large\n"
+        status, _headers, body = _submit(
+            port,
+            "/auth",
+            b"token=test-token",
+            {"Content-Type": "application/json"},
+        )
+        assert status == 415
+        assert body == b"Content-Type must be application/x-www-form-urlencoded\n"
+
+        status, headers, body = _submit(
+            port,
+            "/auth",
+            b"token=test-token",
+            {"Content-Type": "application/x-www-form-urlencoded; charset=utf-8"},
+        )
+        assert status == 303
+        assert headers["Location"] == "/"
+        assert headers["Set-Cookie"] == secure
+        assert body == b""
+
+        status, _headers, body = _open(port, "/", {"Cookie": "shadowsim-token=test-token"})
+        assert status == 200
+        assert b"ShadowSim.py Simulation Builder" in body
+    finally:
+        _close_server(server, thread)
+
+
+def test_a_posted_token_is_refused_when_the_server_has_none() -> None:
+    server, thread = _open_server()
+    server.accept_query_token = False
+    port = server.server_address[1]
+    try:
+        status, headers, body = _submit(port, "/auth", b"token=test-token")
+    finally:
+        _close_server(server, thread)
+    assert status == 401
+    assert body == b"Open the URL printed when the server started.\n"
+    assert "Set-Cookie" not in headers
+
+
+def test_read_auth_body_rejects_a_missing_or_invalid_length() -> None:
+    stream = BytesIO(b"token=test-token")
+    with pytest.raises(ValueError, match="request body is required"):
+        _read_auth_body({}, stream)
+    with pytest.raises(ValueError, match="request body is required"):
+        _read_auth_body({"Content-Length": "nope"}, stream)
+    with pytest.raises(ValueError, match="request body is required"):
+        _read_auth_body({"Content-Length": "-1"}, stream)
+    with pytest.raises(ValueError, match="request body is required"):
+        _read_auth_body({"Content-Length": ["4"]}, stream)
+    assert stream.tell() == 0
 
 
 def test_posted_runs_require_the_startup_token(monkeypatch: pytest.MonkeyPatch) -> None:

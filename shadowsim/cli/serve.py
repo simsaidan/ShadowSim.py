@@ -8,6 +8,7 @@ import multiprocessing
 import os
 import secrets
 import signal
+import ssl
 import sys
 import threading
 import time
@@ -45,7 +46,20 @@ _BUSY = "a run is still finishing"
 _TOKEN_COOKIE = "shadowsim-token"
 _PAGE_UNAUTHORIZED = "Open the URL printed when the server started.\n"
 _JSON_REQUIRED = "Content-Type must be application/json"
+_FORM_REQUIRED = "Content-Type must be application/x-www-form-urlencoded\n"
 _MAX_BODY_BYTES = 8 * 1024 * 1024
+_MAX_AUTH_BODY_BYTES = 1024
+_TOKEN_FORM = """<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="utf-8"><title>ShadowSim</title></head>
+<body>
+<form method="post" action="/auth">
+<label>Startup token <input name="token" type="password" autocomplete="off" autofocus></label>
+<button type="submit">Continue</button>
+</form>
+</body>
+</html>
+"""
 _REQUEST_TIMEOUT = 10.0
 _MAX_HANDLERS = 16
 
@@ -85,6 +99,8 @@ class HTTPServer(ThreadingMixIn, _HTTPServer):
     daemon_threads = True
     token: str | None = None
     output_root: Path | None = None
+    tls: bool = False
+    accept_query_token: bool = True
     session: str
     request_timeout: float
     _handler_slots: threading.BoundedSemaphore
@@ -181,11 +197,14 @@ class _Handler(BaseHTTPRequestHandler):
     def do_GET(self) -> None:
         """Return a site asset, a package catalog, or this process id.
 
-        ``GET /`` is the one route that honors ``?token=``. A matching token is
-        exchanged for a cookie and the browser is sent to ``/``. When the server
-        has a token, any other ``GET /`` needs that cookie. ``GET /session``
-        returns the id created when this process started. The read timeout is
-        cleared first, because the headers have already arrived.
+        ``GET /`` is the one route that honors ``?token=``, and only when this
+        server accepts a query token. A matching token is exchanged for a cookie
+        and the browser is sent to ``/``. When the server has a token but does
+        not accept a query token, ``GET /`` without the cookie returns a form and
+        any ``?token=`` is refused. Any other ``GET /`` on a server with a token
+        needs that cookie. ``GET /session`` returns the id created when this
+        process started. The read timeout is cleared first, because the headers
+        have already arrived.
         """
         _end_read_timeout(self)
         path = urlsplit(self.path).path
@@ -220,16 +239,19 @@ class _Handler(BaseHTTPRequestHandler):
         self.wfile.write(body)
 
     def do_POST(self) -> None:
-        """Run a posted selection, or cancel the run that is in flight.
+        """Run a posted selection, cancel the run in flight, or accept a startup token.
 
-        ``POST /runs/cancel`` stops that child process. A second ``POST /runs``
+        ``POST /auth`` is served only when this server does not accept a query
+        token. It reads an ``application/x-www-form-urlencoded`` body of at most
+        1 KiB and, on a match, stores the token in a cookie. Otherwise it is 404.
+        ``POST /runs/cancel`` stops the child process. A second ``POST /runs``
         while it is still going receives 409 and does not start another one.
-        When the server has a startup token, both routes require that token in a
-        cookie or in ``Authorization: Bearer`` before any run is started or stopped.
-        ``POST /runs`` also requires ``Content-Type: application/json`` before the
-        body is parsed, and rejects a body larger than 8 MiB. The read timeout
-        stays until that body arrives, then it is cleared before the run starts.
-        ``POST /runs/cancel`` has no body, so its timeout is cleared first.
+        When the server has a startup token, both run routes require that token in
+        a cookie or in ``Authorization: Bearer`` before any run is started or
+        stopped. ``POST /runs`` also requires ``Content-Type: application/json``
+        before the body is parsed, and rejects a body larger than 8 MiB. The read
+        timeout stays until that body arrives, then it is cleared before the run
+        starts. ``POST /runs/cancel`` has no body, so its timeout is cleared first.
         """
         path = urlsplit(self.path).path
         if path == "/runs/cancel":
@@ -240,6 +262,9 @@ class _Handler(BaseHTTPRequestHandler):
                 self.send_error(404)
                 return
             _send_empty(self, 204)
+            return
+        if path == "/auth":
+            _exchange_posted_token(self)
             return
         if path != "/runs":
             self.send_error(404)
@@ -557,14 +582,34 @@ def _cookie_token(handler: BaseHTTPRequestHandler) -> str | None:
     return None
 
 
+def _media_type(handler: BaseHTTPRequestHandler) -> str:
+    """Return the request ``Content-Type`` without parameters, in lower case."""
+    raw = handler.headers.get("Content-Type", "")
+    return raw.split(";", 1)[0].strip().lower()
+
+
 def _json_content(handler: BaseHTTPRequestHandler) -> bool:
     """Return whether the body is labeled ``application/json``.
 
     Parameters such as ``charset`` are ignored. The comparison is case-insensitive.
     """
-    raw = handler.headers.get("Content-Type", "")
-    media = raw.split(";", 1)[0].strip().lower()
-    return media == "application/json"
+    return _media_type(handler) == "application/json"
+
+
+def _form_content(handler: BaseHTTPRequestHandler) -> bool:
+    """Return whether the body is labeled ``application/x-www-form-urlencoded``.
+
+    Parameters such as ``charset`` are ignored. The comparison is case-insensitive.
+    """
+    return _media_type(handler) == "application/x-www-form-urlencoded"
+
+
+def _accepts_query_token(handler: BaseHTTPRequestHandler) -> bool:
+    """Return whether ``GET /`` may exchange a ``token`` query for a cookie.
+
+    A server that leaves the attribute unset still accepts the query token.
+    """
+    return bool(getattr(handler.server, "accept_query_token", True))
 
 
 def _bearer_token(handler: BaseHTTPRequestHandler) -> str | None:
@@ -582,9 +627,11 @@ def _bearer_token(handler: BaseHTTPRequestHandler) -> str | None:
 def _authorize_page(handler: BaseHTTPRequestHandler) -> bool:
     """Return whether ``GET /`` may serve the page.
 
-    A server with no token allows the page. A single matching ``token`` query
-    sets the cookie and redirects. Any other query token is refused. With no
-    query token, the cookie must match.
+    A server with no token allows the page. When query tokens are accepted, a
+    single matching ``token`` query sets the cookie and redirects, and any other
+    query token is refused. When they are not, every query token is refused and
+    a missing cookie receives the startup-token form. With no query token, the
+    cookie must match.
 
     Args:
         handler: Request for ``/``.
@@ -598,13 +645,16 @@ def _authorize_page(handler: BaseHTTPRequestHandler) -> bool:
         return True
     presented = _query_token(handler)
     if presented is not None:
-        if len(presented) == 1 and _same_token(presented[0], expected):
+        if _accepts_query_token(handler) and len(presented) == 1 and _same_token(presented[0], expected):
             _send_token_redirect(handler, expected)
         else:
             _send_text(handler, 401, _PAGE_UNAUTHORIZED)
         return False
     if _same_token(_cookie_token(handler), expected):
         return True
+    if not _accepts_query_token(handler):
+        _send_token_form(handler)
+        return False
     _send_text(handler, 401, _PAGE_UNAUTHORIZED)
     return False
 
@@ -658,6 +708,89 @@ def _load_catalog(key: str) -> Any:
     if key == "simulators":
         return listed_simulators()
     return listed_backends()
+
+
+def _exchange_posted_token(handler: BaseHTTPRequestHandler) -> None:
+    """Store a matching form token in a cookie, or refuse the request.
+
+    Servers that still accept a query token respond with 404. The token is read
+    from the body only. A query token is ignored.
+
+    Args:
+        handler: Request for ``POST /auth``.
+    """
+    if _accepts_query_token(handler):
+        handler.send_error(404)
+        return
+    if not _form_content(handler):
+        _send_text(handler, 415, _FORM_REQUIRED)
+        return
+    try:
+        body = _read_auth_body(handler.headers, handler.rfile)
+        _end_read_timeout(handler)
+        token = _form_token(body)
+    except ValueError as exc:
+        _send_text(handler, 400, f"{exc}\n")
+        return
+    expected = _server_token(handler)
+    if expected is None or not _same_token(token, expected):
+        _send_text(handler, 401, _PAGE_UNAUTHORIZED)
+        return
+    _send_token_redirect(handler, expected)
+
+
+def _read_auth_body(headers: Any, rfile: Any) -> bytes:
+    """Return a startup-token form body, or raise if its length is missing or too large.
+
+    ``Content-Length`` is checked before any bytes are read.
+
+    Args:
+        headers: Request headers. ``Content-Length`` must be a non-negative
+            integer of at most ``_MAX_AUTH_BODY_BYTES``.
+        rfile: The request stream. Only ``size`` bytes are read after the
+            length check.
+
+    Returns:
+        The request body.
+
+    Raises:
+        ValueError: The length is missing, not an integer, negative, or larger
+            than ``_MAX_AUTH_BODY_BYTES``.
+    """
+    length = headers.get("Content-Length")
+    if length is None:
+        raise ValueError("request body is required")
+    try:
+        size = int(length)
+    except (TypeError, ValueError):
+        raise ValueError("request body is required") from None
+    if size < 0:
+        raise ValueError("request body is required")
+    if size > _MAX_AUTH_BODY_BYTES:
+        raise ValueError("request body is too large")
+    return rfile.read(size)
+
+
+def _form_token(body: bytes) -> str:
+    """Return the single ``token`` field in a form body.
+
+    Args:
+        body: ``application/x-www-form-urlencoded`` payload.
+
+    Returns:
+        The decoded token.
+
+    Raises:
+        ValueError: The body is not UTF-8, or it does not contain one token field.
+    """
+    try:
+        text = body.decode("utf-8")
+    except UnicodeDecodeError:
+        raise ValueError("request body must include one token") from None
+    values = parse_qs(text, keep_blank_values=True).get("token")
+    if values is None or len(values) != 1:
+        raise ValueError("request body must include one token")
+    return values[0]
 
 
 def _read_body(headers: Any, rfile: Any) -> bytes:
@@ -744,9 +877,26 @@ def _send_text(handler: BaseHTTPRequestHandler, status: int, text: str) -> None:
         return
 
 
+def _send_token_form(handler: BaseHTTPRequestHandler) -> None:
+    """Write the startup-token form. A client that already left is ignored."""
+    body = _TOKEN_FORM.encode("utf-8")
+    try:
+        handler.send_response(200)
+        handler.send_header("Content-Type", "text/html; charset=utf-8")
+        handler.send_header("Content-Length", str(len(body)))
+        handler.end_headers()
+        handler.wfile.write(body)
+    except ConnectionError:
+        return
+
+
 def _send_token_redirect(handler: BaseHTTPRequestHandler, token: str) -> None:
-    """Send the browser to ``/`` and store ``token`` in a same-site cookie."""
-    cookie = f"{_TOKEN_COOKIE}={token}; HttpOnly; SameSite=Strict; Path=/"
+    """Send the browser to ``/`` and store ``token`` in a same-site cookie.
+
+    The cookie is ``Secure`` when the server speaks TLS.
+    """
+    secure = "; Secure" if getattr(handler.server, "tls", False) else ""
+    cookie = f"{_TOKEN_COOKIE}={token}; HttpOnly; SameSite=Strict{secure}; Path=/"
     try:
         handler.send_response(303)
         handler.send_header("Location", "/")
@@ -772,6 +922,36 @@ def _send_internal_error(handler: BaseHTTPRequestHandler, exc: BaseException) ->
     _send_json(handler, 500, {"error": "internal error"})
 
 
+def _server_tls(certfile: Path, keyfile: Path) -> ssl.SSLContext:
+    """Return a TLS 1.2+ server context loaded from ``certfile`` and ``keyfile``.
+
+    Args:
+        certfile: PEM certificate file.
+        keyfile: PEM private key file.
+
+    Returns:
+        A context whose wrapped sockets speak TLS 1.2 or newer.
+
+    Raises:
+        OSError: A file cannot be read.
+        ssl.SSLError: A file is not a usable certificate or key.
+    """
+    context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+    context.minimum_version = ssl.TLSVersion.TLSv1_2
+    context.load_cert_chain(certfile, keyfile)
+    return context
+
+
+def _install_tls(server: HTTPServer, context: ssl.SSLContext) -> None:
+    """Replace ``server``'s listening socket with one that speaks TLS.
+
+    Args:
+        server: Server whose socket is already bound.
+        context: Server context from ``_server_tls``.
+    """
+    server.socket = context.wrap_socket(server.socket, server_side=True)
+
+
 def build_parser() -> argparse.ArgumentParser:
     """Build the ``shadowsim`` argument parser."""
     parser = argparse.ArgumentParser(prog="shadowsim", description="ShadowSim commands.")
@@ -780,13 +960,21 @@ def build_parser() -> argparse.ArgumentParser:
     serve_parser.add_argument(
         "--host",
         default="127.0.0.1",
-        help="Address to bind (default: 127.0.0.1). A non-loopback address requires --allow-remote.",
+        help="Address to bind (default: 127.0.0.1). A non-loopback address requires --allow-remote and TLS.",
     )
     serve_parser.add_argument("--port", type=int, default=8000, help="Port to bind (default: 8000).")
     serve_parser.add_argument(
         "--allow-remote",
         action="store_true",
-        help="Bind a non-loopback address. Anyone with the startup token can submit a run.",
+        help="Bind a non-loopback address over TLS. Anyone with the startup token can submit a run.",
+    )
+    serve_parser.add_argument(
+        "--tls-cert",
+        help="PEM certificate file for HTTPS. Required, with --tls-key, for a non-loopback address.",
+    )
+    serve_parser.add_argument(
+        "--tls-key",
+        help="PEM private key file for HTTPS. Required, with --tls-cert, for a non-loopback address.",
     )
     serve_parser.add_argument(
         "--output-dir",
@@ -804,8 +992,15 @@ def serve(
     open_browser: bool,
     allow_remote: bool = False,
     output_dir: str | Path = "results",
+    tls_cert: str | Path | None = None,
+    tls_key: str | Path | None = None,
 ) -> int:
     """Bind a server and serve the builder page until interrupted.
+
+    A loopback bind speaks HTTP and prints a one-time ``?token=`` URL. A
+    non-loopback bind requires ``allow_remote`` and both TLS files, speaks HTTPS,
+    and prints the startup token on its own line instead of in the URL. Passing
+    both TLS files on a loopback bind serves HTTPS there too.
 
     Args:
         host: Address to bind.
@@ -815,11 +1010,15 @@ def serve(
             is refused. Anyone who has the startup token can submit a run.
         output_dir: Directory save and export paths must stay under. A relative
             path is resolved from the working directory when the server starts.
+        tls_cert: PEM certificate file used when the server speaks HTTPS. Required
+            with ``tls_key`` for a non-loopback ``host``.
+        tls_key: PEM private key file paired with ``tls_cert``.
 
     Returns:
         Process exit code. ``0`` after a clean interrupt, ``1`` if the port is invalid,
-        the address is not loopback and ``allow_remote`` is false, or the address
-        cannot be bound.
+        the address is not loopback and ``allow_remote`` is false, a non-loopback
+        address has no TLS files, only one TLS file is set, the certificate cannot
+        be loaded, or the address cannot be bound.
     """
     if port < 0 or port > 65535:
         print(f"error: port must be between 0 and 65535, got {port}", file=sys.stderr)
@@ -831,20 +1030,42 @@ def serve(
             file=sys.stderr,
         )
         return 1
+    if (tls_cert is None) != (tls_key is None):
+        print("error: --tls-cert and --tls-key must be passed together.", file=sys.stderr)
+        return 1
+    if not _is_loopback_host(host) and tls_cert is None:
+        print(
+            f"error: refusing to bind {host}: a remote builder needs TLS so the startup token "
+            "is not sent in cleartext. Pass --tls-cert and --tls-key.",
+            file=sys.stderr,
+        )
+        return 1
     try:
         server = HTTPServer((host, port), _Handler)
     except OSError as exc:
         print(f"error: could not bind {host}:{port}: {exc}", file=sys.stderr)
         return 1
 
+    server.tls = False
+    if tls_cert is not None and tls_key is not None:
+        try:
+            _install_tls(server, _server_tls(Path(tls_cert).expanduser(), Path(tls_key).expanduser()))
+        except (OSError, ssl.SSLError) as exc:
+            server.server_close()
+            print(f"error: could not load TLS certificate: {exc}", file=sys.stderr)
+            return 1
+        server.tls = True
     token = secrets.token_urlsafe(32)
     output_root = Path(output_dir).expanduser().resolve()
     server.token = token
     server.output_root = output_root
+    server.accept_query_token = _is_loopback_host(host)
     raw_host, bound_port = server.server_address[:2]
     bound_host = raw_host.decode() if isinstance(raw_host, bytes) else raw_host
     display_host = f"[{bound_host}]" if ":" in bound_host else bound_host
-    url = f"http://{display_host}:{bound_port}/?token={token}"
+    scheme = "https" if server.tls else "http"
+    query = f"?token={token}" if server.accept_query_token else ""
+    url = f"{scheme}://{display_host}:{bound_port}/{query}"
     if not _is_loopback_host(host):
         print(
             f"warning: {host} is not a loopback address. Anyone with the startup token can submit a run.",
@@ -852,6 +1073,8 @@ def serve(
             flush=True,
         )
     print(f"Serving ShadowSim at {url}", flush=True)
+    if not server.accept_query_token:
+        print(f"Startup token: {token}", flush=True)
     print(f"Saving under {output_root}", flush=True)
     if open_browser:
         webbrowser.open(url)
@@ -874,6 +1097,8 @@ def main(argv: list[str] | None = None) -> int:
         open_browser=not args.no_browser,
         allow_remote=args.allow_remote,
         output_dir=args.output_dir,
+        tls_cert=args.tls_cert,
+        tls_key=args.tls_key,
     )
 
 
