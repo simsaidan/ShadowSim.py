@@ -824,12 +824,34 @@ def test_the_page_exchanges_a_query_token_for_a_cookie() -> None:
         status, _headers, body = _open(port, "/", {"Cookie": "other=1; shadowsim-token=test-token"})
         assert status == 200
         assert b"ShadowSim.py Simulation Builder" in body
-        status, _headers, css = _open(port, "/styles.css")
+        unauthorized = b"Open the URL printed when the server started.\n"
+        for path in ("/session", "/models", "/simulators", "/backends", "/styles.css", "/builder.js"):
+            status, headers, body = _open(port, path)
+            assert status == 401
+            assert body == unauthorized
+            assert "Set-Cookie" not in headers
+            status, headers, body = _open(port, f"{path}?token=test-token")
+            assert status == 401
+            assert body == unauthorized
+            assert "Set-Cookie" not in headers
+        status, headers, body = _open(port, "/session", {"Cookie": "shadowsim-token=nope"})
+        assert status == 401
+        assert body == unauthorized
+        assert "Set-Cookie" not in headers
+        status, headers, body = _open(port, "/missing.js")
+        assert status == 401
+        assert body == unauthorized
+        assert "Set-Cookie" not in headers
+
+        cookie = {"Cookie": "shadowsim-token=test-token"}
+        status, _headers, css = _open(port, "/styles.css", cookie)
         assert status == 200
         assert b".board" in css
-        status, _headers, models = _open(port, "/models")
+        status, _headers, models = _open(port, "/models", cookie)
         assert status == 200
         assert b"models" in models
+        status, _headers, _body = _open(port, "/missing.js", cookie)
+        assert status == 404
     finally:
         _close_server(server, thread)
 
@@ -867,6 +889,10 @@ def test_a_remote_server_exchanges_a_posted_token_for_a_secure_cookie() -> None:
         assert "Set-Cookie" not in headers
         status, headers, _body = _open(port, "/?token=test-token", {"Cookie": "shadowsim-token=test-token"})
         assert status == 401
+        assert "Set-Cookie" not in headers
+        status, headers, body = _open(port, "/styles.css")
+        assert status == 401
+        assert body == b"Open the URL printed when the server started.\n"
         assert "Set-Cookie" not in headers
 
         status, headers, body = _submit(port, "/auth", b"token=nope")
@@ -912,6 +938,9 @@ def test_a_remote_server_exchanges_a_posted_token_for_a_secure_cookie() -> None:
         status, _headers, body = _open(port, "/", {"Cookie": "shadowsim-token=test-token"})
         assert status == 200
         assert b"ShadowSim.py Simulation Builder" in body
+        status, _headers, body = _open(port, "/styles.css", {"Cookie": "shadowsim-token=test-token"})
+        assert status == 200
+        assert b".board" in body
     finally:
         _close_server(server, thread)
 
@@ -1122,7 +1151,7 @@ def test_a_stalled_authenticated_body_is_closed() -> None:
             b'{"partial"'
         )
         _assert_dropped(client, 2)
-        status, _headers, body = _open(port, "/session")
+        status, _headers, body = _open(port, "/session", {"Cookie": "shadowsim-token=test-token"})
         assert status == 200
         assert isinstance(json.loads(body)["id"], str)
     finally:
