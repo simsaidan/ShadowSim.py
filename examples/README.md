@@ -12,4 +12,4 @@ uv run python examples/state_encoding.py
 uv run python examples/qulacs_benchmark.py
 ```
 
-`qulacs_benchmark.py` needs the `qiskit` and `qulacs` extras. `uv sync --all-extras` installs both. It is a timing script, not a test.
+`qulacs_benchmark.py` needs the `circuits` and `qulacs` extras. `NumpyCircuitBackend` is part of the core package. `uv sync --all-extras` installs both extras. It is a timing script, not a test.

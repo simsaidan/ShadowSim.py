@@ -4,16 +4,20 @@ from collections.abc import Sequence
 from typing import Any, Callable, List, Literal, cast
 
 import scipy
-from qiskit import QuantumCircuit, QuantumRegister
-from qiskit.circuit.library import UnitaryGate
 
-from shadowsim.backends.aer import AerCircuitBackend
 from shadowsim.backends.circuit import CircuitBackend, backend_samples, backend_shots
+from shadowsim.backends.program import Barrier, Operation, Prepare, Program, Unitary
 from shadowsim.core.local_hamiltonian import LocalHamiltonian
 from shadowsim.core.operator import Operator, _Matrix
 from shadowsim.core.state import State
 from shadowsim.simulators._time_points import TimeCall
-from shadowsim.simulators.product_formula_simulator import ProductFormulaSimulator, _check_order, _rotate_to_basis
+from shadowsim.simulators.product_formula_simulator import (
+    ProductFormulaSimulator,
+    _check_order,
+    _default_circuit_backend,
+    _measure_all,
+    _rotate_to_basis,
+)
 
 ProgressCallback = Callable[[int, int], None]
 
@@ -53,13 +57,14 @@ def _trotter_circuit(
     order: Literal[1, 2] = 1,
     verbose: bool = False,
     basis: str | None = None,
-) -> QuantumCircuit:
-    """Return one closed-system product-formula circuit, without measurement.
+) -> Program:
+    """Return one closed-system product-formula program, without measurement.
 
     ``order=1`` is the first-order product. ``order=2`` is one Strang step per slice.
     ``trotter_depth`` is the number of slices in this time sample, for both orders.
     Each qubit is rotated so a following Z measurement reads its letter of
-    ``basis``. ``None`` measures every qubit in Z.
+    ``basis``. ``None`` measures every qubit in Z. Qubit 0 is the least significant
+    bit of each matrix.
     """
     if num_steps <= 0:
         raise ValueError("num_steps must be a positive integer")
@@ -68,26 +73,23 @@ def _trotter_circuit(
     _check_order(order)
 
     delta = t / (num_steps * trotter_depth)
-    slice_gates = [
-        (UnitaryGate(matrix), sites) for matrix, sites in _trotter_slice_unitaries(hamiltonians, delta, order)
+    slice_gates = _trotter_slice_unitaries(hamiltonians, delta, order)
+    qubits = tuple(range(num_qubits))
+    operations: list[Operation] = [
+        Prepare(initial_state.to_numpy(), tuple(reversed(qubits))),
+        Barrier(qubits),
     ]
-    body = QuantumRegister(num_qubits)
-    circ = QuantumCircuit(body)
-
-    psi0 = initial_state.to_numpy()
-    circ.initialize(psi0, list(reversed(body)))
-    circ.barrier()
 
     for i in range(num_steps):
         if verbose and i % 10 == 0:
             print(f"Working on iteration {i} out of {num_steps}")
         for _ in range(trotter_depth):
-            for gate, sites in slice_gates:
-                circ.append(gate, reversed([body[j] for j in sites]))
+            for matrix, sites in slice_gates:
+                operations.append(Unitary(matrix, tuple(reversed(sites))))
 
-    circ.barrier()
-    _rotate_to_basis(circ, body, basis, num_qubits)
-    return circ
+    operations.append(Barrier(qubits))
+    operations.extend(_rotate_to_basis(basis, num_qubits))
+    return Program(num_qubits, 0, operations)
 
 
 def _trotter_circuit_counts(
@@ -106,7 +108,7 @@ def _trotter_circuit_counts(
 ) -> dict[str, Any]:
     """Run a closed-system product formula and return counts.
 
-    ``circuit_backend`` executes the circuit. Omitting it uses :class:`AerCircuitBackend`.
+    ``circuit_backend`` executes the program. Omitting it uses Aer.
     ``order=1`` is the first-order product. ``order=2`` is one Strang step per slice.
     ``trotter_depth`` is the number of slices in this time sample, for both orders.
     """
@@ -114,7 +116,7 @@ def _trotter_circuit_counts(
         raise ValueError("shots must be a positive integer")
     if seed is not None and not isinstance(seed, int):
         raise TypeError("seed must be an int or None")
-    circ = _trotter_circuit(
+    program = _trotter_circuit(
         hamiltonians,
         initial_state,
         num_qubits,
@@ -125,9 +127,9 @@ def _trotter_circuit_counts(
         verbose=verbose,
         basis=basis,
     )
-    circ.measure_all()
-    counts_backend = circuit_backend if circuit_backend is not None else AerCircuitBackend()
-    return counts_backend.run_counts(circ, shots=shots, seed=seed)
+    measured = Program(num_qubits, num_qubits, (*program.operations, *_measure_all(num_qubits)))
+    counts_backend = circuit_backend if circuit_backend is not None else _default_circuit_backend()
+    return counts_backend.run_counts(measured, shots=shots, seed=seed)
 
 
 class TrotterizationSimulator(ProductFormulaSimulator):
@@ -135,7 +137,7 @@ class TrotterizationSimulator(ProductFormulaSimulator):
 
     ``closed_system`` is true, so Lindblad operators are rejected.
     Counts come from ``circuit_backend`` when that backend stores ``shots``.
-    Omitting it uses :class:`AerCircuitBackend`. Before the measurement, each
+    Omitting it uses Aer. Before the measurement, each
     qubit is rotated into its letter of ``basis`` (default all ``Z``). The result
     keeps one counts dict per time point, where bit ``i`` of a key is qubit ``i``.
     Read them with :meth:`measure`. A backend without a shot budget, such as
@@ -254,12 +256,12 @@ class TrotterizationSimulator(ProductFormulaSimulator):
         values = self.circuit_backend.z_expectations(circuit, qubits, shots=1, seed=self.seed)
         return [float(value) for value in values]
 
-    def metrics_circuit(self) -> QuantumCircuit:
-        """Return the circuit executed at the final time.
+    def metrics_circuit(self) -> Program:
+        """Return the program executed at the final time.
 
         A sampling backend includes the computational-basis measurement.
         """
-        circuit = _trotter_circuit(
+        program = _trotter_circuit(
             cast(list[LocalHamiltonian], self.hamiltonians),
             self.initial_state,
             self.num_qubits,
@@ -270,6 +272,6 @@ class TrotterizationSimulator(ProductFormulaSimulator):
             verbose=False,
             basis=self.basis,
         )
-        if backend_samples(self.circuit_backend):
-            circuit.measure_all()
-        return circuit
+        if not backend_samples(self.circuit_backend):
+            return program
+        return Program(program.num_qubits, program.num_qubits, (*program.operations, *_measure_all(program.num_qubits)))

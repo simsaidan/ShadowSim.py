@@ -15,6 +15,7 @@ pytest.importorskip("qiskit")
 from qiskit import QuantumCircuit
 
 from shadowsim import backends
+from shadowsim.backends.circuit import from_qiskit, to_qiskit
 from shadowsim.backends.pauli_propagation import PauliPropagationBackend
 
 
@@ -44,7 +45,7 @@ def test_run_counts_is_not_supported():
     circuit = QuantumCircuit(1)
 
     with pytest.raises(NotImplementedError, match="shot counts"):
-        PauliPropagationBackend().run_counts(circuit, shots=1, seed=None)
+        PauliPropagationBackend().run_counts(from_qiskit(circuit), shots=1, seed=None)
 
 
 @pytest.mark.parametrize("method", ["depth", "width", "gate_count", "t_count", "toffoli_count"])
@@ -64,19 +65,19 @@ def test_expectations_require_the_pauli_propagation_extra(monkeypatch):
     backend = PauliPropagationBackend()
 
     with pytest.raises(ImportError, match="pauli_propagation"):
-        backend.z_expectations(circuit, [0], shots=1, seed=None)
+        backend.z_expectations(from_qiskit(circuit), [0], shots=1, seed=None)
     with pytest.raises(ImportError, match="pauli_propagation"):
-        backend.x_expectations(circuit, [0], shots=1, seed=None)
+        backend.x_expectations(from_qiskit(circuit), [0], shots=1, seed=None)
 
 
 def test_expectations_reject_an_index_outside_the_circuit():
     circuit = QuantumCircuit(1)
     backend = PauliPropagationBackend()
 
-    with pytest.raises(ValueError, match="outside a circuit of 1 qubits"):
-        backend.z_expectations(circuit, [1], shots=1, seed=None)
-    with pytest.raises(ValueError, match="outside a circuit of 1 qubits"):
-        backend.x_expectations(circuit, [True], shots=1, seed=None)
+    with pytest.raises(ValueError, match="outside a program of 1 qubits"):
+        backend.z_expectations(from_qiskit(circuit), [1], shots=1, seed=None)
+    with pytest.raises(ValueError, match="outside a program of 1 qubits"):
+        backend.x_expectations(from_qiskit(circuit), [True], shots=1, seed=None)
 
 
 def test_missing_julia_package_is_reported_to_the_page(monkeypatch):
@@ -102,7 +103,7 @@ def test_missing_julia_package_is_reported_to_the_page(monkeypatch):
     circuit.h(0)
 
     with pytest.raises(ValueError, match="Pkg.add") as caught:
-        PauliPropagationBackend().z_expectations(circuit, [0], shots=1, seed=None)
+        PauliPropagationBackend().z_expectations(from_qiskit(circuit), [0], shots=1, seed=None)
     assert "not installed" in str(caught.value)
 
 
@@ -114,9 +115,9 @@ def test_measure_and_reset_are_rejected_before_julia():
     reset.reset(0)
 
     with pytest.raises(ValueError, match="measure"):
-        backend.z_expectations(measured, [0], shots=1, seed=None)
+        backend.z_expectations(from_qiskit(measured), [0], shots=1, seed=None)
     with pytest.raises(ValueError, match="reset"):
-        backend.z_expectations(reset, [0], shots=1, seed=None)
+        backend.z_expectations(from_qiskit(reset), [0], shots=1, seed=None)
 
 
 def test_importable_trotter_circuit_matches_the_unitary_state():
@@ -139,6 +140,7 @@ def test_importable_trotter_circuit_matches_the_unitary_state():
         2,
         basis="XY",
     )
+    circuit = to_qiskit(circuit)
     imported = _importable_circuit(circuit)
     overlap = np.vdot(Statevector.from_instruction(circuit).data, Statevector.from_instruction(imported).data)
     assert abs(overlap) == pytest.approx(1.0)
@@ -170,7 +172,7 @@ def test_a_python_failure_inside_julia_is_reraised(monkeypatch):
     circuit.x(0)
 
     with pytest.raises(RuntimeError, match="python blew up"):
-        PauliPropagationBackend().z_expectations(circuit, [0], shots=1, seed=None)
+        PauliPropagationBackend().z_expectations(from_qiskit(circuit), [0], shots=1, seed=None)
 
 
 def test_missing_openqasm_interface_names_the_revision(monkeypatch):
@@ -191,7 +193,7 @@ def test_missing_openqasm_interface_names_the_revision(monkeypatch):
     circuit.h(0)
 
     with pytest.raises(ValueError, match="OpenQASMInterface") as caught:
-        PauliPropagationBackend().z_expectations(circuit, [0], shots=1, seed=None)
+        PauliPropagationBackend().z_expectations(from_qiskit(circuit), [0], shots=1, seed=None)
     assert "Pkg.add" in str(caught.value)
 
 
@@ -214,7 +216,7 @@ def test_a_julia_read_error_is_reported(monkeypatch):
     circuit.h(0)
 
     with pytest.raises(ValueError, match="unknown gate"):
-        PauliPropagationBackend().x_expectations(circuit, [0], shots=1, seed=None)
+        PauliPropagationBackend().x_expectations(from_qiskit(circuit), [0], shots=1, seed=None)
 
 
 def test_an_unreadable_gate_is_rejected(monkeypatch):
@@ -230,7 +232,7 @@ def test_an_unreadable_gate_is_rejected(monkeypatch):
     circuit.h(0)
 
     with pytest.raises(ValueError, match="mystery"):
-        PauliPropagationBackend().z_expectations(circuit, [0], shots=1, seed=None)
+        PauliPropagationBackend().z_expectations(from_qiskit(circuit), [0], shots=1, seed=None)
 
 
 def test_product_initialize_skips_an_identity_and_prepares_one():
@@ -379,8 +381,8 @@ def test_expectations_reuse_the_julia_module(monkeypatch):
     circuit.ry(0.2, 1)
     backend = PauliPropagationBackend()
 
-    assert backend.z_expectations(circuit, [1, 0], shots=4, seed=1) == [-0.25, 0.5]
-    assert backend.x_expectations(circuit, [0], shots=4, seed=1) == [0.3]
+    assert backend.z_expectations(from_qiskit(circuit), [1, 0], shots=4, seed=1) == [-0.25, 0.5]
+    assert backend.x_expectations(from_qiskit(circuit), [0], shots=4, seed=1) == [0.3]
     assert len(created) == 1
     assert len(reads) == 2
     assert "OPENQASM" in reads[0]
@@ -394,8 +396,8 @@ def test_expectations_of_no_qubits_are_empty(monkeypatch):
     circuit = QuantumCircuit(2)
     backend = PauliPropagationBackend()
 
-    assert backend.z_expectations(circuit, [], shots=1, seed=None) == []
-    assert backend.x_expectations(circuit, [], shots=1, seed=None) == []
+    assert backend.z_expectations(from_qiskit(circuit), [], shots=1, seed=None) == []
+    assert backend.x_expectations(from_qiskit(circuit), [], shots=1, seed=None) == []
 
 
 def _julia_executable() -> str | None:
@@ -463,8 +465,8 @@ def test_rx_expectations(pauli_backend):
     circuit = QuantumCircuit(1)
     circuit.rx(0.4, 0)
 
-    assert pauli_backend.z_expectations(circuit, [0], shots=1, seed=None) == pytest.approx([math.cos(0.4)])
-    assert pauli_backend.x_expectations(circuit, [0], shots=1, seed=None) == pytest.approx([0.0])
+    assert pauli_backend.z_expectations(from_qiskit(circuit), [0], shots=1, seed=None) == pytest.approx([math.cos(0.4)])
+    assert pauli_backend.x_expectations(from_qiskit(circuit), [0], shots=1, seed=None) == pytest.approx([0.0])
 
 
 @pytest.mark.pauli_propagation
@@ -473,10 +475,10 @@ def test_expectations_follow_qubit_order(pauli_backend):
     circuit.ry(0.4, 0)
     circuit.ry(0.2, 1)
 
-    assert pauli_backend.z_expectations(circuit, [1, 0], shots=1, seed=None) == pytest.approx(
+    assert pauli_backend.z_expectations(from_qiskit(circuit), [1, 0], shots=1, seed=None) == pytest.approx(
         [math.cos(0.2), math.cos(0.4)]
     )
-    assert pauli_backend.x_expectations(circuit, [1, 0], shots=1, seed=None) == pytest.approx(
+    assert pauli_backend.x_expectations(from_qiskit(circuit), [1, 0], shots=1, seed=None) == pytest.approx(
         [math.sin(0.2), math.sin(0.4)]
     )
 
@@ -487,4 +489,4 @@ def test_measure_is_rejected(pauli_backend):
     circuit.measure(0, 0)
 
     with pytest.raises(Exception, match="measure"):
-        pauli_backend.z_expectations(circuit, [0], shots=1, seed=None)
+        pauli_backend.z_expectations(from_qiskit(circuit), [0], shots=1, seed=None)

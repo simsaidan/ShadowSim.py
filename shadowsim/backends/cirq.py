@@ -1,12 +1,12 @@
-"""Run a circuit on the Cirq statevector simulator.
+"""Run a program on the Cirq statevector simulator.
 
 Qubit 0 is the least significant bit of a gate matrix and of each sample.
-Named gates use Cirq kernels. Every other unitary is a dense matrix.
+``Hadamard`` uses the Cirq kernel. Every ``Unitary`` is a dense matrix.
 
 Cirq treats the first qubit of a matrix, and the first qubit of
-``qubit_order``, as the most significant bit. A Qiskit matrix is applied on
+``qubit_order``, as the most significant bit. A program matrix is applied on
 the reversed qubit list, and the simulated vector is read with qubit 0 as the
-least significant bit. Cirq rotations use the same sign as Qiskit.
+least significant bit.
 """
 
 import warnings
@@ -14,9 +14,6 @@ from collections.abc import Sequence
 from typing import Any, Literal
 
 import numpy as np
-from qiskit import QuantumCircuit
-from qiskit.circuit import Instruction
-from qiskit.circuit.exceptions import CircuitError
 
 from shadowsim._optional import import_optional
 from shadowsim.backends._arguments import (
@@ -25,15 +22,13 @@ from shadowsim.backends._arguments import (
     _require_shots,
     _UnsupportedCircuitMetrics,
 )
+from shadowsim.backends.program import Barrier, Hadamard, Measure, Prepare, Program, Reset, Unitary
 
 _Pauli = Literal["X", "Z"]
-_ONE_QUBIT = frozenset({"h", "x", "y", "z", "s", "sdg", "t", "tdg", "sx", "sxdg"})
-_TWO_QUBIT = frozenset({"cz", "swap"})
-_ROTATIONS = frozenset({"rx", "ry", "rz"})
 
 
 class CirqCircuitBackend(_UnsupportedCircuitMetrics):
-    """Evolve one circuit with the Cirq statevector simulator.
+    """Evolve one program with the Cirq statevector simulator.
 
     ``z_expectations`` and ``x_expectations`` are exact, so ``shots`` and
     ``seed`` are accepted and ignored there. ``run_counts`` samples the
@@ -58,11 +53,11 @@ class CirqCircuitBackend(_UnsupportedCircuitMetrics):
         """Record the Cirq backend name."""
         self.name = "cirq"
 
-    def run_counts(self, circuit: QuantumCircuit, *, shots: int, seed: int | None) -> dict[str, int]:
-        """Sample ``circuit`` in the computational basis.
+    def run_counts(self, program: Program, *, shots: int, seed: int | None) -> dict[str, int]:
+        """Sample ``program`` in the computational basis.
 
         Args:
-            circuit: Circuit to execute.
+            program: Program to execute.
             shots: Number of shots.
             seed: Seed for Cirq sampling. ``None`` draws without a fixed seed.
 
@@ -70,23 +65,22 @@ class CirqCircuitBackend(_UnsupportedCircuitMetrics):
             Mapping from bitstring to shot count. The rightmost character is qubit 0.
 
         Raises:
-            ValueError: ``shots`` is not a positive integer, ``circuit`` contains
-                an instruction this backend cannot apply, or the statevector
+            ValueError: ``shots`` is not a positive integer, or the statevector
                 probabilities do not sum to 1.
             TypeError: ``seed`` is not an ``int`` or ``None``.
-            NotImplementedError: ``circuit`` resets a qubit, measures a qubit
+            NotImplementedError: ``program`` resets a qubit, measures a qubit
                 and then applies a gate, or prepares a state after leaving
                 ``|0...0>``.
             ImportError: The ``cirq`` extra is not installed.
         """
         _require_shots(shots)
         _require_seed(seed)
-        state = _state(circuit)
+        state = _state(program)
         return _sample(_cirq(), state, shots=shots, seed=seed)
 
     def z_expectations(
         self,
-        circuit: QuantumCircuit,
+        program: Program,
         qubits: Sequence[int],
         *,
         shots: int,
@@ -95,8 +89,8 @@ class CirqCircuitBackend(_UnsupportedCircuitMetrics):
         """Return exact ``⟨Z⟩`` for each qubit in ``qubits``.
 
         Args:
-            circuit: Circuit to execute, before the computational-basis measurement.
-            qubits: 0-based indexes in ``circuit.qubits``. The result follows this order.
+            program: Program to execute, before the computational-basis measurement.
+            qubits: 0-based indexes in ``program``. The result follows this order.
             shots: Unused. The value is not estimated from shots.
             seed: Unused.
 
@@ -104,18 +98,17 @@ class CirqCircuitBackend(_UnsupportedCircuitMetrics):
             One expectation per entry of ``qubits``.
 
         Raises:
-            ValueError: An index is outside ``circuit``, or ``circuit`` contains an
-                instruction this backend cannot apply.
-            NotImplementedError: ``circuit`` resets a qubit, measures a qubit and
+            ValueError: An index is outside ``program``.
+            NotImplementedError: ``program`` resets a qubit, measures a qubit and
                 then applies a gate, or prepares a state after leaving ``|0...0>``.
             ImportError: The ``cirq`` extra is not installed.
         """
         del shots, seed
-        return _expectations(circuit, qubits, "Z")
+        return _expectations(program, qubits, "Z")
 
     def x_expectations(
         self,
-        circuit: QuantumCircuit,
+        program: Program,
         qubits: Sequence[int],
         *,
         shots: int,
@@ -124,8 +117,8 @@ class CirqCircuitBackend(_UnsupportedCircuitMetrics):
         """Return exact ``⟨X⟩`` for each qubit in ``qubits``.
 
         Args:
-            circuit: Circuit to execute, before the X-basis measurement.
-            qubits: 0-based indexes in ``circuit.qubits``. The result follows this order.
+            program: Program to execute, before the X-basis measurement.
+            qubits: 0-based indexes in ``program``. The result follows this order.
             shots: Unused. The value is not estimated from shots.
             seed: Unused.
 
@@ -133,21 +126,20 @@ class CirqCircuitBackend(_UnsupportedCircuitMetrics):
             One expectation per entry of ``qubits``.
 
         Raises:
-            ValueError: An index is outside ``circuit``, or ``circuit`` contains an
-                instruction this backend cannot apply.
-            NotImplementedError: ``circuit`` resets a qubit, measures a qubit and
+            ValueError: An index is outside ``program``.
+            NotImplementedError: ``program`` resets a qubit, measures a qubit and
                 then applies a gate, or prepares a state after leaving ``|0...0>``.
             ImportError: The ``cirq`` extra is not installed.
         """
         del shots, seed
-        return _expectations(circuit, qubits, "X")
+        return _expectations(program, qubits, "X")
 
 
-def _expectations(circuit: QuantumCircuit, qubits: Sequence[int], pauli: _Pauli) -> list[float]:
+def _expectations(program: Program, qubits: Sequence[int], pauli: _Pauli) -> list[float]:
     """Return one exact expectation for each index in ``qubits``."""
-    indexes = _qubit_indexes(qubits, circuit.num_qubits, register="circuit")
+    indexes = _qubit_indexes(qubits, program.num_qubits, register="program")
     cirq = _cirq()
-    compiled, state, lines = _translate(cirq, circuit)
+    compiled, state, lines = _translate(cirq, program)
     if not indexes:
         return []
     compiled = _register_qubits(cirq, compiled, lines)
@@ -161,9 +153,9 @@ def _expectations(circuit: QuantumCircuit, qubits: Sequence[int], pauli: _Pauli)
     return [float(np.real(value)) for value in values]
 
 
-def _state(circuit: QuantumCircuit) -> np.ndarray:
-    """Return the Cirq statevector of ``circuit`` in Qiskit order."""
-    return _evolve(_cirq(), circuit)
+def _state(program: Program) -> np.ndarray:
+    """Return the Cirq statevector of ``program``. Qubit 0 is the least significant bit."""
+    return _evolve(_cirq(), program)
 
 
 def _cirq() -> Any:
@@ -171,198 +163,116 @@ def _cirq() -> Any:
     return import_optional("cirq", extra="cirq")
 
 
-def _evolve(cirq: Any, circuit: QuantumCircuit) -> np.ndarray:
-    """Apply ``circuit`` to ``|0...0>`` and return the statevector.
+def _evolve(cirq: Any, program: Program) -> np.ndarray:
+    """Apply ``program`` to ``|0...0>`` and return the statevector.
 
     Args:
         cirq: Imported Cirq package.
-        circuit: Circuit to apply.
+        program: Program to apply.
 
     Returns:
         Complex amplitudes. Qubit 0 is the least significant bit.
 
     Raises:
-        ValueError: ``circuit`` contains an instruction this backend cannot apply.
-        NotImplementedError: ``circuit`` resets a qubit, measures a qubit and
+        NotImplementedError: ``program`` resets a qubit, measures a qubit and
             then applies a gate, or prepares a state after leaving ``|0...0>``.
     """
-    compiled, state, lines = _translate(cirq, circuit)
+    compiled, state, lines = _translate(cirq, program)
     if len(compiled) == 0:
         return state
     return _simulate(cirq, compiled, state, lines)
 
 
-def _translate(cirq: Any, circuit: QuantumCircuit) -> tuple[Any, np.ndarray, list[Any]]:
-    """Translate ``circuit`` into a Cirq circuit and a Qiskit-ordered initial state.
+def _translate(cirq: Any, program: Program) -> tuple[Any, np.ndarray, list[Any]]:
+    """Translate ``program`` into a Cirq circuit and an initial state.
 
     Args:
         cirq: Imported Cirq package.
-        circuit: Circuit to translate.
+        program: Program to translate.
 
     Returns:
         The gates that follow the last accepted state preparation, the
-        amplitudes those gates start from, and one ``LineQubit`` per Qiskit
+        amplitudes those gates start from, and one ``LineQubit`` per program
         qubit. Qubit 0 of the amplitude vector is the least significant bit.
 
     Raises:
-        ValueError: ``circuit`` contains an instruction this backend cannot apply.
-        NotImplementedError: ``circuit`` resets a qubit, measures a qubit and
+        NotImplementedError: ``program`` resets a qubit, measures a qubit and
             then applies a gate, or prepares a state after leaving ``|0...0>``.
     """
-    lines = [cirq.LineQubit(index) for index in range(circuit.num_qubits)]
+    lines = [cirq.LineQubit(index) for index in range(program.num_qubits)]
     compiled = cirq.Circuit()
-    state = np.zeros(1 << circuit.num_qubits, dtype=np.complex128)
+    state = np.zeros(1 << program.num_qubits, dtype=np.complex128)
     state[0] = 1.0
     measuring = False
-    for instruction in circuit.data:
-        operation = instruction.operation
-        qubits = tuple(int(circuit.find_bit(qubit).index) for qubit in instruction.qubits)
-        if operation.name == "reset":
+    for operation in program.operations:
+        if isinstance(operation, Reset):
             raise NotImplementedError("Reset is not supported")
-        if operation.name == "measure":
+        if isinstance(operation, Measure):
             measuring = True
             continue
-        if operation.name == "barrier":
+        if isinstance(operation, Barrier):
             continue
         if measuring:
             raise NotImplementedError("a measurement before the end of the program is not supported")
-        if operation.name == "initialize":
+        if isinstance(operation, Prepare):
             if len(compiled) != 0:
                 state = _simulate(cirq, compiled, state, lines)
                 compiled = cirq.Circuit()
-            state = _prepare(state, operation, qubits)
+            state = _prepare(state, operation)
             continue
-        named = _named_operation(cirq, operation, qubits, lines)
-        if named is not None:
-            compiled.append(named)
+        if isinstance(operation, Hadamard):
+            compiled.append(cirq.H.on(lines[operation.qubit]))
             continue
-        _append_matrix(cirq, compiled, operation, qubits, lines)
+        if isinstance(operation, Unitary):
+            _append_matrix(cirq, compiled, operation, lines)
+            continue
+        raise TypeError(f"operations must be circuit operations, got {type(operation).__name__}")
     return compiled, state, lines
 
 
-def _prepare(state: np.ndarray, operation: Instruction, qubits: tuple[int, ...]) -> np.ndarray:
+def _prepare(state: np.ndarray, operation: Prepare) -> np.ndarray:
     """Return ``operation`` written onto ``state`` while it is ``|0...0>``.
 
-    ``qubits[0]`` is the least significant bit of ``operation.params``.
+    ``operation.qubits[0]`` is the least significant bit of ``operation.amplitudes``.
 
     Args:
         state: Amplitudes to overwrite. Qubit 0 is the least significant bit.
-        operation: Initialize instruction. Its parameters are the amplitudes.
-        qubits: Qubits that receive the state, in the amplitude order.
+        operation: State preparation.
 
     Returns:
         The prepared amplitudes.
 
     Raises:
-        ValueError: The amplitudes are not one value per basis state of ``qubits``.
         NotImplementedError: ``state`` is not ``|0...0>``.
     """
     if not _is_ground(state):
         raise NotImplementedError("Prepare after the state has left |0...0> is not supported")
-    amplitudes = np.asarray(operation.params, dtype=np.complex128)
-    width = 1 << len(qubits)
-    if amplitudes.shape != (width,):
-        raise ValueError(f"Prepare amplitudes must have shape {(width,)}, got {amplitudes.shape}")
     prepared = np.zeros_like(state)
-    for local, amplitude in enumerate(amplitudes):
+    for local, amplitude in enumerate(operation.amplitudes):
         index = 0
-        for bit, qubit in enumerate(qubits):
+        for bit, qubit in enumerate(operation.qubits):
             if local & (1 << bit):
                 index |= 1 << qubit
         prepared[index] = amplitude
     return prepared
 
 
-def _named_operation(
-    cirq: Any,
-    operation: Instruction,
-    qubits: tuple[int, ...],
-    lines: Sequence[Any],
-) -> Any | None:
-    """Return a Cirq kernel for ``operation``, or None when none fits.
-
-    Args:
-        cirq: Imported Cirq package.
-        operation: Instruction to translate.
-        qubits: Target indexes. The first is the control of ``cx``.
-        lines: ``LineQubit`` for each Qiskit qubit index.
-
-    Returns:
-        The Cirq operation, or None when the name or qubit count does not match
-        a kernel.
-    """
-    name = operation.name
-    if name in _ONE_QUBIT and len(qubits) == 1:
-        return _one_qubit_gate(cirq, name).on(lines[qubits[0]])
-    if name == "cx" and len(qubits) == 2:
-        return cirq.CNOT(lines[qubits[0]], lines[qubits[1]])
-    if name in _TWO_QUBIT and len(qubits) == 2:
-        return getattr(cirq, name.upper())(lines[qubits[0]], lines[qubits[1]])
-    if name in _ROTATIONS and len(qubits) == 1 and len(operation.params) == 1:
-        try:
-            angle = float(operation.params[0])
-        except (TypeError, ValueError):
-            return None
-        return getattr(cirq, name)(angle).on(lines[qubits[0]])
-    return None
-
-
-def _one_qubit_gate(cirq: Any, name: str) -> Any:
-    """Return the Cirq gate named ``name``."""
-    if name == "sdg":
-        return cirq.S**-1
-    if name == "tdg":
-        return cirq.T**-1
-    if name == "sx":
-        return cirq.X**0.5
-    if name == "sxdg":
-        return cirq.X**-0.5
-    return getattr(cirq, name.upper())
-
-
-def _append_matrix(
-    cirq: Any,
-    compiled: Any,
-    operation: Instruction,
-    qubits: tuple[int, ...],
-    lines: Sequence[Any],
-) -> None:
+def _append_matrix(cirq: Any, compiled: Any, operation: Unitary, lines: Sequence[Any]) -> None:
     """Append ``operation`` as a dense matrix.
 
-    The first entry of ``qubits`` is the least significant bit of the Qiskit
-    matrix. Cirq's ``MatrixGate`` treats its first qubit as the most
-    significant bit, so the gate is applied to the reversed qubit list.
+    The first entry of ``operation.qubits`` is the least significant bit of the
+    matrix. Cirq's ``MatrixGate`` treats its first qubit as the most significant
+    bit, so the gate is applied to the reversed qubit list.
 
     Args:
         cirq: Imported Cirq package.
         compiled: Cirq circuit that receives the gate.
-        operation: Instruction whose matrix is applied.
-        qubits: Target indexes, in Qiskit matrix order.
-        lines: ``LineQubit`` for each Qiskit qubit index.
-
-    Raises:
-        ValueError: ``operation`` has no square matrix of the right width.
+        operation: Unitary to apply.
+        lines: ``LineQubit`` for each program qubit index.
     """
-    matrix = _matrix(operation)
-    width = 1 << len(qubits)
-    if matrix is None or matrix.shape != (width, width):
-        raise ValueError(f"unsupported instruction {operation.name!r}")
-    targets = [lines[qubit] for qubit in reversed(qubits)]
+    matrix = np.array(operation.matrix, dtype=np.complex128, copy=True)
+    targets = [lines[qubit] for qubit in reversed(operation.qubits)]
     compiled.append(cirq.MatrixGate(matrix).on(*targets))
-
-
-def _matrix(operation: Instruction) -> np.ndarray | None:
-    """Return the matrix of ``operation`` when the instruction defines one."""
-    to_matrix = getattr(operation, "to_matrix", None)
-    if not callable(to_matrix):
-        return None
-    try:
-        matrix = np.asarray(to_matrix(), dtype=np.complex128)
-    except (AttributeError, CircuitError, TypeError, ValueError):
-        return None
-    if matrix.ndim != 2:
-        return None
-    return matrix
 
 
 def _simulate(cirq: Any, compiled: Any, state: np.ndarray, lines: Sequence[Any]) -> np.ndarray:
@@ -459,8 +369,6 @@ def _register_qubits(cirq: Any, compiled: Any, lines: Sequence[Any]) -> Any:
     Returns:
         ``compiled``, or a copy that applies identity to the missing qubits.
     """
-    if not lines:
-        return compiled
     missing = [qubit for qubit in lines if qubit not in compiled.all_qubits()]
     if not missing:
         return compiled

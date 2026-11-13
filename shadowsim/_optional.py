@@ -11,6 +11,7 @@ _EXTRA_MODULES: dict[str, frozenset[str]] = {
     "pauli_propagation": frozenset({"juliacall"}),
     "qulacs": frozenset({"qulacs"}),
     "cirq": frozenset({"cirq"}),
+    "circuits": frozenset({"scipy"}),
 }
 
 

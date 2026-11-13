@@ -52,9 +52,9 @@ def _qubit_indexes(
     return tuple(indexes)
 
 
-def _reject_circuit_metric(name: str, circuit: object) -> NoReturn:
+def _reject_circuit_metric(name: str, program: object) -> NoReturn:
     """Raise because the backend named ``name`` does not count gates."""
-    del circuit
+    del program
     raise NotImplementedError(f"{name} does not support circuit metrics")
 
 
@@ -67,57 +67,57 @@ class _UnsupportedCircuitMetrics:
 
     name: str
 
-    def depth(self, circuit: object) -> int:
+    def depth(self, program: object) -> int:
         """Reject a request for transpiled circuit depth.
 
         Args:
-            circuit: Unused. This backend does not count gates.
+            program: Unused. This backend does not count gates.
 
         Raises:
             NotImplementedError: This backend does not support circuit metrics.
         """
-        _reject_circuit_metric(self.name, circuit)
+        _reject_circuit_metric(self.name, program)
 
-    def width(self, circuit: object) -> int:
+    def width(self, program: object) -> int:
         """Reject a request for transpiled qubit count.
 
         Args:
-            circuit: Unused. This backend does not count gates.
+            program: Unused. This backend does not count gates.
 
         Raises:
             NotImplementedError: This backend does not support circuit metrics.
         """
-        _reject_circuit_metric(self.name, circuit)
+        _reject_circuit_metric(self.name, program)
 
-    def gate_count(self, circuit: object) -> int:
+    def gate_count(self, program: object) -> int:
         """Reject a request for a transpiled instruction count.
 
         Args:
-            circuit: Unused. This backend does not count gates.
+            program: Unused. This backend does not count gates.
 
         Raises:
             NotImplementedError: This backend does not support circuit metrics.
         """
-        _reject_circuit_metric(self.name, circuit)
+        _reject_circuit_metric(self.name, program)
 
-    def t_count(self, circuit: object) -> int:
+    def t_count(self, program: object) -> int:
         """Reject a request for a transpiled ``t`` count.
 
         Args:
-            circuit: Unused. This backend does not count gates.
+            program: Unused. This backend does not count gates.
 
         Raises:
             NotImplementedError: This backend does not support circuit metrics.
         """
-        _reject_circuit_metric(self.name, circuit)
+        _reject_circuit_metric(self.name, program)
 
-    def toffoli_count(self, circuit: object) -> int:
+    def toffoli_count(self, program: object) -> int:
         """Reject a request for a transpiled Toffoli count.
 
         Args:
-            circuit: Unused. This backend does not count gates.
+            program: Unused. This backend does not count gates.
 
         Raises:
             NotImplementedError: This backend does not support circuit metrics.
         """
-        _reject_circuit_metric(self.name, circuit)
+        _reject_circuit_metric(self.name, program)

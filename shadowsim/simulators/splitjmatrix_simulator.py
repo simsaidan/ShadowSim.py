@@ -4,17 +4,21 @@ from typing import Any, Callable, List, Literal, cast
 
 import numpy as np
 import scipy
-from qiskit import QuantumCircuit, QuantumRegister
-from qiskit.circuit.library import UnitaryGate
 
-from shadowsim.backends.aer import AerCircuitBackend
 from shadowsim.backends.circuit import CircuitBackend, backend_shots
+from shadowsim.backends.program import Barrier, Operation, Prepare, Program, Reset, Unitary
 from shadowsim.core.local_hamiltonian import LocalHamiltonian
 from shadowsim.core.local_operator import LocalOperator
 from shadowsim.core.operator import _Matrix
 from shadowsim.core.state import State
 from shadowsim.simulators._time_points import TimeCall
-from shadowsim.simulators.product_formula_simulator import ProductFormulaSimulator, _check_order, _rotate_to_basis
+from shadowsim.simulators.product_formula_simulator import (
+    ProductFormulaSimulator,
+    _check_order,
+    _default_circuit_backend,
+    _measure_all,
+    _rotate_to_basis,
+)
 from shadowsim.simulators.trotterization_simulator import _trotter_slice_unitaries
 
 __all__ = ["SplitJMatrixSimulator"]
@@ -22,12 +26,15 @@ __all__ = ["SplitJMatrixSimulator"]
 ProgressCallback = Callable[[int, int], None]
 
 
-def _make_J_gate(L: _Matrix, t: float, N: int) -> UnitaryGate:
-    """Create the J gate for Split JMatrix method."""
+def _make_J_gate(L: _Matrix, t: float, N: int) -> np.ndarray:
+    """Create the J gate for Split JMatrix method.
+
+    The ancilla is the more-significant bit of the returned matrix.
+    """
     matrix = np.asarray(L)
     size = matrix.shape[0]
     gate = np.block([[np.zeros((size, size)), matrix.conjugate().T], [matrix, np.zeros((size, size))]])
-    return UnitaryGate(scipy.linalg.expm(-1j * gate * np.sqrt(t / N)))
+    return scipy.linalg.expm(-1j * gate * np.sqrt(t / N))
 
 
 def _split_jmatrix_circuit(
@@ -41,50 +48,49 @@ def _split_jmatrix_circuit(
     order: Literal[1, 2] = 1,
     verbose: bool = False,
     basis: str | None = None,
-) -> QuantumCircuit:
-    """Return one Split JMatrix circuit, including the final measurement.
+) -> Program:
+    """Return one Split JMatrix program, including the final measurement.
 
     Each step applies every Lindblad jump once, then ``trotter_depth`` Hamiltonian
     slices. ``order=1`` applies each local term for time
     ``t / (num_steps * trotter_depth)``. ``order=2`` is one Strang step per slice.
     Either order covers coherent time ``t``. Before the measurement, each system
     qubit is rotated into its letter of ``basis`` (``None`` is all ``Z``).
-    Circuit qubit 0 is the ancilla, and system qubit ``i`` is circuit qubit ``i + 1``.
+    Qubit 0 is the ancilla, and system qubit ``i`` is qubit ``i + 1``.
     """
     if trotter_depth <= 0:
         raise ValueError("trotter_depth must be a positive integer")
     _check_order(order)
     if H:
         delta = t / (num_steps * trotter_depth)
-        h_gates = [(UnitaryGate(matrix), sites) for matrix, sites in _trotter_slice_unitaries(H, delta, order)]
+        h_gates = _trotter_slice_unitaries(H, delta, order)
     else:
         h_gates = []
     j_gates = [_make_J_gate(L_i.matrix, t, num_steps) for L_i in Lindblads]
-    ancilla = QuantumRegister(1)
-    body = QuantumRegister(num_qubits)
-    circ = QuantumCircuit(ancilla, body)
-
-    psi0 = initial_state.to_numpy()
-
-    circ.initialize(psi0, list(reversed(body)))
-    circ.barrier()
+    width = num_qubits + 1
+    qubits = tuple(range(width))
+    operations: list[Operation] = [
+        Prepare(initial_state.to_numpy(), tuple(reversed(range(1, width)))),
+        Barrier(qubits),
+    ]
     for i in range(num_steps):
         # Split-J step: every Lindblad jump once, then ``trotter_depth`` Hamiltonian slices.
-        circ.reset(ancilla[0])
+        operations.append(Reset(0))
         if verbose and i % 10 == 0:
             print(f"Working on iteration {i} out of {num_steps}")
         for gate, L_i in zip(j_gates, Lindblads, strict=True):
-            circ.append(gate, reversed([ancilla[0]] + [body[j] for j in L_i.sites]))
-            circ.reset(ancilla[0])
-        circ.barrier()
+            indexes = (0, *[1 + site for site in L_i.sites])
+            operations.append(Unitary(gate, tuple(reversed(indexes))))
+            operations.append(Reset(0))
+        operations.append(Barrier(qubits))
         for _ in range(trotter_depth):
-            for gate, sites in h_gates:
-                circ.append(gate, reversed([body[j] for j in sites]))
+            for matrix, sites in h_gates:
+                operations.append(Unitary(matrix, tuple(reversed([1 + site for site in sites]))))
 
-    circ.barrier()
-    _rotate_to_basis(circ, body, basis, num_qubits)
-    circ.measure_all()
-    return circ
+    operations.append(Barrier(qubits))
+    operations.extend(_rotate_to_basis(basis, num_qubits, offset=1))
+    operations.extend(_measure_all(width))
+    return Program(width, width, operations)
 
 
 def _split_jmatrix(
@@ -105,7 +111,7 @@ def _split_jmatrix(
     """Run one Split JMatrix circuit and return counts, including the ancilla bit.
 
     The circuit is :func:`_split_jmatrix_circuit`. ``circuit_backend`` executes
-    it. Omitting that backend uses :class:`AerCircuitBackend`.
+    it. Omitting that backend uses Aer.
     """
     if shots <= 0:
         raise ValueError("shots must be a positive integer")
@@ -123,7 +129,7 @@ def _split_jmatrix(
         verbose=verbose,
         basis=basis,
     )
-    counts_backend = circuit_backend if circuit_backend is not None else AerCircuitBackend()
+    counts_backend = circuit_backend if circuit_backend is not None else _default_circuit_backend()
     return counts_backend.run_counts(circ, shots=shots, seed=seed)
 
 
@@ -137,7 +143,7 @@ class SplitJMatrixSimulator(ProductFormulaSimulator):
     a full step on the last term, then half-steps in reverse. Either order
     covers coherent time ``t``.
 
-    Counts come from ``circuit_backend``. Omitting it uses :class:`AerCircuitBackend`.
+    Counts come from ``circuit_backend``. Omitting it uses Aer.
     The shot count is that backend's ``shots`` attribute. Before the measurement,
     each system qubit is rotated into its letter of ``basis`` (default all ``Z``).
     The result keeps one counts dict per time point, where bit ``i`` of a key is
@@ -234,8 +240,8 @@ class SplitJMatrixSimulator(ProductFormulaSimulator):
         """Return the Lindblad count stored on the result."""
         return {"lindblad_count": len(self.lindblads)}
 
-    def metrics_circuit(self) -> QuantumCircuit:
-        """Return the circuit executed at the final time, including measurement."""
+    def metrics_circuit(self) -> Program:
+        """Return the program executed at the final time, including measurement."""
         return _split_jmatrix_circuit(
             cast(list[LocalHamiltonian], self.hamiltonians),
             cast(list[LocalOperator], self.lindblads),

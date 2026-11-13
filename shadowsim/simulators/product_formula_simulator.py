@@ -4,10 +4,9 @@ from collections.abc import Callable
 from time import perf_counter
 from typing import Any, Literal, cast
 
-from qiskit import QuantumCircuit, QuantumRegister
-
-from shadowsim.backends.aer import AerCircuitBackend
+from shadowsim._optional import import_optional
 from shadowsim.backends.circuit import CircuitBackend, backend_samples, backend_shots
+from shadowsim.backends.program import Barrier, Hadamard, Measure, Operation, Unitary
 from shadowsim.simulators._time_points import TimeCall, map_time_points
 from shadowsim.simulators.reducers import QUBIT_EXPECTATIONS
 from shadowsim.simulators.result import SimulationResult
@@ -58,16 +57,54 @@ def _checked_basis(basis: str | None, num_qubits: int) -> str:
     return basis
 
 
-def _rotate_to_basis(circuit: QuantumCircuit, register: QuantumRegister, basis: str | None, num_qubits: int) -> None:
-    """Rotate each qubit so a following Z measurement reads its ``basis`` letter.
+# S†. Named gates other than Hadamard stay out of a program.
+_S_DAGGER = ((1, 0), (0, -1j))
 
-    ``X`` gets a Hadamard. ``Y`` gets ``sdg`` and then a Hadamard. ``Z`` is unchanged.
+
+def _default_circuit_backend() -> CircuitBackend:
+    """Return Aer. The import happens only when a caller omitted a backend."""
+    aer = import_optional("shadowsim.backends.aer", extra="qiskit")
+    return aer.AerCircuitBackend()
+
+
+def _rotate_to_basis(basis: str | None, num_qubits: int, *, offset: int = 0) -> list[Operation]:
+    """Return rotations so a following Z measurement reads ``basis``.
+
+    ``X`` appends a Hadamard. ``Y`` appends ``S†`` and then a Hadamard. ``Z``
+    appends nothing. Qubit ``i`` is recorded at index ``offset + i``.
+
+    Args:
+        basis: Measurement letters, one per qubit. ``None`` is all ``Z``.
+        num_qubits: Number of system qubits.
+        offset: Index of system qubit 0. An ancilla before the body uses ``1``.
+
+    Returns:
+        The rotations, in qubit order.
+
+    Raises:
+        ValueError: ``basis`` is not one ``X``, ``Y``, or ``Z`` per qubit.
     """
+    operations: list[Operation] = []
     for qubit, letter in enumerate(_checked_basis(basis, num_qubits)):
+        index = offset + qubit
         if letter == "Y":
-            circuit.sdg(register[qubit])
+            operations.append(Unitary(_S_DAGGER, (index,)))
         if letter in "XY":
-            circuit.h(register[qubit])
+            operations.append(Hadamard(index))
+    return operations
+
+
+def _measure_all(num_qubits: int) -> list[Operation]:
+    """Return the barrier and one measurement per qubit that ``measure_all`` appends.
+
+    Args:
+        num_qubits: Qubits to measure, starting at index 0.
+
+    Returns:
+        A barrier across those qubits, then ``Measure(i, i)`` for each one.
+    """
+    qubits = tuple(range(num_qubits))
+    return [Barrier(qubits), *[Measure(qubit, qubit) for qubit in qubits]]
 
 
 def _system_counts(counts: dict[str, int], skip: int = 0) -> dict[str, int]:
@@ -157,7 +194,7 @@ class ProductFormulaSimulator(Simulator):
             raise ValueError("trotter_depth must be a positive integer")
         if order is not None:
             _check_order(order)
-        chosen = circuit_backend if circuit_backend is not None else AerCircuitBackend()
+        chosen = circuit_backend if circuit_backend is not None else _default_circuit_backend()
         if backend_samples(chosen):
             backend_shots(chosen)
         elif self.requires_sampling_backend:

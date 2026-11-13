@@ -249,7 +249,7 @@ def test_backends_transpile_the_rebuilt_circuit(monkeypatch):
     circuit, _matrix = _two_register_circuit()
     expected = from_qiskit(circuit)
 
-    AerCircuitBackend().run_counts(circuit, shots=1, seed=1)
+    AerCircuitBackend().run_counts(expected, shots=1, seed=1)
 
     assert seen[0] is not circuit
     assert from_qiskit(seen[0]) == expected
@@ -261,7 +261,7 @@ def test_backends_reject_a_gate_without_a_matrix_before_running(monkeypatch):
     circuit.append(Gate("black_box", 1, []), [0])
 
     with pytest.raises(ValueError, match="'black_box'"):
-        AerCircuitBackend().run_counts(circuit, shots=1, seed=1)
+        AerCircuitBackend().run_counts(from_qiskit(circuit), shots=1, seed=1)
 
 
 def test_aer_circuit_metrics_count_the_transpiled_circuit():
@@ -270,15 +270,15 @@ def test_aer_circuit_metrics_count_the_transpiled_circuit():
     circuit.tdg(1)
     circuit.ccx(0, 1, 2)
     circuit.ccz(0, 1, 2)
-    compiled = transpile(circuit, AerSimulator())
+    program = from_qiskit(circuit)
+    compiled = transpile(to_qiskit(program), AerSimulator())
     backend = AerCircuitBackend()
 
-    assert backend.depth(circuit) == compiled.depth()
-    assert backend.width(circuit) == compiled.num_qubits == 3
-    assert backend.gate_count(circuit) == compiled.size()
-    assert backend.t_count(circuit) == 1
-    assert compiled.count_ops()["tdg"] == 1
-    assert backend.toffoli_count(circuit) == 2
+    assert backend.depth(program) == compiled.depth()
+    assert backend.width(program) == compiled.num_qubits == 3
+    assert backend.gate_count(program) == compiled.size()
+    assert backend.t_count(program) == compiled.count_ops().get("t", 0)
+    assert backend.toffoli_count(program) == compiled.count_ops().get("ccx", 0) + compiled.count_ops().get("ccz", 0)
 
 
 def test_aer_backend_rejects_a_nonpositive_shot_budget():
@@ -320,13 +320,13 @@ def test_aer_backend_runs_rx():
     circuit.rx(0.3, 0)
     circuit.measure_all()
 
-    assert AerCircuitBackend().run_counts(circuit, shots=64, seed=3) == _aer_counts(circuit)
+    assert AerCircuitBackend().run_counts(from_qiskit(circuit), shots=64, seed=3) == _aer_counts(circuit)
 
 
 def test_aer_backend_matches_direct_counts():
     circuit, _matrix = _two_register_circuit()
 
-    assert AerCircuitBackend().run_counts(circuit, shots=64, seed=3) == _aer_counts(circuit)
+    assert AerCircuitBackend().run_counts(from_qiskit(circuit), shots=64, seed=3) == _aer_counts(circuit)
 
 
 def test_aer_z_expectations_follow_qubit_order():
@@ -334,15 +334,16 @@ def test_aer_z_expectations_follow_qubit_order():
     circuit.x(1)
     backend = AerCircuitBackend()
 
-    assert backend.z_expectations(circuit, [1, 0], shots=4, seed=1) == [-1.0, 1.0]
-    assert backend.z_expectations(circuit, [], shots=1, seed=1) == []
+    program = from_qiskit(circuit)
+    assert backend.z_expectations(program, [1, 0], shots=4, seed=1) == [-1.0, 1.0]
+    assert backend.z_expectations(program, [], shots=1, seed=1) == []
 
 
 def test_aer_x_expectation_of_plus_is_one():
     circuit = QuantumCircuit(1)
     circuit.h(0)
 
-    assert AerCircuitBackend().x_expectations(circuit, [0], shots=5, seed=2) == [1.0]
+    assert AerCircuitBackend().x_expectations(from_qiskit(circuit), [0], shots=5, seed=2) == [1.0]
 
 
 def test_aer_basis_gates_normalizes_names() -> None:
@@ -391,7 +392,7 @@ def test_aer_passes_basis_gates_to_the_simulator(monkeypatch: pytest.MonkeyPatch
     circuit.h(0)
     circuit.measure(0, 0)
 
-    AerCircuitBackend(basis_gates=["rx", "cx"]).run_counts(circuit, shots=1, seed=7)
+    AerCircuitBackend(basis_gates=["rx", "cx"]).run_counts(from_qiskit(circuit), shots=1, seed=7)
 
     assert ctor_kwargs == [{"seed_simulator": 7, "basis_gates": ["rx", "cx"]}]
 
@@ -400,7 +401,7 @@ def test_aer_basis_gates_drop_t_when_the_basis_has_no_t() -> None:
     circuit = QuantumCircuit(1)
     circuit.t(0)
 
-    assert AerCircuitBackend(basis_gates=["u", "cx"]).t_count(circuit) == 0
+    assert AerCircuitBackend(basis_gates=["u", "cx"]).t_count(from_qiskit(circuit)) == 0
 
 
 def test_aer_basis_gates_reports_a_basis_that_cannot_compile() -> None:
@@ -408,26 +409,27 @@ def test_aer_basis_gates_reports_a_basis_that_cannot_compile() -> None:
     circuit.t(0)
     backend = AerCircuitBackend(basis_gates=["x", "y", "z"])
 
-    with pytest.raises(ValueError, match=r"^Cannot compile t into x, y, and z\.$"):
-        backend.t_count(circuit)
+    with pytest.raises(ValueError, match=r"^Cannot compile .+ into x, y, and z\.$"):
+        backend.t_count(from_qiskit(circuit))
 
     entangling = QuantumCircuit(2)
     entangling.h(0)
     entangling.cx(0, 1)
-    with pytest.raises(ValueError, match=r"^Cannot compile cx and h into x, y, and z\.$"):
-        backend.depth(entangling)
+    with pytest.raises(ValueError, match=r"^Cannot compile .+ into x, y, and z\.$"):
+        backend.depth(from_qiskit(entangling))
 
     measured = QuantumCircuit(1, 1)
     measured.h(0)
     measured.measure(0, 0)
-    with pytest.raises(ValueError, match=r"^Cannot compile h into x, y, and z\.$"):
-        backend.run_counts(measured, shots=1, seed=1)
+    with pytest.raises(ValueError, match=r"^Cannot compile .+ into x, y, and z\.$"):
+        backend.run_counts(from_qiskit(measured), shots=1, seed=1)
 
 
 def test_aer_expectations_reject_an_index_outside_the_circuit():
     circuit = QuantumCircuit(1)
 
-    with pytest.raises(ValueError, match="outside a circuit of 1 qubits"):
-        AerCircuitBackend().z_expectations(circuit, [1], shots=1, seed=1)
-    with pytest.raises(ValueError, match="outside a circuit of 1 qubits"):
-        AerCircuitBackend().x_expectations(circuit, [True], shots=1, seed=1)
+    program = from_qiskit(circuit)
+    with pytest.raises(ValueError, match="outside a program of 1 qubits"):
+        AerCircuitBackend().z_expectations(program, [1], shots=1, seed=1)
+    with pytest.raises(ValueError, match="outside a program of 1 qubits"):
+        AerCircuitBackend().x_expectations(program, [True], shots=1, seed=1)

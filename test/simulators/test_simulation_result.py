@@ -2,6 +2,7 @@
 
 import json
 import pickle
+import types
 import zipfile
 from io import BytesIO
 from pathlib import Path
@@ -596,6 +597,51 @@ def test_save_resource_metrics_records_circuit_metrics(tmp_path: Path) -> None:
     assert record["resources"][0]["gate_count"] == 5
     assert record["resources"][0]["t_count"] == 1
     assert record["resources"][0]["toffoli_count"] == 0
+
+
+def test_circuit_metrics_translate_a_qiskit_circuit(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    translated = object()
+    qiskit_circuit = types.SimpleNamespace(data=[])
+
+    def fake_from_qiskit(circuit: object) -> object:
+        assert circuit is qiskit_circuit
+        return translated
+
+    monkeypatch.setattr(result_module, "from_qiskit", fake_from_qiskit)
+
+    class Counting:
+        shots = 4
+
+        def depth(self, circuit: object) -> int:
+            assert circuit is translated
+            return 3
+
+        def width(self, circuit: object) -> int:
+            del circuit
+            return 2
+
+        def gate_count(self, circuit: object) -> int:
+            del circuit
+            return 5
+
+        def t_count(self, circuit: object) -> int:
+            del circuit
+            return 1
+
+        def toffoli_count(self, circuit: object) -> int:
+            del circuit
+            return 0
+
+    class Recorded:
+        id = "trotterization_simulator"
+        tlist = [0.0]
+        circuit_backend = Counting()
+
+        def metrics_circuit(self) -> object:
+            return qiskit_circuit
+
+    record = json.loads(save_resource_metrics(Recorded(), 1.5, path=tmp_path / "metrics.json").read_text())
+    assert record["resources"][0]["depth"] == 3
 
 
 def test_save_resource_metrics_marks_a_partial_backend_unavailable(tmp_path: Path) -> None:

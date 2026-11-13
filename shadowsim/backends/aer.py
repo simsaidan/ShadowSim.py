@@ -10,7 +10,8 @@ from qiskit_aer import AerSimulator
 from qiskit_aer.backends.backend_utils import BASIS_GATES
 
 from shadowsim.backends._arguments import _qubit_indexes, _require_shots
-from shadowsim.backends.circuit import from_qiskit, to_qiskit
+from shadowsim.backends.circuit import to_qiskit
+from shadowsim.backends.program import Program
 from shadowsim.utils.flip_dict import flip_dict
 
 # ``store`` is a simulator instruction, not a gate a circuit can be compiled into.
@@ -21,15 +22,15 @@ _TRANSLATION_OPS = re.compile(r"""\((['"])([A-Za-z0-9_]+)\1,\s*\d+\)""")
 
 
 class AerCircuitBackend:
-    """Run a circuit on Qiskit Aer and return shot counts.
+    """Run a program on Qiskit Aer and return shot counts.
 
-    A set ``seed`` is passed to ``AerSimulator`` as ``seed_simulator``.
+    The program is translated to a Qiskit circuit and transpiled for
+    ``AerSimulator``. A set ``seed`` is passed as ``seed_simulator``.
     ``basis_gates`` is passed the same way when it is set. ``z_expectations``
     and ``x_expectations`` estimate Pauli expectations from those counts.
     ``depth``, ``width``, ``gate_count``, ``t_count``, and ``toffoli_count``
-    read the circuit after ``transpile`` for that simulator. With no basis,
-    that pass leaves named gates Aer accepts, including ``t``, ``ccx``, and
-    ``ccz``.
+    read that transpiled circuit. A unitary stays one instruction, so ``t``
+    and ``ccx`` counts stay zero unless transpilation emits those names.
 
     Attributes:
         name: ``"aer"``. Stored on simulation result metadata.
@@ -59,12 +60,11 @@ class AerCircuitBackend:
         self.shots = _require_shots(shots)
         self.basis_gates = _basis_gates(basis_gates)
 
-    def run_counts(self, circuit: QuantumCircuit, *, shots: int, seed: int | None) -> dict[str, int]:
-        """Rebuild ``circuit`` from its program, transpile that for Aer, and return counts.
+    def run_counts(self, program: Program, *, shots: int, seed: int | None) -> dict[str, int]:
+        """Translate ``program`` to Qiskit, transpile that for Aer, and return counts.
 
         Args:
-            circuit: Circuit to execute. It is translated to a program and back
-                before transpilation.
+            program: Program to execute.
             shots: Number of shots.
             seed: Passed as ``seed_simulator`` when set. Omitted when ``None``.
 
@@ -72,19 +72,13 @@ class AerCircuitBackend:
             Mapping from bitstring to shot count.
 
         Raises:
-            ValueError: ``circuit`` contains an instruction that has no matrix and
-                is not initialize, reset, barrier, or measure, or it cannot be
-                compiled into ``basis_gates``.
+            ValueError: ``program`` cannot be compiled into ``basis_gates``.
         """
-        native = to_qiskit(from_qiskit(circuit))
-        backend = self._simulator(seed)
-        compiled = _transpile(native, backend, self.basis_gates)
-        job = backend.run(compiled, shots=shots)
-        return job.result().get_counts()
+        return self._run_counts(to_qiskit(program), shots=shots, seed=seed)
 
     def z_expectations(
         self,
-        circuit: QuantumCircuit,
+        program: Program,
         qubits: Sequence[int],
         *,
         shots: int,
@@ -93,8 +87,8 @@ class AerCircuitBackend:
         """Estimate ``⟨Z⟩`` on ``qubits`` from computational-basis shots.
 
         Args:
-            circuit: Circuit to execute, before the computational-basis measurement.
-            qubits: 0-based indexes in ``circuit.qubits``. The result follows this order.
+            program: Program to execute, before the computational-basis measurement.
+            qubits: 0-based indexes in ``program``. The result follows this order.
             shots: Number of shots.
             seed: Passed as ``seed_simulator`` when set. Omitted when ``None``.
 
@@ -102,14 +96,14 @@ class AerCircuitBackend:
             One estimate per entry of ``qubits``, each ``(n0 - n1) / shots``.
 
         Raises:
-            ValueError: An index is outside ``circuit``, or ``circuit`` contains an
-                instruction the program cannot record.
+            ValueError: An index is outside ``program``, or ``program`` cannot be
+                compiled into ``basis_gates``.
         """
-        return _expectations(self, circuit, qubits, shots=shots, seed=seed, basis="z")
+        return _expectations(self, program, qubits, shots=shots, seed=seed, basis="z")
 
     def x_expectations(
         self,
-        circuit: QuantumCircuit,
+        program: Program,
         qubits: Sequence[int],
         *,
         shots: int,
@@ -118,8 +112,8 @@ class AerCircuitBackend:
         """Estimate ``⟨X⟩`` on ``qubits`` by applying Hadamard and then measuring.
 
         Args:
-            circuit: Circuit to execute, before the X-basis measurement.
-            qubits: 0-based indexes in ``circuit.qubits``. The result follows this order.
+            program: Program to execute, before the X-basis measurement.
+            qubits: 0-based indexes in ``program``. The result follows this order.
             shots: Number of shots.
             seed: Passed as ``seed_simulator`` when set. Omitted when ``None``.
 
@@ -127,87 +121,87 @@ class AerCircuitBackend:
             One estimate per entry of ``qubits``, each ``(n0 - n1) / shots``.
 
         Raises:
-            ValueError: An index is outside ``circuit``, or ``circuit`` contains an
-                instruction the program cannot record.
+            ValueError: An index is outside ``program``, or ``program`` cannot be
+                compiled into ``basis_gates``.
         """
-        return _expectations(self, circuit, qubits, shots=shots, seed=seed, basis="x")
+        return _expectations(self, program, qubits, shots=shots, seed=seed, basis="x")
 
-    def depth(self, circuit: QuantumCircuit) -> int:
-        """Return the depth of ``circuit`` after transpilation for Aer.
+    def depth(self, program: Program) -> int:
+        """Return the depth of ``program`` after transpilation for Aer.
 
         Args:
-            circuit: Circuit to measure. It is transpiled for this backend's basis.
+            program: Program to measure. It is translated and transpiled for this basis.
 
         Returns:
             Length of the critical path on the transpiled circuit.
 
         Raises:
-            ValueError: ``circuit`` cannot be compiled into ``basis_gates``.
+            ValueError: ``program`` cannot be compiled into ``basis_gates``.
         """
-        return int(self._compiled(circuit).depth())
+        return int(self._compiled(program).depth())
 
-    def width(self, circuit: QuantumCircuit) -> int:
-        """Return the qubit count of ``circuit`` after transpilation for Aer.
+    def width(self, program: Program) -> int:
+        """Return the qubit count of ``program`` after transpilation for Aer.
 
         Args:
-            circuit: Circuit to measure. It is transpiled for this backend's basis.
+            program: Program to measure. It is translated and transpiled for this basis.
 
         Returns:
             Number of qubits on the transpiled circuit. Classical bits are not included.
 
         Raises:
-            ValueError: ``circuit`` cannot be compiled into ``basis_gates``.
+            ValueError: ``program`` cannot be compiled into ``basis_gates``.
         """
-        return int(self._compiled(circuit).num_qubits)
+        return int(self._compiled(program).num_qubits)
 
-    def gate_count(self, circuit: QuantumCircuit) -> int:
-        """Return the instruction count of ``circuit`` after transpilation for Aer.
+    def gate_count(self, program: Program) -> int:
+        """Return the instruction count of ``program`` after transpilation for Aer.
 
         Args:
-            circuit: Circuit to measure. It is transpiled for this backend's basis.
+            program: Program to measure. It is translated and transpiled for this basis.
 
         Returns:
             Total number of instructions on the transpiled circuit, including
-            measurements when ``circuit`` contains them.
+            measurements when ``program`` contains them.
 
         Raises:
-            ValueError: ``circuit`` cannot be compiled into ``basis_gates``.
+            ValueError: ``program`` cannot be compiled into ``basis_gates``.
         """
-        return int(self._compiled(circuit).size())
+        return int(self._compiled(program).size())
 
-    def t_count(self, circuit: QuantumCircuit) -> int:
+    def t_count(self, program: Program) -> int:
         """Return the number of ``t`` gates after transpilation for Aer.
 
         ``tdg`` is not included. A multi-qubit unitary stays one instruction, so
-        a circuit built only from unitaries reports zero.
+        a program built only from unitaries reports zero.
 
         Args:
-            circuit: Circuit to measure. It is transpiled for this backend's basis.
+            program: Program to measure. It is translated and transpiled for this basis.
 
         Returns:
             Count of instructions named ``t``.
 
         Raises:
-            ValueError: ``circuit`` cannot be compiled into ``basis_gates``.
+            ValueError: ``program`` cannot be compiled into ``basis_gates``.
         """
-        return int(self._compiled(circuit).count_ops().get("t", 0))
+        return int(self._compiled(program).count_ops().get("t", 0))
 
-    def toffoli_count(self, circuit: QuantumCircuit) -> int:
+    def toffoli_count(self, program: Program) -> int:
         """Return the number of ``ccx`` and ``ccz`` gates after transpilation for Aer.
 
-        A multi-qubit unitary stays one instruction, so a circuit built only
+        A multi-qubit unitary stays one instruction, so a program built only
         from unitaries reports zero.
 
         Args:
-            circuit: Circuit to measure. It is transpiled for this backend's basis.
+            program: Program to measure. It is translated and transpiled for this basis.
 
         Returns:
             Sum of ``ccx`` and ``ccz`` instructions.
 
         Raises:
-            ValueError: ``circuit`` cannot be compiled into ``basis_gates``.
+            ValueError: ``program`` cannot be compiled into ``basis_gates``.
         """
-        counts = self._compiled(circuit).count_ops()
+        counts = self._compiled(program).count_ops()
         return int(counts.get("ccx", 0)) + int(counts.get("ccz", 0))
 
     def _simulator(self, seed: int | None) -> AerSimulator:
@@ -219,9 +213,16 @@ class AerCircuitBackend:
             options["basis_gates"] = list(self.basis_gates)
         return AerSimulator(**options)
 
-    def _compiled(self, circuit: QuantumCircuit) -> QuantumCircuit:
-        """Transpile ``circuit`` for this backend's basis."""
-        return _transpile(circuit, self._simulator(None), self.basis_gates)
+    def _run_counts(self, circuit: QuantumCircuit, *, shots: int, seed: int | None) -> dict[str, int]:
+        """Transpile ``circuit`` for Aer and return counts."""
+        backend = self._simulator(seed)
+        compiled = _transpile(circuit, backend, self.basis_gates)
+        job = backend.run(compiled, shots=shots)
+        return job.result().get_counts()
+
+    def _compiled(self, program: Program) -> QuantumCircuit:
+        """Translate ``program`` and transpile it for this backend's basis."""
+        return _transpile(to_qiskit(program), self._simulator(None), self.basis_gates)
 
 
 def _basis_gates(basis_gates: Sequence[str] | None) -> tuple[str, ...] | None:
@@ -278,7 +279,7 @@ def _joined(names: Sequence[str]) -> str:
 
 def _expectations(
     backend: AerCircuitBackend,
-    circuit: QuantumCircuit,
+    program: Program,
     qubits: Sequence[int],
     *,
     shots: int,
@@ -286,10 +287,10 @@ def _expectations(
     basis: str,
 ) -> list[float]:
     """Measure ``qubits`` in ``basis`` and return one Pauli expectation per index."""
-    indexes = _qubit_indexes(qubits, circuit.num_qubits, register="circuit")
+    indexes = _qubit_indexes(qubits, program.num_qubits, register="program")
     if not indexes:
         return []
-    measured = circuit.copy()
+    measured = to_qiskit(program)
     if basis == "x":
         for index in dict.fromkeys(indexes):
             measured.h(index)
@@ -297,8 +298,11 @@ def _expectations(
     measured.add_register(ClassicalRegister(len(indexes)))
     for slot, index in enumerate(indexes):
         measured.measure(index, offset + slot)
-    counts = backend.run_counts(measured, shots=shots, seed=seed)
-    flipped = flip_dict(counts)
+    counts = backend._run_counts(measured, shots=shots, seed=seed)
+    # Qiskit separates classical registers with a space. Dropping it leaves
+    # clbit 0 at the right, which is the order ``flip_dict`` turns into an index.
+    flat = {key.replace(" ", ""): count for key, count in counts.items()}
+    flipped = flip_dict(flat)
     return [_outcome_difference(flipped, offset + slot) / shots for slot in range(len(indexes))]
 
 

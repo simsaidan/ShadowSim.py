@@ -1,16 +1,12 @@
 import numpy as np
 import pytest
 
-pytestmark = pytest.mark.qiskit
-
-pytest.importorskip("qiskit")
-pytest.importorskip("qiskit_aer")
 pytest.importorskip("scipy")
 
 import scipy.linalg
 
-import shadowsim.backends.aer as aer_backend_module
 import shadowsim.simulators.splitjmatrix_simulator as splitjmatrix_module
+from shadowsim.backends.program import Hadamard, Unitary
 from shadowsim.core import LocalHamiltonian, LocalOperator, Operator, State
 from shadowsim.simulators import Measurement, SplitJMatrixSimulator
 from shadowsim.simulators.splitjmatrix_simulator import _split_jmatrix
@@ -19,10 +15,19 @@ from shadowsim.simulators.trotterization_simulator import _trotter_slice_unitari
 Z = np.array([[1, 0], [0, -1]], dtype=np.complex128)
 
 
+def _aer():
+    """Return the Aer backend module. Callers need the qiskit extra."""
+    pytest.importorskip("qiskit")
+    pytest.importorskip("qiskit_aer")
+    import shadowsim.backends.aer as aer_backend_module
+
+    return aer_backend_module
+
+
 def _simulator(*, verbose=False, shots=10000, **kwargs):
     backend = kwargs.get("circuit_backend")
     if backend is None:
-        kwargs["circuit_backend"] = aer_backend_module.AerCircuitBackend(shots=shots)
+        kwargs["circuit_backend"] = _aer().AerCircuitBackend(shots=shots)
     else:
         backend.shots = shots
     return SplitJMatrixSimulator(
@@ -38,6 +43,7 @@ def _simulator(*, verbose=False, shots=10000, **kwargs):
     )
 
 
+@pytest.mark.qiskit
 def test_splitjmatrix_simulator_is_quiet_by_default(monkeypatch, capsys):
     verbose_values = []
 
@@ -53,6 +59,7 @@ def test_splitjmatrix_simulator_is_quiet_by_default(monkeypatch, capsys):
     assert verbose_values == [False, False]
 
 
+@pytest.mark.qiskit
 def test_splitjmatrix_simulator_reports_progress_when_verbose(monkeypatch, capsys):
     verbose_values = []
 
@@ -70,6 +77,7 @@ def test_splitjmatrix_simulator_reports_progress_when_verbose(monkeypatch, capsy
     assert verbose_values == [True, True]
 
 
+@pytest.mark.qiskit
 def test_splitjmatrix_simulator_forwards_shots(monkeypatch):
     seen_shots = []
 
@@ -84,6 +92,7 @@ def test_splitjmatrix_simulator_forwards_shots(monkeypatch):
     assert seen_shots == [1234, 1234]
 
 
+@pytest.mark.qiskit
 def test_splitjmatrix_simulator_forwards_seed(monkeypatch):
     seen_seeds = []
 
@@ -98,6 +107,7 @@ def test_splitjmatrix_simulator_forwards_seed(monkeypatch):
     assert seen_seeds == [7, 7]
 
 
+@pytest.mark.qiskit
 def test_splitjmatrix_simulator_progress_callback(monkeypatch):
     seen = []
 
@@ -111,6 +121,7 @@ def test_splitjmatrix_simulator_progress_callback(monkeypatch):
     assert seen == [(0, 2), (1, 2)]
 
 
+@pytest.mark.circuits
 def test_splitjmatrix_simulator_requires_a_shot_budget():
     class Expectations:
         name = "expectations"
@@ -128,26 +139,31 @@ def test_splitjmatrix_simulator_requires_a_shot_budget():
         )
 
 
+@pytest.mark.qiskit
 def test_splitjmatrix_simulator_rejects_nonpositive_shots():
     with pytest.raises(ValueError, match="shots must be a positive integer"):
         _simulator(shots=0)
 
 
+@pytest.mark.qiskit
 @pytest.mark.parametrize("trotter_depth", [0, -1])
 def test_splitjmatrix_simulator_rejects_nonpositive_trotter_depth(trotter_depth):
     with pytest.raises(ValueError, match="trotter_depth must be a positive integer"):
         _simulator(trotter_depth=trotter_depth)
 
 
+@pytest.mark.qiskit
 def test_splitjmatrix_simulator_default_order_is_one():
     assert _simulator().order == 1
 
 
+@pytest.mark.qiskit
 def test_splitjmatrix_simulator_rejects_unsupported_order():
     with pytest.raises(ValueError, match="order must be 1 or 2"):
         _simulator(order=3)  # type: ignore[arg-type]
 
 
+@pytest.mark.qiskit
 def test_splitjmatrix_simulator_records_order(monkeypatch):
     seen = []
 
@@ -163,16 +179,19 @@ def test_splitjmatrix_simulator_records_order(monkeypatch):
     assert result.metadata["order"] == 2
 
 
+@pytest.mark.qiskit
 def test_splitjmatrix_simulator_rejects_non_int_seed():
     with pytest.raises(TypeError, match="seed must be an int or None"):
         _simulator(seed=1.5)  # type: ignore[arg-type]
 
 
+@pytest.mark.qiskit
 def test_splitjmatrix_simulator_rejects_nonpositive_workers():
     with pytest.raises(ValueError, match="workers must be a positive integer"):
         _simulator(workers=0)
 
 
+@pytest.mark.qiskit
 def test_splitjmatrix_simulator_rejects_non_int_workers():
     with pytest.raises(TypeError, match="workers must be an int"):
         _simulator(workers=1.5)  # type: ignore[arg-type]
@@ -180,16 +199,7 @@ def test_splitjmatrix_simulator_rejects_non_int_workers():
         _simulator(workers=True)  # type: ignore[arg-type]
 
 
-def _instruction_signature(circuit: object) -> list[tuple[str, tuple[int, ...], tuple[bytes, ...]]]:
-    """Return gate names, qubit indexes, and parameter bytes, ignoring register names."""
-    rows: list[tuple[str, tuple[int, ...], tuple[bytes, ...]]] = []
-    for instruction in circuit.data:  # type: ignore[attr-defined]
-        qubits = tuple(int(circuit.find_bit(qubit).index) for qubit in instruction.qubits)  # type: ignore[attr-defined]
-        params = tuple(np.asarray(param).tobytes() for param in instruction.operation.params)
-        rows.append((instruction.operation.name, qubits, params))
-    return rows
-
-
+@pytest.mark.circuits
 def test_metrics_circuit_matches_the_final_executed_circuit() -> None:
     class Recording:
         name = "recording"
@@ -230,9 +240,10 @@ def test_metrics_circuit_matches_the_final_executed_circuit() -> None:
         circuit_backend=backend,  # type: ignore[arg-type]
         basis=sim.basis,
     )
-    assert _instruction_signature(sim.metrics_circuit()) == _instruction_signature(backend.circuit)
+    assert sim.metrics_circuit() == backend.circuit
 
 
+@pytest.mark.circuits
 def test_split_j_rotates_body_qubits_into_the_basis() -> None:
     class Recording:
         name = "recording"
@@ -258,16 +269,23 @@ def test_split_j_rotates_body_qubits_into_the_basis() -> None:
         circuit_backend=backend,  # type: ignore[arg-type]
         basis="XY",
     )
-    circuit = backend.circuit
-    assert circuit is not None
-    rotations = [
-        (instruction.operation.name, circuit.find_bit(instruction.qubits[0]).index)
-        for instruction in circuit.data
-        if instruction.operation.name in {"h", "sdg"}
-    ]
+    program = backend.circuit
+    assert program is not None
+    rotations: list[tuple[str, int]] = []
+    for operation in program.operations:
+        if isinstance(operation, Hadamard):
+            rotations.append(("h", operation.qubit))
+        elif (
+            isinstance(operation, Unitary)
+            and operation.matrix.shape == (2, 2)
+            and abs(operation.matrix[1, 1] + 1j) < 1e-8
+            and abs(operation.matrix[0, 0] - 1) < 1e-8
+        ):
+            rotations.append(("sdg", operation.qubits[0]))
     assert rotations == [("h", 1), ("sdg", 2), ("h", 2)]
 
 
+@pytest.mark.qiskit
 def test_split_j_rejects_a_bad_basis() -> None:
     state = State(np.array([1.0, 0.0]), 1)
     with pytest.raises(ValueError, match="basis must be 1 letters from X, Y, and Z"):
@@ -276,6 +294,7 @@ def test_split_j_rejects_a_bad_basis() -> None:
         _simulator(basis="Q")
 
 
+@pytest.mark.qiskit
 def test_splitjmatrix_simulator_keeps_counts_without_the_ancilla(monkeypatch):
     seen = iter([{"011": 3, "010": 2, "100": 5}, {"001": 4}])
 
@@ -302,6 +321,7 @@ def test_splitjmatrix_simulator_keeps_counts_without_the_ancilla(monkeypatch):
     assert simulator.measure([Measurement.population(0)]).observables[0].tolist() == [0.5, 0.0]
 
 
+@pytest.mark.circuits
 def test_split_jmatrix_rejects_nonpositive_shots():
     with pytest.raises(ValueError, match="shots must be a positive integer"):
         _split_jmatrix(
@@ -315,6 +335,7 @@ def test_split_jmatrix_rejects_nonpositive_shots():
         )
 
 
+@pytest.mark.circuits
 def test_split_jmatrix_rejects_unsupported_order():
     with pytest.raises(ValueError, match="order must be 1 or 2"):
         _split_jmatrix(
@@ -329,6 +350,7 @@ def test_split_jmatrix_rejects_unsupported_order():
         )
 
 
+@pytest.mark.circuits
 @pytest.mark.parametrize("trotter_depth", [0, -1])
 def test_split_jmatrix_rejects_nonpositive_trotter_depth(trotter_depth):
     with pytest.raises(ValueError, match="trotter_depth must be a positive integer"):
@@ -344,6 +366,7 @@ def test_split_jmatrix_rejects_nonpositive_trotter_depth(trotter_depth):
         )
 
 
+@pytest.mark.circuits
 @pytest.mark.parametrize("order", [1, 2])
 def test_split_jmatrix_repeats_hamiltonian_slice_to_cover_time_t(order: int) -> None:
     """Each step keeps one jump and repeats the Hamiltonian slice ``trotter_depth`` times."""
@@ -381,11 +404,7 @@ def test_split_jmatrix_repeats_hamiltonian_slice_to_cover_time_t(order: int) -> 
     )
     circuit = backend.circuit
     assert circuit is not None
-    unitaries = [
-        np.asarray(instruction.operation.params[0], dtype=np.complex128)
-        for instruction in circuit.data
-        if instruction.operation.name == "unitary"
-    ]
+    unitaries = [operation.matrix for operation in circuit.operations if isinstance(operation, Unitary)]
     delta = t / (num_steps * trotter_depth)
     expected_h = [matrix for matrix, _sites in _trotter_slice_unitaries(hamiltonians, delta, order)]
     expected_h = expected_h * (num_steps * trotter_depth)
@@ -403,6 +422,7 @@ def test_split_jmatrix_repeats_hamiltonian_slice_to_cover_time_t(order: int) -> 
         assert np.allclose(matrix, want)
 
 
+@pytest.mark.circuits
 def test_split_jmatrix_rejects_non_int_seed():
     with pytest.raises(TypeError, match="seed must be an int or None"):
         _split_jmatrix(
@@ -434,10 +454,12 @@ def _fake_aer_backend(monkeypatch, ctor_kwargs_log=None):
         def run(self, compiled, shots):
             return FakeJob()
 
+    aer_backend_module = _aer()
     monkeypatch.setattr(aer_backend_module, "AerSimulator", FakeBackend)
     monkeypatch.setattr(aer_backend_module, "transpile", lambda circ, backend: circ)
 
 
+@pytest.mark.qiskit
 def test_split_jmatrix_verbose_prints_iterations(monkeypatch, capsys):
     _fake_aer_backend(monkeypatch)
 
@@ -455,6 +477,7 @@ def test_split_jmatrix_verbose_prints_iterations(monkeypatch, capsys):
     assert "Working on iteration 0 out of 1" in capsys.readouterr().out
 
 
+@pytest.mark.qiskit
 def test_split_jmatrix_passes_seed_simulator(monkeypatch):
     ctor_kwargs = []
     _fake_aer_backend(monkeypatch, ctor_kwargs_log=ctor_kwargs)
@@ -473,6 +496,7 @@ def test_split_jmatrix_passes_seed_simulator(monkeypatch):
     assert ctor_kwargs == [{"seed_simulator": 7}]
 
 
+@pytest.mark.qiskit
 def test_split_jmatrix_omits_seed_when_none(monkeypatch):
     ctor_kwargs = []
     _fake_aer_backend(monkeypatch, ctor_kwargs_log=ctor_kwargs)
@@ -491,6 +515,7 @@ def test_split_jmatrix_omits_seed_when_none(monkeypatch):
     assert ctor_kwargs == [{}]
 
 
+@pytest.mark.qiskit
 def test_splitjmatrix_simulator_run_settings_are_keyword_only():
     hamiltonians = [LocalHamiltonian(Z, [0])]
     state = State(np.array([1.0, 0.0]), 1)
@@ -514,6 +539,7 @@ def test_splitjmatrix_simulator_run_settings_are_keyword_only():
     assert sim.num_steps == 4
 
 
+@pytest.mark.circuits
 def test_splitjmatrix_simulator_rejects_non_local_lindblad():
     with pytest.raises(TypeError, match="must be LocalOperator"):
         SplitJMatrixSimulator(
@@ -527,6 +553,7 @@ def test_splitjmatrix_simulator_rejects_non_local_lindblad():
         )
 
 
+@pytest.mark.qiskit
 def test_splitjmatrix_simulator_str_and_repr():
     sim = _simulator(shots=42, seed=7)
     text = str(sim)
