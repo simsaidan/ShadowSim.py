@@ -1,4 +1,4 @@
-"""Programs shared by the Qulacs and Cirq agreement tests.
+"""Programs shared by the statevector agreement tests.
 
 Named gates other than Hadamard are dense unitaries. Qubit 0 is the least
 significant bit of each matrix, the same convention ``from_qiskit`` records.
