@@ -62,12 +62,157 @@ class _AddedModel:
 
 _PageModel = IsingModel | TavisCummingsModel | _AddedModel
 
+_RUN_VERSION = 1
+_DOCUMENT_KEYS = frozenset({"version", "total", "state", "model", "simulators", "measure", "actions"})
+_MODEL_KEYS = frozenset({"id", "arguments", "terms", "qubits"})
+_MEASURE_KEYS = frozenset({"id", "sites", "expression"})
+_ACTION_KEYS = frozenset({"ids", "save_path", "export_path"})
+_ENTRY_KEYS = frozenset({"id", "arguments", "backend"})
+_BACKEND_KEYS = frozenset({"id", "arguments"})
+_STATE_KEYS = frozenset({"id", "value"})
+# Structural names ``_model`` reads beside the chip fields.
+_STRUCTURAL_ARGUMENTS = frozenset({"n_qubits", "n_emitters", "n_cavities", "nu"})
 
-def build_simulator(selection: Mapping[str, object], *, time_steps: int = 101) -> Simulator:
-    """Build a simulator for one builder-page selection.
+
+@dataclass(frozen=True)
+class _SimulatorEntry:
+    """One ``simulators`` entry after the document has been read."""
+
+    id: str
+    arguments: Mapping[str, object]
+    backend_id: str
+    backend_arguments: Mapping[str, object]
+
+
+@dataclass(frozen=True)
+class _RunDocument:
+    """A version 1 run document."""
+
+    total: object
+    state_id: str
+    state_value: object
+    model: Mapping[str, object]
+    simulators: tuple[_SimulatorEntry, ...]
+    measure: Mapping[str, object]
+    action_ids: frozenset[object]
+    actions: Mapping[str, object]
+
+
+def _exact_keys(body: Mapping[str, object], allowed: frozenset[str]) -> None:
+    """Reject a key the document section does not list."""
+    extra = set(body) - allowed
+    if extra:
+        raise ValueError(f"unknown field {min(extra)}")
+
+
+def _object(body: Mapping[str, object], key: str) -> Mapping[str, object]:
+    """Return the object stored at ``key``."""
+    value = body.get(key)
+    if not isinstance(value, Mapping):
+        raise ValueError(f"{key} must be an object")
+    return value
+
+
+def _text(value: object) -> str:
+    """Return ``value`` when it is a string, otherwise an empty string."""
+    if isinstance(value, str):
+        return value
+    return ""
+
+
+def _simulator_entry(entry: object) -> _SimulatorEntry:
+    """Return one simulator entry.
+
+    Raises:
+        ValueError: ``entry`` is not an object, or a nested value has the wrong shape.
+    """
+    if not isinstance(entry, Mapping):
+        raise ValueError("each simulator must be an object")
+    _exact_keys(entry, _ENTRY_KEYS)
+    arguments = entry.get("arguments")
+    if not isinstance(arguments, Mapping):
+        raise ValueError("simulator arguments must be an object")
+    backend = entry.get("backend")
+    if backend is None:
+        return _SimulatorEntry(_text(entry.get("id")), arguments, "", {})
+    if not isinstance(backend, Mapping):
+        raise ValueError("backend must be an object")
+    _exact_keys(backend, _BACKEND_KEYS)
+    backend_arguments = backend.get("arguments")
+    if not isinstance(backend_arguments, Mapping):
+        raise ValueError("backend arguments must be an object")
+    return _SimulatorEntry(_text(entry.get("id")), arguments, _text(backend.get("id")), backend_arguments)
+
+
+def _read_document(body: Mapping[str, object]) -> _RunDocument:
+    """Return ``body`` as a version 1 run document.
+
+    Raises:
+        ValueError: ``version`` is missing or unknown, a section has the wrong
+            shape, or ``body`` carries a key this version does not list.
+    """
+    _exact_keys(body, _DOCUMENT_KEYS)
+    if "version" not in body:
+        raise ValueError("version must be 1")
+    version = body["version"]
+    if type(version) is not int or version != _RUN_VERSION:
+        raise ValueError(f"unknown version {version}")
+    state = _object(body, "state")
+    _exact_keys(state, _STATE_KEYS)
+    model = _object(body, "model")
+    _exact_keys(model, _MODEL_KEYS)
+    measure = _object(body, "measure")
+    _exact_keys(measure, _MEASURE_KEYS)
+    actions = _object(body, "actions")
+    _exact_keys(actions, _ACTION_KEYS)
+    raw_ids = actions.get("ids")
+    if not isinstance(raw_ids, list):
+        raise ValueError("actions must list ids")
+    raw_simulators = body.get("simulators")
+    if not isinstance(raw_simulators, list) or len(raw_simulators) == 0:
+        raise ValueError("simulators must be a non-empty list")
+    return _RunDocument(
+        total=body.get("total"),
+        state_id=_text(state.get("id")),
+        state_value=state.get("value"),
+        model=model,
+        simulators=tuple(_simulator_entry(entry) for entry in raw_simulators),
+        measure=measure,
+        action_ids=frozenset(raw_ids),
+        actions=actions,
+    )
+
+
+def _page_model(model: Mapping[str, object]) -> _PageModel:
+    """Build the posted model.
+
+    A non-empty ``terms`` list is the model. Otherwise ``id`` names a factory
+    and ``arguments`` is bound from that factory's signature.
+    """
+    terms = model.get("terms")
+    if isinstance(terms, list) and terms:
+        return _added_model(terms, model.get("qubits"))
+    arguments = model.get("arguments")
+    if not isinstance(arguments, Mapping):
+        raise ValueError("factory arguments must be an object")
+    return _model(_text(model.get("id")), arguments)
+
+
+def build_simulator(selection: Mapping[str, object], *, simulator: int = 0) -> Simulator:
+    """Build one simulator from a version 1 run document.
+
+    ``selection`` is the document :func:`run_page` reads. ``version`` must be 1.
+    A missing version fails with ``version must be 1``. Any other version fails
+    with that value in the message. ``simulator`` selects an entry of
+    ``simulators``; the default is the first.
 
     Args:
-        selection: Page ids and settings. ``then`` is ignored. ``simulator`` is
+        selection: ``total`` is the shared evolution time. ``state`` has ``id``
+            and ``value``. ``model`` is ``id`` plus ``arguments``, or ``terms``
+            plus ``qubits``. Each simulator has ``id``, ``arguments``, and
+            ``backend`` (null, or ``id`` plus ``arguments``). ``measure`` has
+            ``id`` and ``sites``, plus ``expression`` for ``counts``. ``actions``
+            is ignored. The simulator ``id`` is
             an id from :func:`shadowsim.simulators.catalog.listed_simulators`.
             A simulator that records observables ignores a missing backend. A
             circuit simulator's ``backend`` is an id from
@@ -83,92 +228,81 @@ def build_simulator(selection: Mapping[str, object], *, time_steps: int = 101) -
             A non-empty ``terms`` list is the model instead: each item has ``id``
             and ``matrix``, and local terms also have ``sites``. At least one
             Hamiltonian term is required.
-            Factories that require ``n_qubits`` read ``qubits``, at most 15. Jaynes–Cummings is
-            always 3 qubits and ignores ``qubits``. Tavis–Cummings reads
-            ``emitters`` (1 to 13, default 1) and uses ``2 + emitters`` qubits.
-            Tavis–Cummings–Hubbard reads ``cavities`` (default 1), ``emitters``
-            (1 to 13, default 1), and real ``nu`` (default 0). Its qubit count is
-            ``cavities * (2 + emitters)``, at most 15. Jaynes–Cummings–Hubbard
-            reads ``cavities`` and real ``nu``, with one emitter per cavity, so
-            its qubit count is ``3 * cavities``, at most 15.
-            ``factory`` supplies the remaining chip arguments. A missing
-            ``factory`` keeps each model's defaults. Numbers are finite reals
-            or numeric text. A per-emitter value is a scalar or a sequence
-            whose length is the emitter count. ``edges`` is empty, dash pairs
-            such as ``0-1, 1-2``, or a list of pairs.
-            A basis or Gray code state reads ``basis`` or ``gray``, a string of 0
-            and 1 whose length is the qubit count, at most 15 characters. Angle
-            reads ``angles``, one finite real number per qubit. Amplitude reads
-            ``amplitudes``, a non-zero list of finite real numbers, and the
-            padded vector must use the model's qubit count.
-            ``sites`` lists qubit indexes to measure. Missing ``sites`` measures
-            every qubit.
-            ``time_steps`` in ``selection`` overrides the ``time_steps`` argument
-            and must be from 1 to 500. Shot-based simulators also read
+            Factory ``arguments`` use the factory's parameter names. A posted
+            name the factory does not take fails. ``n_qubits`` is at most 15.
+            Tavis–Cummings reads ``n_emitters`` (1 to 13, default 1) and uses
+            ``2 + n_emitters`` qubits. Tavis–Cummings–Hubbard reads
+            ``n_cavities`` (default 1), ``n_emitters`` (1 to 13, default 1), and
+            real ``nu`` (default 0). Its qubit count is ``n_cavities * (2 +
+            n_emitters)``, at most 15. Jaynes–Cummings–Hubbard reads
+            ``n_cavities`` and real ``nu``, with one emitter per cavity, so its
+            qubit count is ``3 * n_cavities``, at most 15. Jaynes–Cummings is 3
+            qubits. The other arguments are the chip fields. A missing chip
+            field keeps that model's default.
+            Numbers are finite reals or numeric text. A per-emitter value is a
+            scalar or a sequence whose length is the emitter count. ``edges`` is
+            empty, dash pairs such as ``0-1, 1-2``, or a list of pairs.
+            ``state.value`` is the payload for ``state.id``. A basis or Gray code
+            is a string of 0 and 1 whose length is the qubit count, at most 15
+            characters. Angle is one finite real number per qubit. Amplitude is
+            a non-zero list of finite real numbers, and the padded vector must
+            use the model's qubit count. ``measure.sites`` lists qubit indexes
+            to measure. Missing ``sites`` measures every qubit.
+            ``time_steps`` in the simulator arguments must be from 1 to 500.
+            Missing ``time_steps`` uses 101 for an observables simulator and 11
+            for a circuit simulator. Shot-based simulators also read
             ``num_steps`` (1 to 100), ``trotter_depth`` (1 to 100), ``order`` (1 or
-            2), and ``seed``. A backend with a shot budget reads ``shots`` (1 to
-            100000). A posted ``time_steps`` value is checked before the
-            simulator extra is imported. A posted ``shots`` value is checked
-            then too when that backend has a shot budget, and also when no
-            backend module can be imported. A gate-list field, such as Aer's
-            ``basis_gates``, is a comma-separated string or a sequence of names.
-            A blank value keeps
+            2), and ``seed`` from those arguments. A backend with a shot budget
+            reads ``shots`` (1 to 100000) from the backend arguments. A posted
+            ``time_steps`` value is checked before the simulator extra is
+            imported. A posted ``shots`` value is checked then too when that
+            backend has a shot budget, and also when no backend module can be
+            imported. A gate-list field, such as Aer's ``basis_gates``, is a
+            comma-separated string or a sequence of names. A blank value keeps
             that backend's own basis. Any other backend field is a non-negative
             number, and a missing value keeps the catalog default. A simulator
             with ``closed_system`` set rejects Lindblad operators. Missing
             shot-based values use the page budget.
-        time_steps: Points on the QuTiP solver grid when ``selection`` omits
-            ``time_steps``. Must be from 1 to 500. Defaults to the page preview.
+        simulator: Index of the ``simulators`` entry to build. Defaults to the first.
 
     Returns:
         A simulator that has not been run.
 
     Raises:
-        ValueError: The selection cannot run in this slice.
+        ValueError: The document cannot run in this slice.
         ImportError: The extra required by the simulator or backend is not installed.
     """
-    if isinstance(time_steps, bool) or not isinstance(time_steps, int) or time_steps < 1:
-        raise ValueError("time_steps must be a positive integer")
-    if time_steps > _MAX_TIME_STEPS:
-        raise ValueError(f"time_steps must be from 1 to {_MAX_TIME_STEPS}")
-    simulator_id = _choice(selection, "simulator")
-    class_name, module_name, extra = _simulator_export(simulator_id)
-    backend = _choice(selection, "backend")
+    document = _read_document(selection)
+    return _build_simulator(document, simulator)
+
+
+def _build_simulator(document: _RunDocument, index: int) -> Simulator:
+    """Build ``document.simulators[index]``. The document has already been read."""
+    entry = document.simulators[index]
+    class_name, module_name, extra = _simulator_export(entry.id)
+    backend = entry.backend_id
     if backend and backend not in _backend_ids():
         raise ValueError("unknown backend")
-    state_id = _choice(selection, "state")
-    if state_id not in _STATES:
+    if document.state_id not in _STATES:
         raise ValueError("unknown initial state")
-    total_time = _positive_number(selection.get("total"))
-    terms = selection.get("terms")
-    model: _PageModel
-    if isinstance(terms, list) and terms:
-        model = _added_model(terms, selection.get("qubits"))
-    else:
-        model = _model(
-            _choice(selection, "model"),
-            selection.get("qubits"),
-            selection.get("emitters"),
-            selection.get("cavities"),
-            selection.get("nu"),
-            selection.get("factory"),
-        )
-    state = _initial_state(state_id, model.num_qubits, _state_data(selection, state_id))
-    measure_id = _choice(selection, "measure")
-    sites = _measure_sites(selection, model.num_qubits)
-    _measurements(selection, model.num_qubits)
+    total_time = _positive_number(document.total)
+    model = _page_model(document.model)
+    state = _initial_state(document.state_id, model.num_qubits, document.state_value)
+    measure_id = _text(document.measure.get("id"))
+    sites = _measure_sites(document.measure, model.num_qubits)
+    _measurements(document.measure, model.num_qubits)
     if class_name == "QutipSimulator":
         _reject_counts(measure_id, "QuTiP")
-        steps = _selection_positive_int(selection, "time_steps", time_steps, "time steps", maximum=_MAX_TIME_STEPS)
+        steps = _selection_positive_int(entry.arguments, "time_steps", 101, "time steps", maximum=_MAX_TIME_STEPS)
         return _qutip_simulator(model, state, measure_id, total_time, steps, sites)
-    if "time_steps" in selection:
-        _selection_positive_int(selection, "time_steps", time_steps, "time steps", maximum=_MAX_TIME_STEPS)
-    if backend and "shots" in selection and _backend_has_shot_budget(backend):
-        _selection_positive_int(selection, "shots", _CIRCUIT_SHOTS, "shots", maximum=_MAX_SHOTS)
+    if "time_steps" in entry.arguments:
+        _selection_positive_int(entry.arguments, "time_steps", 101, "time steps", maximum=_MAX_TIME_STEPS)
+    if backend and "shots" in entry.backend_arguments and _backend_has_shot_budget(backend):
+        _selection_positive_int(entry.backend_arguments, "shots", _CIRCUIT_SHOTS, "shots", maximum=_MAX_SHOTS)
     cls = _load_exported(module_name, extra, class_name, "unknown simulator")
     if "observables" in inspect.signature(cls).parameters:
         _reject_counts(measure_id, class_name.removesuffix("Simulator"))
-        steps = _selection_positive_int(selection, "time_steps", time_steps, "time steps", maximum=_MAX_TIME_STEPS)
+        steps = _selection_positive_int(entry.arguments, "time_steps", 101, "time steps", maximum=_MAX_TIME_STEPS)
         return _qutip_simulator(model, state, measure_id, total_time, steps, sites, cls)
     if not backend:
         raise ValueError("unknown backend")
@@ -177,17 +311,28 @@ def build_simulator(selection: Mapping[str, object], *, time_steps: int = 101) -
         _reject_counts(measure_id, record["title"])
     if getattr(cls, "requires_sampling_backend", False) and not record["shots"]:
         raise ValueError(f"{class_name.removesuffix('Simulator')} needs a backend with a shot budget")
-    return _circuit_simulator(cls, selection, model, state, measure_id, total_time, sites, record)
+    return _circuit_simulator(
+        cls,
+        entry.arguments,
+        entry.backend_arguments,
+        model,
+        state,
+        measure_id,
+        total_time,
+        sites,
+        record,
+    )
 
 
 def run_page(selection: Mapping[str, object], *, output_root: Path | None = None) -> dict[str, object]:
-    """Run one selection, or a benchmark when ``simulators`` lists two or more.
+    """Run every simulator in a version 1 document.
 
+    One ``simulators`` entry is one simulation. Two or more is a benchmark.
     The first entry is the reference. Any exported simulator may be the reference
     or a challenger. Every entry must share ``total`` and ``time_steps``, because
     :class:`~shadowsim.benchmarking.benchmark.Benchmark` compares one time grid.
-    A missing or shorter list runs the flat ``simulator`` field as one simulation.
-    ``then`` is one action, or ``thens`` lists several. ``save`` writes each
+    ``time_steps`` is read from that entry's arguments. ``actions`` lists the
+    ids to run. ``save`` writes each
     result under ``save_path``, or ``results/run1`` when that key is missing.
     One result is the directory itself. A benchmark writes ``sim_1``,
     ``sim_2``, and so on inside it. ``export`` writes metrics JSON under
@@ -206,20 +351,19 @@ def run_page(selection: Mapping[str, object], *, output_root: Path | None = None
     A relative path is resolved from the working directory.
 
     Args:
-        selection: Page ids, settings, and result actions. A backend row may include
-            the fields described on :func:`build_simulator`.
+        selection: The version 1 document described on :func:`build_simulator`.
         output_root: Directory that save and export paths must stay under.
             ``None`` leaves those paths unchanged.
     """
-    directory = _save_directory(selection, output_root)
-    export_to = _export_location(selection, output_root)
-    entries = selection.get("simulators")
-    if isinstance(entries, list) and len(entries) >= 2:
-        return _run_benchmark(selection, entries, directory, export_to)
-    simulator = build_simulator(selection)
+    document = _read_document(selection)
+    directory = _save_directory(document, output_root)
+    export_to = _export_location(document, output_root)
+    if len(document.simulators) >= 2:
+        return _run_benchmark(selection, document, directory, export_to)
+    simulator = _build_simulator(document, 0)
     simulator.simulate()
     result = _measured_result(simulator, selection)
-    payload = _result_payload(result, simulator, selection)
+    payload = _result_payload(result, simulator, document.measure)
     saved = _write_results(directory, [result])
     if saved:
         payload["saved"] = saved
@@ -238,39 +382,28 @@ def _measured_result(simulator: Simulator, selection: Mapping[str, object]) -> S
         ValueError: ``simulator`` has not been simulated, or the measurement
             cannot be read from its result.
     """
+    document = _read_document(selection)
     if getattr(simulator, "circuit_backend", None) is None:
         if simulator.last_result is None:
             raise ValueError("Results are not available. Please run the simulation first.")
         return simulator.last_result
-    return simulator.measure(_measurements(selection, simulator.num_qubits))
+    return simulator.measure(_measurements(document.measure, simulator.num_qubits))
 
 
 def _result_payload(
     result: SimulationResult,
     simulator: Simulator,
-    selection: Mapping[str, object],
+    measure: Mapping[str, object],
 ) -> dict[str, object]:
     """Return the curves, names, and resource record the page chart draws."""
     return {
         "times": result.times.tolist(),
         "observables": [curve.tolist() for curve in result.observables],
-        "labels": _observable_labels(selection, simulator.num_qubits),
+        "labels": _observable_labels(measure, simulator.num_qubits),
         "resources": [_resource_record(simulator, result.runtime)],
         "runtime": result.runtime,
         "algorithm": result.algorithm,
     }
-
-
-def _then_actions(selection: Mapping[str, object]) -> frozenset[str]:
-    """Return the selected result actions. ``thens`` wins over a single ``then``."""
-    raw = selection.get("thens")
-    if raw is None:
-        raw = selection.get("then")
-    if isinstance(raw, str):
-        return frozenset({raw})
-    if isinstance(raw, list):
-        return frozenset(item for item in raw if isinstance(item, str))
-    return frozenset()
 
 
 def _path_under_root(path: Path, root: Path, label: str) -> Path:
@@ -286,16 +419,16 @@ def _path_under_root(path: Path, root: Path, label: str) -> Path:
     return resolved
 
 
-def _save_directory(selection: Mapping[str, object], output_root: Path | None) -> Path | None:
+def _save_directory(document: _RunDocument, output_root: Path | None) -> Path | None:
     """Return the save directory, or ``None`` when this run is not saved.
 
     Raises:
         ValueError: ``save`` is selected and ``save_path`` is not a path, or it
             resolves outside ``output_root``.
     """
-    if "save" not in _then_actions(selection):
+    if "save" not in document.action_ids:
         return None
-    raw = selection.get("save_path", _DEFAULT_SAVE_PATH)
+    raw = document.actions.get("save_path", _DEFAULT_SAVE_PATH)
     if raw is None:
         raw = _DEFAULT_SAVE_PATH
     if not isinstance(raw, str) or not raw.strip():
@@ -306,16 +439,16 @@ def _save_directory(selection: Mapping[str, object], output_root: Path | None) -
     return _path_under_root(path, output_root, "save path")
 
 
-def _export_location(selection: Mapping[str, object], output_root: Path | None) -> Path | None:
+def _export_location(document: _RunDocument, output_root: Path | None) -> Path | None:
     """Return where to write metrics JSON, or ``None`` when this run is not exported.
 
     Raises:
         ValueError: ``export`` is selected and ``export_path`` is not a path, or
             it resolves outside ``output_root``.
     """
-    if "export" not in _then_actions(selection):
+    if "export" not in document.action_ids:
         return None
-    raw = selection.get("export_path", _DEFAULT_EXPORT_DIR)
+    raw = document.actions.get("export_path", _DEFAULT_EXPORT_DIR)
     if raw is None:
         raw = _DEFAULT_EXPORT_DIR
     if not isinstance(raw, str) or not raw.strip():
@@ -366,23 +499,17 @@ def _series_name(report_id: str) -> str:
 
 def _run_benchmark(
     selection: Mapping[str, object],
-    entries: list[object],
+    document: _RunDocument,
     directory: Path | None,
     export_to: Path | None,
 ) -> dict[str, object]:
     """Build each entry, run them on one grid, and return curves, names, and resources."""
-    simulators: list[Simulator] = []
-    for entry in entries:
-        if not isinstance(entry, Mapping):
-            raise ValueError("each simulator must be an object")
-        merged = dict(selection)
-        merged.update(entry)
-        simulators.append(build_simulator(merged))
+    simulators = [_build_simulator(document, index) for index in range(len(document.simulators))]
     benchmark = Benchmark(simulators[0], *simulators[1:])
     benchmark.run()
     recorded = [_measured_result(simulator, selection) for simulator in simulators]
     resources = benchmark.resource_metrics()
-    labels = _observable_labels(selection, simulators[0].num_qubits)
+    labels = _observable_labels(document.measure, simulators[0].num_qubits)
     series: list[dict[str, object]] = []
     for result, resource in zip(recorded, resources, strict=True):
         name = _series_name(str(resource["simulator_id"]))
@@ -446,7 +573,8 @@ def _qutip_simulator(
 
 def _circuit_simulator(
     cls: Any,
-    selection: Mapping[str, object],
+    arguments: Mapping[str, object],
+    backend_arguments: Mapping[str, object],
     model: _PageModel,
     state: State,
     measure_id: str,
@@ -461,21 +589,21 @@ def _circuit_simulator(
     expectations when the backend has no shot budget, which
     :func:`_measured_result` reads.
     """
-    steps = _selection_positive_int(selection, "time_steps", _CIRCUIT_TIME_STEPS, "time steps", maximum=_MAX_TIME_STEPS)
+    steps = _selection_positive_int(arguments, "time_steps", _CIRCUIT_TIME_STEPS, "time steps", maximum=_MAX_TIME_STEPS)
     num_steps = _selection_positive_int(
-        selection, "num_steps", _CIRCUIT_NUM_STEPS, "product steps", maximum=_MAX_NUM_STEPS
+        arguments, "num_steps", _CIRCUIT_NUM_STEPS, "product steps", maximum=_MAX_NUM_STEPS
     )
-    seed = _selection_integer(selection, "seed", _CIRCUIT_SEED, "seed")
+    seed = _selection_integer(arguments, "seed", _CIRCUIT_SEED, "seed")
     if getattr(cls, "closed_system", False) and model.c_ops_local:
         raise ValueError(f"{cls.__name__.removesuffix('Simulator')} is closed-system only")
-    circuit_backend = _make_backend(record, selection)
+    circuit_backend = _make_backend(record, backend_arguments)
     # Trotter depth and order are constructor arguments only for product-formula simulators.
     extra: dict[str, Any] = {}
     if "trotter_depth" in inspect.signature(cls).parameters:
         extra["trotter_depth"] = _selection_positive_int(
-            selection, "trotter_depth", 1, "Trotter depth", maximum=_MAX_TROTTER_DEPTH
+            arguments, "trotter_depth", 1, "Trotter depth", maximum=_MAX_TROTTER_DEPTH
         )
-        extra["order"] = _selection_order(selection)
+        extra["order"] = _selection_order(arguments)
     if measure_id == "x":
         extra["basis"] = _x_basis(model.num_qubits, sites)
     return cls(
@@ -753,14 +881,6 @@ def _named_integer(value: object, name: str) -> int:
     raise ValueError(f"{name} must be an integer")
 
 
-def _choice(selection: Mapping[str, object], key: str) -> str:
-    """Return a string id from ``selection``, or an empty string when it is absent."""
-    value = selection.get(key)
-    if isinstance(value, str):
-        return value
-    return ""
-
-
 def _positive_number(value: object) -> float:
     """Return ``value`` as a finite number greater than zero."""
     if isinstance(value, bool) or not isinstance(value, (int, float, str)):
@@ -954,11 +1074,9 @@ _EDGE_PAREN = re.compile(r"\(\s*(\d+)\s*,\s*(\d+)\s*\)")
 def _factory_kwargs(params: list[ListedParam], payload: object, *, n_emitters: int | None) -> dict[str, object]:
     """Return factory keyword arguments posted by the chip.
 
-    A missing payload keeps every default. An empty ``edges`` value is omitted
+    A missing chip field keeps that default. An empty ``edges`` value is omitted
     so the chain preset stays in place.
     """
-    if payload is None:
-        return {}
     if not isinstance(payload, Mapping):
         raise ValueError("factory arguments must be an object")
     kwargs: dict[str, object] = {}
@@ -1067,59 +1185,70 @@ def _edge_text(text: str) -> list[tuple[int, int]] | None:
     return pairs
 
 
-def _model(
-    model_id: str,
-    qubits: object,
-    emitters: object = None,
-    cavities: object = None,
-    nu: object = None,
-    factory: object = None,
-) -> IsingModel | TavisCummingsModel:
-    """Build the selected factory.
+def _factory_qubit_budget(
+    parameters: Mapping[str, inspect.Parameter],
+    *,
+    n_emitters: int | None,
+    n_cavities: int | None,
+) -> None:
+    """Reject a layout whose qubit count is above the page budget.
 
-    Ising reads ``qubits``, at most 15. Jaynes–Cummings is always 3 qubits. Tavis–Cummings
-    reads ``emitters`` and uses two cavity qubits plus one qubit per emitter.
-    Tavis–Cummings–Hubbard repeats that block once per cavity and reads ``nu``.
-    Jaynes–Cummings–Hubbard is that model with one emitter per cavity.
-    ``factory`` adds the chip arguments. A missing value keeps the defaults.
+    ``n_qubits`` is capped where it is read. Both cavity and emitter counts use
+    ``n_cavities * (2 + n_emitters)``. Cavities alone use ``3 * n_cavities``.
+    Emitters alone are already at most 13, and a factory with neither is 3 qubits.
+    """
+    if "n_qubits" in parameters or n_cavities is None:
+        return
+    if n_emitters is not None and n_cavities * (2 + n_emitters) > _MAX_FACTORY_QUBITS:
+        raise ValueError(f"cavities and emitters must use at most {_MAX_FACTORY_QUBITS} qubits")
+    if n_emitters is None and n_cavities * 3 > _MAX_FACTORY_QUBITS:
+        raise ValueError(f"cavities must use at most {_MAX_FACTORY_QUBITS} qubits")
+
+
+def _model(model_id: str, arguments: Mapping[str, object]) -> IsingModel | TavisCummingsModel:
+    """Build the selected factory by binding ``arguments`` to its signature.
+
+    ``n_qubits``, ``n_emitters``, ``n_cavities``, and ``nu`` use the page
+    coercers when the signature has those names. Chip fields go through
+    :func:`_factory_kwargs`, and a list-valued field uses the bound emitter
+    count, or length 1 when the signature has no ``n_emitters``. A posted name
+    the signature does not take fails. A missing chip field keeps the default.
     """
     record = next((item for item in listed_models() if item["id"] == model_id), None)
     if record is None:
         raise ValueError("unknown model")
     build = getattr(models, record["id"])
-    if model_id == "tavis_cummings_hubbard":
-        emitter_count = _emitter_count(emitters)
-        cavity_count = _cavity_count(cavities)
-        qubit_count = cavity_count * (2 + emitter_count)
-        if qubit_count > _MAX_FACTORY_QUBITS:
-            raise ValueError(f"cavities and emitters must use at most {_MAX_FACTORY_QUBITS} qubits")
-        kwargs = _factory_kwargs(record["params"], factory, n_emitters=emitter_count)
-        built = build(n_emitters=emitter_count, n_cavities=cavity_count, nu=_hopping(nu), **kwargs)
-    elif model_id == "jaynes_cummings_hubbard":
-        cavity_count = _cavity_count(cavities)
-        if cavity_count * 3 > _MAX_FACTORY_QUBITS:
-            raise ValueError(f"cavities must use at most {_MAX_FACTORY_QUBITS} qubits")
-        kwargs = _factory_kwargs(record["params"], factory, n_emitters=1)
-        built = build(n_cavities=cavity_count, nu=_hopping(nu), **kwargs)
-    elif model_id == "tavis_cummings":
-        emitter_count = _emitter_count(emitters)
-        kwargs = _factory_kwargs(record["params"], factory, n_emitters=emitter_count)
-        built = build(n_emitters=emitter_count, **kwargs)
-    elif record["qubits"]:
-        num_qubits = _integer(qubits)
+    parameters = inspect.signature(build).parameters
+    structural = _STRUCTURAL_ARGUMENTS.intersection(parameters)
+    chip_names = {param["name"] for param in record["params"]}
+    unknown = [name for name in arguments if name not in structural and name not in chip_names]
+    if unknown:
+        raise ValueError(f"unknown argument {min(unknown)}")
+    bound: dict[str, object] = {}
+    n_emitters: int | None = None
+    n_cavities: int | None = None
+    if "n_qubits" in parameters:
+        num_qubits = _integer(arguments.get("n_qubits"))
         if num_qubits > _MAX_FACTORY_QUBITS:
             raise ValueError(f"qubits must be at most {_MAX_FACTORY_QUBITS}")
-        kwargs = _factory_kwargs(record["params"], factory, n_emitters=None)
-        built = build(n_qubits=num_qubits, **kwargs)
-    else:
-        kwargs = _factory_kwargs(record["params"], factory, n_emitters=1)
-        built = build(**kwargs)
-    return cast(IsingModel | TavisCummingsModel, built)
+        bound["n_qubits"] = num_qubits
+    if "n_emitters" in parameters:
+        n_emitters = _emitter_count(arguments.get("n_emitters"))
+        bound["n_emitters"] = n_emitters
+    if "n_cavities" in parameters:
+        n_cavities = _cavity_count(arguments.get("n_cavities"))
+        bound["n_cavities"] = n_cavities
+    _factory_qubit_budget(parameters, n_emitters=n_emitters, n_cavities=n_cavities)
+    sequence_length = n_emitters if n_emitters is not None else 1
+    bound.update(_factory_kwargs(record["params"], arguments, n_emitters=sequence_length))
+    if "nu" in parameters:
+        bound["nu"] = _hopping(arguments.get("nu"))
+    return cast(IsingModel | TavisCummingsModel, build(**bound))
 
 
-def _measure_sites(selection: Mapping[str, object], num_qubits: int) -> list[int]:
+def _measure_sites(measure: Mapping[str, object], num_qubits: int) -> list[int]:
     """Return qubit indexes to measure. Missing ``sites`` means every qubit."""
-    raw = selection.get("sites")
+    raw = measure.get("sites")
     if raw is None:
         return list(range(num_qubits))
     if not isinstance(raw, list) or not raw:
@@ -1133,36 +1262,36 @@ def _measure_sites(selection: Mapping[str, object], num_qubits: int) -> list[int
     return sites
 
 
-def _measurements(selection: Mapping[str, object], num_qubits: int) -> list[Measurement]:
+def _measurements(measure: Mapping[str, object], num_qubits: int) -> list[Measurement]:
     """Return the page measurements: one expectation per selected qubit, or one counts expression.
 
     Raises:
         ValueError: ``measure`` is unknown, or the counts ``expression`` is not allowed.
     """
-    measure_id = _choice(selection, "measure")
-    sites = _measure_sites(selection, num_qubits)
+    measure_id = _text(measure.get("id"))
+    sites = _measure_sites(measure, num_qubits)
     if measure_id in ("x", "z"):
         return [Measurement.expectation(site) for site in sites]
     if measure_id != "counts":
         raise ValueError("unknown measurement")
-    expression = selection.get("expression")
+    expression = measure.get("expression")
     if not isinstance(expression, str):
         raise ValueError("a counts measurement needs an expression")
     return [Measurement(tuple(sites), expression)]
 
 
-def _observable_labels(selection: Mapping[str, object], num_qubits: int) -> list[str]:
+def _observable_labels(measure: Mapping[str, object], num_qubits: int) -> list[str]:
     """Return one chart name per curve.
 
     ``z`` on qubits 0 and 1 is ``⟨Z⟩ on 0`` and ``⟨Z⟩ on 1``. ``counts`` is its expression.
     """
-    measure_id = _choice(selection, "measure")
+    measure_id = _text(measure.get("id"))
     if measure_id == "counts":
-        return [item.label for item in _measurements(selection, num_qubits)]
+        return [item.label for item in _measurements(measure, num_qubits)]
     if measure_id not in ("x", "z"):
         raise ValueError("unknown measurement")
     letter = measure_id.upper()
-    return [f"⟨{letter}⟩ on {site}" for site in _measure_sites(selection, num_qubits)]
+    return [f"⟨{letter}⟩ on {site}" for site in _measure_sites(measure, num_qubits)]
 
 
 def _observables(num_qubits: int, measure_id: str, sites: list[int]) -> list[Operator]:
@@ -1174,12 +1303,6 @@ def _observables(num_qubits: int, measure_id: str, sites: list[int]) -> list[Ope
         label[site] = letter
         observables.append(Operator("".join(label)))
     return observables
-
-
-def _state_data(selection: Mapping[str, object], state_id: str) -> object:
-    """Return the posted payload for ``state_id``."""
-    key = {"basis": "basis", "gray": "gray", "angle": "angles", "amplitude": "amplitudes"}[state_id]
-    return selection.get(key)
 
 
 def _bit_string(value: object, label: str) -> list[int]:

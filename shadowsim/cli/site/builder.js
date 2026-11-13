@@ -2516,36 +2516,54 @@ async function cancelRun() {
   }
 }
 
-function runRequest() {
-  const factory = postedFactory();
+function stateValue() {
+  if (selection.state === "basis") return basisBits;
+  if (selection.state === "gray") return grayBits;
+  if (selection.state === "angle") return numberList(angleText, STATE_LIMITS.angle);
+  if (selection.state === "amplitude") return numberList(amplitudeText, STATE_LIMITS.amplitude);
+  return null;
+}
+
+function postedMeasure() {
+  const measure = { id: selection.measure, sites: explicitSites() };
+  if (selection.measure === "counts") measure.expression = countsExpression.trim();
+  return measure;
+}
+
+function modelArguments() {
+  if (selection.model !== "preexisting") return {};
+  const body = { ...(postedFactory() ?? {}) };
+  if (chosenFactory()?.qubits) body.n_qubits = settings.qubits;
+  if (usesEmitterCount()) body.n_emitters = emitterCount();
+  if (hubbardSelected() || jaynesHubbardSelected()) {
+    body.n_cavities = cavityCount();
+    body.nu = hoppingValue();
+  }
+  return body;
+}
+
+function postedModel() {
+  const terms = postedTerms();
+  if (Array.isArray(terms) && terms.length) return { terms, qubits: settings.qubits };
   return {
-    ...postedSelection(),
-    model: selection.model === "preexisting" ? preexistingId : selection.model,
-    qubits: settings.qubits,
+    id: selection.model === "preexisting" ? preexistingId : selection.model,
+    arguments: modelArguments(),
+  };
+}
+
+function runRequest() {
+  return {
+    version: 1,
     total: settings.total,
-    basis: basisBits,
-    gray: grayBits,
-    angles: numberList(angleText, STATE_LIMITS.angle),
-    amplitudes: numberList(amplitudeText, STATE_LIMITS.amplitude),
-    sites: explicitSites(),
-    ...(selection.measure === "counts" ? { expression: countsExpression.trim() } : {}),
-    ...(placedSims[0] ? entryBody(placedSims[0]) : {}),
+    state: { id: selection.state, value: stateValue() },
+    model: postedModel(),
     simulators: placedSims.map(entryBody),
-    then: placedThens[0] ?? null,
-    thens: [...placedThens],
-    save_path: savePath.trim(),
-    export_path: exportPath.trim(),
-    terms: postedTerms(),
-    ...(selection.model === "preexisting" && preexistingId === "tavis_cummings"
-      ? { emitters: emitterCount() }
-      : {}),
-    ...(selection.model === "preexisting" && preexistingId === "tavis_cummings_hubbard"
-      ? { emitters: emitterCount(), cavities: cavityCount(), nu: hoppingValue() }
-      : {}),
-    ...(selection.model === "preexisting" && preexistingId === "jaynes_cummings_hubbard"
-      ? { cavities: cavityCount(), nu: hoppingValue() }
-      : {}),
-    ...(factory ? { factory } : {}),
+    measure: postedMeasure(),
+    actions: {
+      ids: [...placedThens],
+      save_path: savePath.trim(),
+      export_path: exportPath.trim(),
+    },
   };
 }
 
@@ -2955,12 +2973,6 @@ function removeThen(id) {
   selection.then = placedThens[0] ?? null;
   releaseStatusHold();
   commitLane("then");
-}
-
-function postedSelection() {
-  const posted = { ...selection };
-  delete posted.backend;
-  return posted;
 }
 
 function attachBackend(backendId, key) {

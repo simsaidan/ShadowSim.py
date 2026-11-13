@@ -943,23 +943,29 @@
     return usingAddedOperators() ? String(qubitCount()) : "model.num_qubits";
   }
 
+  function postedBackend(entry) {
+    if (isReference(entry) || !entry.backend) return null;
+    const block = blockById("backend", entry.backend);
+    const fields = {};
+    if (block?.shots) fields.shots = String(entry.shots ?? "").trim();
+    for (const field of block?.fields ?? []) {
+      fields[field.name] = String(entry.backendFields?.[field.name] ?? "").trim();
+    }
+    return { id: entry.backend, arguments: fields };
+  }
+
   function entryBody(entry) {
     const params = entry.params;
-    const body = { simulator: entry.id, time_steps: params.timeSteps };
-    if (isReference(entry)) return body;
-    body.num_steps = params.numSteps;
-    body.seed = params.seed;
-    if (usesTrotter(entry)) {
-      body.trotter_depth = params.trotterDepth;
-      body.order = params.order;
+    const fields = { time_steps: params.timeSteps };
+    if (!isReference(entry)) {
+      fields.num_steps = params.numSteps;
+      fields.seed = params.seed;
+      if (usesTrotter(entry)) {
+        fields.trotter_depth = params.trotterDepth;
+        fields.order = params.order;
+      }
     }
-    if (entry.backend) body.backend = entry.backend;
-    const backend = blockById("backend", entry.backend);
-    if (backend?.shots) body.shots = String(entry.shots ?? "").trim();
-    for (const field of backend?.fields ?? []) {
-      body[field.name] = String(entry.backendFields?.[field.name] ?? "").trim();
-    }
-    return body;
+    return { id: entry.id, arguments: fields, backend: postedBackend(entry) };
   }
 
   function xBasis(sites) {
