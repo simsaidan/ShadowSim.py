@@ -29,15 +29,14 @@ class IsingModel:
     """Bundled operators for a classical or transverse-field Ising Hamiltonian.
 
     Qubits are labeled ``0 .. num_qubits - 1``. Couplings act on the edge set
-    ``edges``; single-site fields are on every qubit. Contiguous nearest-neighbor
-    ZZ terms (``|i - j| == 1``) and single-site fields are exposed as
-    ``LocalHamiltonian`` terms. Non-contiguous ZZ edges (periodic wrap or custom
-    long-range couplings) appear only in ``full_hamiltonians`` / ``pauli_sum``.
+    ``edges``; single-site fields are on every qubit. Every ZZ edge and every
+    single-site field is a ``LocalHamiltonian``. A long-range edge, including
+    the periodic wrap, names its two endpoints. Embedding that term puts
+    identity on the sites in between.
 
     Attributes:
         full_hamiltonians: Hamiltonian terms in the full Hilbert space.
-        local_hamiltonians: Contiguous nearest-neighbor ZZ terms
-            (``|i - j| == 1``) and single-site fields.
+        local_hamiltonians: One ZZ term per edge and one single-site field per qubit.
         c_ops_full: Lindblad operators in the full space (empty; closed system).
         c_ops_local: Local Lindblad operators (empty; closed system).
         psi0: Default initial state (all-|0⟩ classical, all-|+⟩ transverse).
@@ -220,8 +219,7 @@ def ising(
         for i, j in resolved_edges:
             label = _pauli_label(n_qubits, {i: "Z", j: "Z"})
             full_hamiltonians.append(Hamiltonian(PauliSum({label: j_coup})))
-            if j - i == 1:
-                local_hamiltonians.append(LocalHamiltonian(j_coup * zz_local, [i, j]))
+            local_hamiltonians.append(LocalHamiltonian(j_coup * zz_local, [i, j]))
 
     if h_field != 0.0:
         for site in range(n_qubits):

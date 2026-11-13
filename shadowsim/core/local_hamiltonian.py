@@ -1,4 +1,4 @@
-"""Local Hamiltonian terms on contiguous sites."""
+"""Local Hamiltonian terms on chosen sites."""
 
 import numpy as np
 
@@ -11,7 +11,8 @@ from shadowsim.utils.hermitian import hermitian
 class LocalHamiltonian(LocalOperator, Hamiltonian):
     """Local Hamiltonian acting non-trivially on the provided sites.
 
-    ``sites`` must be distinct consecutive integers; see `LocalOperator`.
+    ``sites`` are distinct integers in tensor-factor order; see `LocalOperator`.
+    Gaps are allowed, and embedding puts identity on every skipped site.
     """
 
     def __init__(
@@ -20,7 +21,7 @@ class LocalHamiltonian(LocalOperator, Hamiltonian):
         sites: list[int],
         local_dim: int = 2,
     ) -> None:
-        """Initialize a LocalHamiltonian on contiguous sites."""
+        """Initialize a LocalHamiltonian on the given sites."""
         if isinstance(matrix, np.ndarray):
             if matrix.ndim != 2 or matrix.shape[0] != matrix.shape[1]:
                 raise ValueError(f"matrix must be a square 2D array; got shape {matrix.shape}")
