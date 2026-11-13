@@ -15,10 +15,13 @@ from shadowsim.models.tavis_cummings import (
 )
 
 
-def _require_scalar(name: str, value: object) -> float:
-    """Reject per-emitter sequences; Jaynes–Cummings has one emitter."""
+def _require_scalar(name: str, value: object, model: str) -> float:
+    """Reject a per-emitter sequence and return ``value`` as a float.
+
+    ``model`` is the model name included in the error.
+    """
     if isinstance(value, bool) or not isinstance(value, (int, float, np.floating)):
-        raise ValueError(f"{name} must be a scalar for the Jaynes–Cummings model, got {type(value).__name__}")
+        raise ValueError(f"{name} must be a scalar for the {model} model, got {type(value).__name__}")
     return float(value)
 
 
@@ -78,9 +81,9 @@ def jaynes_cummings(
         ValueError: If ``omega_e``, ``gamma``, or ``g`` is not a scalar,
             ``cavity_levels`` is not 4, or ``initial_fock`` is outside ``0..3``.
     """
-    omega_e_value = _require_scalar("omega_e", omega_e)
-    gamma_value = _require_scalar("gamma", gamma)
-    g_value = _require_scalar("g", g)
+    omega_e_value = _require_scalar("omega_e", omega_e, "Jaynes–Cummings")
+    gamma_value = _require_scalar("gamma", gamma, "Jaynes–Cummings")
+    g_value = _require_scalar("g", g, "Jaynes–Cummings")
     base = tavis_cummings(
         omega_c=omega_c,
         omega_e=omega_e_value,
