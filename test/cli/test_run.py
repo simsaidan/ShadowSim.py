@@ -27,6 +27,7 @@ from shadowsim.cli.run import (
     _backend_class,
     _backend_has_shot_budget,
     _backend_record,
+    _factory_kwargs,
     _initial_state,
     _measured_result,
     _measurements,
@@ -49,21 +50,128 @@ from shadowsim.models.catalog import _describe_models, listed_model_terms, liste
 from shadowsim.simulators.catalog import _describe_simulator, listed_simulators
 from shadowsim.simulators.result import _resource_record
 
+_SIMULATOR_FIELDS = ("time_steps", "num_steps", "seed", "trotter_depth", "order")
+_BACKEND_FIELDS = ("shots", "basis_gates", "max_weight", "min_abs_coeff")
+_STATE_VALUES = {"basis": "basis", "gray": "gray", "angle": "angles", "amplitude": "amplitudes"}
+
+
+def _state_section(overrides: Mapping[str, object]) -> dict[str, object]:
+    """Return the document's state from the short names tests pass."""
+    state_id = overrides.get("state", "basis")
+    value = None
+    if isinstance(state_id, str):
+        key = _STATE_VALUES.get(state_id)
+        if key is not None and key in overrides:
+            value = overrides[key]
+        elif state_id == "basis":
+            value = "10"
+    return {"id": state_id, "value": value}
+
+
+def _model_section(overrides: Mapping[str, object]) -> dict[str, object]:
+    """Return the document's model from the short names tests pass."""
+    terms = overrides.get("terms")
+    if isinstance(terms, list) and terms:
+        return {"terms": terms, "qubits": overrides.get("qubits", "2")}
+    model_id = overrides.get("model", "ising")
+    factory = overrides.get("factory")
+    if "factory" in overrides and not isinstance(factory, dict):
+        return {"id": model_id, "arguments": factory}
+    arguments: dict[str, object] = {}
+    if isinstance(factory, dict):
+        arguments.update(factory)
+    takes_qubits = isinstance(model_id, str) and any(
+        item["id"] == model_id and item["qubits"] for item in listed_models()
+    )
+    if "qubits" in overrides or takes_qubits:
+        arguments["n_qubits"] = overrides.get("qubits", "2")
+    if "emitters" in overrides:
+        arguments["n_emitters"] = overrides["emitters"]
+    if "cavities" in overrides:
+        arguments["n_cavities"] = overrides["cavities"]
+    if "nu" in overrides:
+        arguments["nu"] = overrides["nu"]
+    return {"id": model_id, "arguments": arguments}
+
+
+def _pack_simulator(flat: Mapping[str, object]) -> dict[str, object]:
+    """Pack one flat simulator row into an entry."""
+    arguments = {key: flat[key] for key in _SIMULATOR_FIELDS if key in flat}
+    if "backend" not in flat or flat["backend"] is None:
+        backend: object = None
+    else:
+        backend = {
+            "id": flat["backend"],
+            "arguments": {key: flat[key] for key in _BACKEND_FIELDS if key in flat},
+        }
+    return {"id": flat.get("simulator", "qutip"), "arguments": arguments, "backend": backend}
+
+
+def _simulator_sections(overrides: Mapping[str, object]) -> list[object]:
+    """Return the document's simulators, filling shared fields into each old entry."""
+    parent = {
+        key: overrides[key]
+        for key in ("simulator", "backend", *_SIMULATOR_FIELDS, *_BACKEND_FIELDS)
+        if key in overrides
+    }
+    if "simulator" not in parent:
+        parent["simulator"] = "qutip"
+    if "backend" not in parent:
+        parent["backend"] = "aer"
+    raw = overrides.get("simulators")
+    if not isinstance(raw, list):
+        return [_pack_simulator(parent)]
+    packed: list[object] = []
+    for entry in raw:
+        if not isinstance(entry, Mapping):
+            packed.append(entry)
+            continue
+        if "id" in entry and "simulator" not in entry:
+            packed.append(dict(entry))
+            continue
+        flat = dict(parent)
+        flat.update(entry)
+        packed.append(_pack_simulator(flat))
+    return packed
+
+
+def _measure_section(overrides: Mapping[str, object]) -> dict[str, object]:
+    """Return the document's measure from the short names tests pass."""
+    measure: dict[str, object] = {"id": overrides.get("measure", "z"), "sites": overrides.get("sites")}
+    if "expression" in overrides:
+        measure["expression"] = overrides["expression"]
+    return measure
+
+
+def _actions_section(overrides: Mapping[str, object]) -> dict[str, object]:
+    """Return the document's actions. ``thens`` wins over ``then``."""
+    if "thens" in overrides:
+        raw = overrides["thens"]
+        ids = raw if isinstance(raw, list) else []
+    elif "then" in overrides:
+        raw = overrides["then"]
+        ids = [raw] if isinstance(raw, str) else []
+    else:
+        ids = ["save"]
+    actions: dict[str, object] = {"ids": ids}
+    if "save_path" in overrides:
+        actions["save_path"] = overrides["save_path"]
+    if "export_path" in overrides:
+        actions["export_path"] = overrides["export_path"]
+    return actions
+
 
 def _selection(**overrides: object) -> dict[str, object]:
-    payload: dict[str, object] = {
-        "state": "basis",
-        "model": "ising",
-        "simulator": "qutip",
-        "backend": "aer",
-        "measure": "z",
-        "then": "save",
-        "qubits": "2",
-        "total": "0.5",
-        "basis": "10",
+    """Return a version 1 document. Keyword arguments keep the old short names."""
+    return {
+        "version": overrides.get("version", 1),
+        "total": overrides.get("total", "0.5"),
+        "state": _state_section(overrides),
+        "model": _model_section(overrides),
+        "simulators": _simulator_sections(overrides),
+        "measure": _measure_section(overrides),
+        "actions": _actions_section(overrides),
     }
-    payload.update(overrides)
-    return payload
 
 
 @pytest.fixture
@@ -118,11 +226,67 @@ def test_build_simulator_rejects(overrides: dict[str, object], message: str, for
         build_simulator(_selection(**overrides))
 
 
+def test_a_missing_version_names_the_required_number() -> None:
+    payload = _selection()
+    del payload["version"]
+    with pytest.raises(ValueError, match="version must be 1"):
+        build_simulator(payload)
+
+
+def test_an_unknown_version_names_that_value() -> None:
+    with pytest.raises(ValueError, match="unknown version 2"):
+        build_simulator(_selection(version=2))
+    with pytest.raises(ValueError, match="unknown version True"):
+        build_simulator(_selection(version=True))
+
+
+def test_an_unknown_field_is_rejected() -> None:
+    payload = _selection()
+    payload["simulator"] = "qutip"
+    with pytest.raises(ValueError, match="unknown field simulator"):
+        build_simulator(payload)
+
+
+def test_a_section_must_be_an_object() -> None:
+    payload = _selection()
+    payload["state"] = "basis"
+    with pytest.raises(ValueError, match="state must be an object"):
+        build_simulator(payload)
+
+
+def test_simulators_must_be_a_non_empty_list() -> None:
+    payload = _selection()
+    payload["simulators"] = []
+    with pytest.raises(ValueError, match="simulators must be a non-empty list"):
+        build_simulator(payload)
+    payload["simulators"] = "qutip"
+    with pytest.raises(ValueError, match="simulators must be a non-empty list"):
+        build_simulator(payload)
+
+
+def test_actions_must_list_ids() -> None:
+    payload = _selection()
+    payload["actions"] = {"ids": "save"}
+    with pytest.raises(ValueError, match="actions must list ids"):
+        build_simulator(payload)
+
+
+def test_simulator_entry_fields_must_be_objects() -> None:
+    payload = _selection()
+    payload["simulators"] = [{"id": "qutip", "arguments": [], "backend": None}]
+    with pytest.raises(ValueError, match="simulator arguments must be an object"):
+        build_simulator(payload)
+    payload["simulators"] = [{"id": "qutip", "arguments": {}, "backend": "aer"}]
+    with pytest.raises(ValueError, match="backend must be an object"):
+        build_simulator(payload)
+    payload["simulators"] = [{"id": "qutip", "arguments": {}, "backend": {"id": "aer", "arguments": []}}]
+    with pytest.raises(ValueError, match="backend arguments must be an object"):
+        build_simulator(payload)
+
+
 def test_qutip_without_a_backend_reaches_the_simulator(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr("shadowsim.cli.run._qutip_simulator", lambda *_args, **_kwargs: "built")
-    selection = _selection()
-    del selection["backend"]
-    assert build_simulator(selection, time_steps=2) == "built"
+    assert build_simulator(_selection(backend=None, time_steps=2)) == "built"
 
 
 @pytest.mark.qiskit
@@ -196,7 +360,7 @@ def test_an_exported_observables_simulator_uses_its_class(monkeypatch: pytest.Mo
     monkeypatch.setitem(simulators._EXPORTS, "NoteSimulator", ("custom.observables", None))
     monkeypatch.setitem(sys.modules, "custom.observables", module)
 
-    simulator = build_simulator(_selection(simulator="note"), time_steps=4)
+    simulator = build_simulator(_selection(simulator="note", time_steps=4))
     assert isinstance(simulator, NoteSimulator)
     assert len(simulator.observables) == 2
     assert simulator.kwargs["time_steps"] == 4
@@ -267,10 +431,13 @@ def test_a_backend_setup_without_a_class_is_rejected(monkeypatch: pytest.MonkeyP
     assert _backend_has_shot_budget("missing") is False
 
 
-@pytest.mark.parametrize("time_steps", [0, True, 1.5])
-def test_time_steps_must_be_a_positive_integer(time_steps: object, forbid_qutip: None) -> None:
-    with pytest.raises(ValueError, match="positive integer"):
-        build_simulator(_selection(), time_steps=time_steps)  # type: ignore[arg-type]
+@pytest.mark.parametrize(
+    ("time_steps", "message"),
+    [(0, "positive integer"), (True, "must be an integer"), (1.5, "must be an integer")],
+)
+def test_time_steps_must_be_a_positive_integer(time_steps: object, message: str, forbid_qutip: None) -> None:
+    with pytest.raises(ValueError, match=message):
+        build_simulator(_selection(time_steps=time_steps))
 
 
 def test_missing_total_time_is_rejected(forbid_qutip: None) -> None:
@@ -283,7 +450,7 @@ def test_missing_total_time_is_rejected(forbid_qutip: None) -> None:
 @pytest.mark.qutip
 def test_build_simulator_runs_a_small_ising() -> None:
     pytest.importorskip("qutip")
-    simulator = build_simulator(_selection(), time_steps=3)
+    simulator = build_simulator(_selection(time_steps=3))
     assert simulator.num_qubits == 2
     assert simulator.total_time == 0.5
     assert simulator.time_steps == 3
@@ -307,32 +474,34 @@ def test_initial_state_uses_the_model_qubit_count(state: str) -> None:
         overrides["angles"] = [0.0, 0.0, 0.0]
     elif state == "amplitude":
         overrides["amplitudes"] = [1.0, 0.0, 0.0, 0.0, 0.0]
-    simulator = build_simulator(_selection(**overrides), time_steps=2)
+    simulator = build_simulator(_selection(**overrides, time_steps=2))
     assert simulator.num_qubits == 3
     assert simulator.initial_state.get_num_qubits() == 3
 
 
-@pytest.mark.qutip
-@pytest.mark.parametrize("model_id", ["tavis_cummings", "tavis_cummings_hubbard"])
-def test_tavis_cummings_ignores_the_qubits_field(model_id: str) -> None:
-    pytest.importorskip("qutip")
-    simulator = build_simulator(_selection(model=model_id, qubits="1", basis="100"), time_steps=2)
-    assert simulator.num_qubits == 3
-    assert simulator.initial_state.get_num_qubits() == 3
-
-
-@pytest.mark.qutip
-def test_jaynes_cummings_ignores_the_qubits_field() -> None:
-    pytest.importorskip("qutip")
-    simulator = build_simulator(_selection(model="jaynes_cummings", qubits="1", basis="100"), time_steps=2)
-    assert simulator.num_qubits == 3
-    assert simulator.initial_state.get_num_qubits() == 3
+@pytest.mark.parametrize(
+    ("overrides", "name"),
+    [
+        ({"model": "tavis_cummings", "qubits": "1"}, "n_qubits"),
+        ({"model": "tavis_cummings_hubbard", "qubits": "1"}, "n_qubits"),
+        ({"model": "jaynes_cummings", "qubits": "1"}, "n_qubits"),
+        ({"model": "jaynes_cummings_hubbard", "emitters": 5, "cavities": 2}, "n_emitters"),
+        ({"model": "jaynes_cummings", "factory": {"cavity_levels": 3}}, "cavity_levels"),
+    ],
+)
+def test_an_argument_the_factory_does_not_take_is_rejected(
+    forbid_qutip: None,
+    overrides: dict[str, object],
+    name: str,
+) -> None:
+    with pytest.raises(ValueError, match=f"unknown argument {name}"):
+        build_simulator(_selection(**overrides))
 
 
 def _built_model(monkeypatch: pytest.MonkeyPatch, **overrides: object) -> object:
     """Return the model ``build_simulator`` would hand to QuTiP."""
     monkeypatch.setattr("shadowsim.cli.run._qutip_simulator", lambda model, *_args, **_kwargs: model)
-    return build_simulator(_selection(**overrides), time_steps=2)
+    return build_simulator(_selection(**overrides, time_steps=2))
 
 
 def _same_operators(got: object, expected: object) -> None:
@@ -507,8 +676,13 @@ def test_ising_qubit_count_is_capped_before_the_factory(
         build_simulator(_selection(qubits=qubits))
 
 
+def test_factory_kwargs_reject_a_non_object() -> None:
+    with pytest.raises(ValueError, match="factory arguments must be an object"):
+        _factory_kwargs([], [], n_emitters=None)
+
+
 def test_ising_accepts_fifteen_qubits() -> None:
-    model = _model("ising", 15)
+    model = _model("ising", {"n_qubits": 15})
     assert model.num_qubits == 15
 
 
@@ -517,8 +691,7 @@ def test_ising_accepts_fifteen_qubits() -> None:
 def test_tavis_cummings_sizes_from_the_emitter_count(model_id: str) -> None:
     pytest.importorskip("qutip")
     simulator = build_simulator(
-        _selection(model=model_id, emitters=2, qubits="4", basis="0000"),
-        time_steps=2,
+        _selection(model=model_id, emitters=2, basis="0000", time_steps=2),
     )
     assert simulator.num_qubits == 4
     assert simulator.initial_state.get_num_qubits() == 4
@@ -528,8 +701,7 @@ def test_tavis_cummings_sizes_from_the_emitter_count(model_id: str) -> None:
 def test_tavis_cummings_hubbard_sizes_from_cavities_and_hopping() -> None:
     pytest.importorskip("qutip")
     simulator = build_simulator(
-        _selection(model="tavis_cummings_hubbard", cavities=2, emitters=1, nu=1.5, basis="000000"),
-        time_steps=2,
+        _selection(model="tavis_cummings_hubbard", cavities=2, emitters=1, nu=1.5, basis="000000", time_steps=2),
     )
     assert simulator.num_qubits == 6
     assert len(simulator.hamiltonians) == 7
@@ -557,8 +729,7 @@ def test_tavis_cummings_hubbard_page_limits(forbid_qutip: None, overrides: dict[
 def test_jaynes_cummings_hubbard_sizes_from_cavities_and_hopping() -> None:
     pytest.importorskip("qutip")
     simulator = build_simulator(
-        _selection(model="jaynes_cummings_hubbard", cavities=2, emitters=5, nu=1.5, basis="000000"),
-        time_steps=2,
+        _selection(model="jaynes_cummings_hubbard", cavities=2, nu=1.5, basis="000000", time_steps=2),
     )
     assert simulator.num_qubits == 6
     assert len(simulator.hamiltonians) == 7
@@ -660,24 +831,24 @@ def test_initial_state_rejects_an_unknown_id() -> None:
 @pytest.mark.qutip
 def test_pauli_measurement_records_one_curve_per_qubit() -> None:
     pytest.importorskip("qutip")
-    simulator = build_simulator(_selection(measure="x"), time_steps=2)
+    simulator = build_simulator(_selection(measure="x", time_steps=2))
     assert len(simulator.observables) == 2
 
 
 def test_measure_sites_rejects_an_empty_list() -> None:
     with pytest.raises(ValueError, match="measured qubits"):
-        build_simulator(_selection(sites=[]), time_steps=2)
+        build_simulator(_selection(sites=[], time_steps=2))
 
 
 def test_measure_sites_rejects_an_index_past_the_model() -> None:
     with pytest.raises(ValueError, match="indexes from 0 to 1"):
-        build_simulator(_selection(sites=[2]), time_steps=2)
+        build_simulator(_selection(sites=[2], time_steps=2))
 
 
 @pytest.mark.qutip
 def test_pauli_subset_records_the_selected_qubit() -> None:
     pytest.importorskip("qutip")
-    simulator = build_simulator(_selection(sites=[1]), time_steps=2)
+    simulator = build_simulator(_selection(sites=[1], time_steps=2))
     assert len(simulator.observables) == 1
     assert simulator.observables[0].name == "IZ"
 
@@ -685,7 +856,7 @@ def test_pauli_subset_records_the_selected_qubit() -> None:
 @pytest.mark.qutip
 def test_integral_float_settings_build_the_simulator() -> None:
     pytest.importorskip("qutip")
-    simulator = build_simulator(_selection(qubits=2.0, total=0.5), time_steps=2)
+    simulator = build_simulator(_selection(qubits=2.0, total=0.5, time_steps=2))
     assert simulator.num_qubits == 2
     assert simulator.total_time == 0.5
 
@@ -693,7 +864,7 @@ def test_integral_float_settings_build_the_simulator() -> None:
 @pytest.mark.qutip
 def test_then_does_not_change_the_simulator() -> None:
     pytest.importorskip("qutip")
-    simulator = build_simulator(_selection(then="plot"), time_steps=2)
+    simulator = build_simulator(_selection(then="plot", time_steps=2))
     assert simulator.id == "qutip_simulator"
     assert simulator.num_qubits == 2
 
@@ -905,7 +1076,7 @@ def test_benchmark_requires_a_recorded_result(monkeypatch: pytest.MonkeyPatch) -
 @pytest.mark.qutip
 def test_duplicate_measure_sites_are_kept_once() -> None:
     pytest.importorskip("qutip")
-    simulator = build_simulator(_selection(sites=[0, 0]), time_steps=2)
+    simulator = build_simulator(_selection(sites=[0, 0], time_steps=2))
     assert len(simulator.observables) == 1
 
 
@@ -1184,7 +1355,7 @@ def test_shot_parameters_are_validated() -> None:
 @pytest.mark.qutip
 def test_qutip_time_steps_come_from_the_selection() -> None:
     pytest.importorskip("qutip")
-    simulator = build_simulator(_selection(time_steps="4"), time_steps=2)
+    simulator = build_simulator(_selection(time_steps="4"))
     assert simulator.time_steps == 4
 
 
@@ -1326,14 +1497,14 @@ def test_series_name_drops_the_simulator_suffix() -> None:
 
 
 def test_observable_labels_name_each_measured_qubit() -> None:
-    assert _observable_labels({"measure": "z", "sites": [0, 1]}, 2) == ["⟨Z⟩ on 0", "⟨Z⟩ on 1"]
-    assert _observable_labels({"measure": "x", "sites": [1]}, 2) == ["⟨X⟩ on 1"]
-    counts = {"measure": "counts", "sites": [0, 1], "expression": ' counts["01"] / shots '}
+    assert _observable_labels({"id": "z", "sites": [0, 1]}, 2) == ["⟨Z⟩ on 0", "⟨Z⟩ on 1"]
+    assert _observable_labels({"id": "x", "sites": [1]}, 2) == ["⟨X⟩ on 1"]
+    counts = {"id": "counts", "sites": [0, 1], "expression": ' counts["01"] / shots '}
     assert _observable_labels(counts, 2) == ['counts["01"] / shots']
     with pytest.raises(ValueError, match="unknown measurement"):
-        _observable_labels({"measure": "y", "sites": [0]}, 1)
+        _observable_labels({"id": "y", "sites": [0]}, 1)
     with pytest.raises(ValueError, match="unknown measurement"):
-        _measurements({"measure": "y", "sites": [0]}, 1)
+        _measurements({"id": "y", "sites": [0]}, 1)
 
 
 @pytest.mark.qutip
@@ -1448,6 +1619,21 @@ def test_benchmark_requires_one_time_grid() -> None:
                     {"simulator": "qutip", "time_steps": 3},
                     {"simulator": "qutip", "time_steps": 4},
                 ]
+            )
+        )
+
+
+@pytest.mark.qutip
+def test_an_entry_does_not_inherit_another_entrys_time_steps() -> None:
+    pytest.importorskip("qutip")
+    with pytest.raises(ValueError, match="time grid"):
+        run_page(
+            _selection(
+                then="plot",
+                simulators=[
+                    {"id": "qutip", "arguments": {"time_steps": 2}, "backend": None},
+                    {"id": "qutip", "arguments": {}, "backend": None},
+                ],
             )
         )
 
@@ -2132,14 +2318,13 @@ _JUMP = [[[0, 0], [1, 0]], [[0, 0], [0, 0]]]
 
 
 def _added(**overrides: object) -> dict[str, object]:
-    payload = _selection(
-        model=None,
-        qubits="1",
-        basis="0",
-        terms=[{"id": "hamiltonian", "matrix": _Z_MATRIX}],
-    )
-    payload.update(overrides)
-    return payload
+    base: dict[str, object] = {
+        "qubits": "1",
+        "basis": "0",
+        "terms": [{"id": "hamiltonian", "matrix": _Z_MATRIX}],
+    }
+    base.update(overrides)
+    return _selection(**base)
 
 
 @pytest.mark.qutip
@@ -2261,8 +2446,6 @@ def test_ignored_actions_and_bad_numbers_fail_before_import(forbid_qutip: None) 
 
 
 def test_posted_workload_limits_fail_before_import(forbid_qutip: None) -> None:
-    with pytest.raises(ValueError, match=f"time_steps must be from 1 to {_MAX_TIME_STEPS}"):
-        build_simulator(_selection(), time_steps=_MAX_TIME_STEPS + 1)
     with pytest.raises(ValueError, match=f"time steps must be from 1 to {_MAX_TIME_STEPS}"):
         build_simulator(_selection(time_steps=_MAX_TIME_STEPS + 1))
     with pytest.raises(ValueError, match=f"time steps must be from 1 to {_MAX_TIME_STEPS}"):

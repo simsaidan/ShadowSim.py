@@ -216,10 +216,10 @@ def test_hybrid_wml_omits_trotter_controls() -> None:
     assert _call("simParamProblem", page, False) is None
     assert _call("simParamsReady", page) is True
     body = _call("entryBody", page, entry)
-    assert body["num_steps"] == "4"
-    assert body["seed"] == "0"
-    assert "trotter_depth" not in body
-    assert "order" not in body
+    assert body["arguments"]["num_steps"] == "4"
+    assert body["arguments"]["seed"] == "0"
+    assert "trotter_depth" not in body["arguments"]
+    assert "order" not in body["arguments"]
     preview = _call("previewText", page)
     assert isinstance(preview, str)
     assert "HybridWMLSimulator" in preview
@@ -349,10 +349,11 @@ def test_preview_names_a_backend_for_each_circuit_row() -> None:
     assert "circuit_backend_2 = AerCircuitBackend(shots=128)" in text
     assert "circuit_backend=circuit_backend_1" in text
     assert "circuit_backend=circuit_backend_2" in text
-    assert _call("entryBody", page, first)["backend"] == "paulipropagation"
-    assert _call("entryBody", page, first)["max_weight"] == "inf"
-    assert _call("entryBody", page, first)["min_abs_coeff"] == "1e-10"
-    assert "shots" not in _call("entryBody", page, first)
+    posted = _call("entryBody", page, first)
+    assert posted["backend"]["id"] == "paulipropagation"
+    assert posted["backend"]["arguments"]["max_weight"] == "inf"
+    assert posted["backend"]["arguments"]["min_abs_coeff"] == "1e-10"
+    assert "shots" not in posted["backend"]["arguments"]
     first["backendFields"] = {"max_weight": "", "min_abs_coeff": "1e-10"}
     assert _call("backendFieldsReady", page) is False
     assert _call("runAllowed", page) is False
@@ -361,14 +362,15 @@ def test_preview_names_a_backend_for_each_circuit_row() -> None:
         "Enter a max weight and a minimum coefficient to preview the script."
     )
     assert _call("entryBody", page, second) == {
-        "simulator": "splitjmatrix",
-        "time_steps": "11",
-        "num_steps": "4",
-        "trotter_depth": "1",
-        "seed": "0",
-        "order": "1",
-        "backend": "aer",
-        "shots": "128",
+        "id": "splitjmatrix",
+        "arguments": {
+            "time_steps": "11",
+            "num_steps": "4",
+            "trotter_depth": "1",
+            "seed": "0",
+            "order": "1",
+        },
+        "backend": {"id": "aer", "arguments": {"shots": "128"}},
     }
 
 
@@ -397,7 +399,7 @@ def test_blank_aer_gates_preview_as_none() -> None:
     text = _call("previewText", page)
     assert isinstance(text, str)
     assert "circuit_backend_1 = AerCircuitBackend(shots=256, basis_gates=None)" in text
-    assert _call("entryBody", page, page["placedSims"][0])["basis_gates"] == ""
+    assert _call("entryBody", page, page["placedSims"][0])["backend"]["arguments"]["basis_gates"] == ""
 
 
 def test_typed_aer_gates_are_previewed_and_posted() -> None:
@@ -406,7 +408,7 @@ def test_typed_aer_gates_are_previewed_and_posted() -> None:
     text = _call("previewText", page)
     assert isinstance(text, str)
     assert 'basis_gates=["rx", "ry", "cx"]' in text
-    assert _call("entryBody", page, page["placedSims"][0])["basis_gates"] == "RX, ry, rx, cx"
+    assert _call("entryBody", page, page["placedSims"][0])["backend"]["arguments"]["basis_gates"] == "RX, ry, rx, cx"
 
 
 def test_unknown_aer_gates_block_the_run_and_the_preview() -> None:
@@ -432,7 +434,7 @@ def test_preview_numbers_a_backend_with_its_row() -> None:
     assert "circuit_backend_2 = AerCircuitBackend(shots=256)" in text
     assert "circuit_backend=circuit_backend_2" in text
     qutip = _call("entryBody", page, page["placedSims"][0])
-    assert qutip == {"simulator": "qutip", "time_steps": "11"}
+    assert qutip == {"id": "qutip", "arguments": {"time_steps": "11"}, "backend": None}
 
 
 def test_single_export_includes_the_metrics_call() -> None:

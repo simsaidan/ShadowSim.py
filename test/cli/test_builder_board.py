@@ -492,7 +492,7 @@ if (request.action === "roundtrip") {
   const blankPlaceholder = input.attrs.placeholder;
   typeInto(input, ' counts["01"] / shots ');
   const typedStatus = statusMessage();
-  const typedRequest = runRequest().expression;
+  const typedRequest = runRequest().measure.expression;
   const box = labeled(board, "Qubit 1");
   box.listeners.change[0]({ target: { ...box, checked: false, closest: (s) => box.closest(s) } });
   const narrowStatus = statusMessage();
@@ -515,7 +515,7 @@ if (request.action === "roundtrip") {
     stored: snap.countsExpression,
     cleared,
     restored: countsExpression,
-    zRequest: Object.hasOwn(runRequest(), "expression"),
+    zRequest: Object.hasOwn(runRequest().measure, "expression"),
   };
 } else if (request.action === "launch") {
   fillIsing();
@@ -704,7 +704,7 @@ if (request.action === "roundtrip") {
     restoredJ: factoryText.J,
     restoredH: Object.hasOwn(factoryText, "h"),
     hDefault: paramText(hParam),
-    request: runRequest().factory,
+    request: runRequest().model.arguments,
   };
 } else if (request.action === "gates") {
   fillCircuit();
@@ -849,6 +849,7 @@ def test_factory_fields_keep_edits_and_fall_back_to_defaults() -> None:
         "topology": "chain",
         "boundary": "periodic",
         "edges": "",
+        "n_qubits": "",
     }
 
 
