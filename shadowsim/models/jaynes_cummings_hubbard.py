@@ -5,8 +5,7 @@
 
 from dataclasses import dataclass, fields
 
-import numpy as np
-
+from shadowsim.models.jaynes_cummings import _require_scalar
 from shadowsim.models.tavis_cummings import (
     _DEFAULT_G,
     _DEFAULT_GAMMA,
@@ -15,13 +14,6 @@ from shadowsim.models.tavis_cummings import (
     _DEFAULT_OMEGA_E,
 )
 from shadowsim.models.tavis_cummings_hubbard import TavisCummingsHubbardModel, tavis_cummings_hubbard
-
-
-def _require_scalar(name: str, value: object) -> float:
-    """Reject per-emitter sequences; each cavity has one emitter."""
-    if isinstance(value, bool) or not isinstance(value, (int, float, np.floating)):
-        raise ValueError(f"{name} must be a scalar for the Jaynes–Cummings–Hubbard model, got {type(value).__name__}")
-    return float(value)
 
 
 @dataclass(frozen=True)
@@ -91,9 +83,9 @@ def jaynes_cummings_hubbard(
             is not 4, ``initial_fock`` is outside ``0..3``, or ``nu`` does not
             match the number of cavity pairs.
     """
-    omega_e_value = _require_scalar("omega_e", omega_e)
-    gamma_value = _require_scalar("gamma", gamma)
-    g_value = _require_scalar("g", g)
+    omega_e_value = _require_scalar("omega_e", omega_e, "Jaynes–Cummings–Hubbard")
+    gamma_value = _require_scalar("gamma", gamma, "Jaynes–Cummings–Hubbard")
+    g_value = _require_scalar("g", g, "Jaynes–Cummings–Hubbard")
     base = tavis_cummings_hubbard(
         omega_c=omega_c,
         omega_e=omega_e_value,

@@ -104,8 +104,114 @@ def _cavity_emitter_coupling(a: np.ndarray, sigma: np.ndarray, emitter_index: in
 
 
 def _embed_on_emitter(op: np.ndarray, emitter_index: int, n_emitters: int) -> np.ndarray:
-    """Embed a single-qubit operator on emitter ``emitter_index`` in the full space."""
+    """Embed a single-qubit operator on emitter ``emitter_index`` in one cavity block."""
     return tensor([I, I, *([I] * emitter_index), op, *([I] * (n_emitters - emitter_index - 1))])
+
+
+def _block_measurements(offset: int, n_emitters: int) -> list[Measurement]:
+    """Return cavity and emitter population measurements for the block at ``offset``."""
+    return [
+        Measurement.cavity_population(offset, offset + 1),
+        *(Measurement.population(offset + _emitter_site(i)) for i in range(n_emitters)),
+    ]
+
+
+@dataclass(frozen=True)
+class _CavityBlock:
+    """One cavity and its emitters, as raw matrices on the block's own qubits.
+
+    Sites are local to the block: the cavity is ``[0, 1]``, then one site per
+    emitter. Full matrices are embedded in that block only, so a caller can
+    wrap them for one cavity or stamp them at an offset.
+    """
+
+    local_hamiltonians: list[tuple[np.ndarray, list[int]]]
+    full_hamiltonians: list[np.ndarray]
+    c_ops_local: list[tuple[np.ndarray, list[int]]]
+    c_ops_full: list[np.ndarray]
+    e_ops: list[np.ndarray]
+    state: np.ndarray
+    lowering: np.ndarray
+
+
+def _cavity_block(
+    *,
+    omega_c: float,
+    omega_e: FloatOrSeq,
+    kappa: float,
+    gamma: FloatOrSeq,
+    g: FloatOrSeq,
+    n_emitters: int,
+    cavity_levels: int,
+    initial_fock: int,
+) -> _CavityBlock:
+    """Build one cavity and its emitters as raw matrices.
+
+    ``omega_e``, ``gamma``, and ``g`` may be scalars or sequences of length
+    ``n_emitters``. The lowering operator is the truncated cavity annihilation
+    operator on two qubits.
+
+    Raises:
+        ValueError: If ``n_emitters < 1``, ``cavity_levels`` is not 4,
+            ``initial_fock`` is outside ``0..3``, or a per-emitter sequence has
+            the wrong length.
+    """
+    if n_emitters < 1:
+        raise ValueError(f"n_emitters must be >= 1, got {n_emitters}")
+    if cavity_levels != 4:
+        raise ValueError(f"only cavity_levels=4 is supported in v1, got {cavity_levels}")
+    if initial_fock not in (0, 1, 2, 3):
+        raise ValueError(f"initial_fock must be an integer in 0..3, got {initial_fock}")
+
+    omega_e_list = _as_per_emitter("omega_e", omega_e, n_emitters)
+    gamma_list = _as_per_emitter("gamma", gamma, n_emitters)
+    g_list = _as_per_emitter("g", g, n_emitters)
+
+    lowering = (
+        np.outer(zero_state_two_qubits, one_state_two_qubits)
+        + np.sqrt(2) * np.outer(one_state_two_qubits, two_state_two_qubits)
+        + np.sqrt(3) * np.outer(two_state_two_qubits, three_state_two_qubits)
+    )
+
+    zero = np.array([1, 0], dtype=np.complex128)
+    one = np.array([0, 1], dtype=np.complex128)
+    sigma = np.outer(zero, one)
+    n_e = np.outer(one, one)
+
+    h_cavity = omega_c * lowering.conjugate().T @ lowering
+    local_hamiltonians: list[tuple[np.ndarray, list[int]]] = [(h_cavity, [0, 1])]
+    full_hamiltonians: list[np.ndarray] = [_pad_right(h_cavity, n_emitters)]
+
+    for i in range(n_emitters):
+        site = _emitter_site(i)
+        local_hamiltonians.append((omega_e_list[i] * n_e, [site]))
+        full_hamiltonians.append(omega_e_list[i] * _embed_on_emitter(n_e, i, n_emitters))
+
+        coupling = _cavity_emitter_coupling(lowering, sigma, i, g_list[i])
+        local_hamiltonians.append((coupling, list(range(0, site + 1))))
+        full_hamiltonians.append(_pad_right(coupling, n_emitters - i - 1))
+
+    c_ops_local: list[tuple[np.ndarray, list[int]]] = [(kappa * lowering, [0, 1])]
+    c_ops_full: list[np.ndarray] = [_pad_right(kappa * lowering, n_emitters)]
+    for i in range(n_emitters):
+        site = _emitter_site(i)
+        c_ops_local.append((gamma_list[i] * sigma, [site]))
+        c_ops_full.append(gamma_list[i] * _embed_on_emitter(sigma, i, n_emitters))
+
+    e_ops = [_pad_right(lowering.conjugate().T @ lowering, n_emitters)]
+    for i in range(n_emitters):
+        e_ops.append(_embed_on_emitter(sigma.conjugate().T @ sigma, i, n_emitters))
+
+    state = tensor([_FOCK_STATES[initial_fock], *([zero] * n_emitters)])
+    return _CavityBlock(
+        local_hamiltonians=local_hamiltonians,
+        full_hamiltonians=full_hamiltonians,
+        c_ops_local=c_ops_local,
+        c_ops_full=c_ops_full,
+        e_ops=e_ops,
+        state=state,
+        lowering=lowering,
+    )
 
 
 def tavis_cummings(
@@ -151,68 +257,25 @@ def tavis_cummings(
             ``initial_fock`` is outside ``0..3``, or a per-emitter sequence has
             the wrong length.
     """
-    if n_emitters < 1:
-        raise ValueError(f"n_emitters must be >= 1, got {n_emitters}")
-    if cavity_levels != 4:
-        raise ValueError(f"only cavity_levels=4 is supported in v1, got {cavity_levels}")
-    if initial_fock not in (0, 1, 2, 3):
-        raise ValueError(f"initial_fock must be an integer in 0..3, got {initial_fock}")
-
-    omega_e_list = _as_per_emitter("omega_e", omega_e, n_emitters)
-    gamma_list = _as_per_emitter("gamma", gamma, n_emitters)
-    g_list = _as_per_emitter("g", g, n_emitters)
-
-    a = (
-        np.outer(zero_state_two_qubits, one_state_two_qubits)
-        + np.sqrt(2) * np.outer(one_state_two_qubits, two_state_two_qubits)
-        + np.sqrt(3) * np.outer(two_state_two_qubits, three_state_two_qubits)
+    block = _cavity_block(
+        omega_c=omega_c,
+        omega_e=omega_e,
+        kappa=kappa,
+        gamma=gamma,
+        g=g,
+        n_emitters=n_emitters,
+        cavity_levels=cavity_levels,
+        initial_fock=initial_fock,
     )
-
-    zero = np.array([1, 0], dtype=np.complex128)
-    one = np.array([0, 1], dtype=np.complex128)
-    sigma = np.outer(zero, one)
-    n_e = np.outer(one, one)
     num_qubits = 2 + n_emitters
-
-    h_cavity = omega_c * a.conjugate().T @ a
-    local_hamiltonians: list[LocalHamiltonian] = [LocalHamiltonian(h_cavity, [0, 1])]
-    full_hamiltonians: list[Hamiltonian] = [Hamiltonian(_pad_right(h_cavity, n_emitters))]
-
-    for i in range(n_emitters):
-        site = _emitter_site(i)
-        local_hamiltonians.append(LocalHamiltonian(omega_e_list[i] * n_e, [site]))
-        full_hamiltonians.append(Hamiltonian(omega_e_list[i] * _embed_on_emitter(n_e, i, n_emitters)))
-
-        coupling = _cavity_emitter_coupling(a, sigma, i, g_list[i])
-        local_hamiltonians.append(LocalHamiltonian(coupling, list(range(0, site + 1))))
-        full_hamiltonians.append(Hamiltonian(_pad_right(coupling, n_emitters - i - 1)))
-
-    c_ops_local: list[LocalOperator] = [LocalOperator(kappa * a, [0, 1])]
-    c_ops_full: list[Operator] = [Operator(_pad_right(kappa * a, n_emitters))]
-    for i in range(n_emitters):
-        site = _emitter_site(i)
-        c_ops_local.append(LocalOperator(gamma_list[i] * sigma, [site]))
-        c_ops_full.append(Operator(gamma_list[i] * _embed_on_emitter(sigma, i, n_emitters)))
-
-    psi0 = State(tensor([_FOCK_STATES[initial_fock], *([zero] * n_emitters)]), num_qubits)
-
-    e_ops = [Operator(_pad_right(a.conjugate().T @ a, n_emitters))]
-    for i in range(n_emitters):
-        e_ops.append(Operator(_embed_on_emitter(sigma.conjugate().T @ sigma, i, n_emitters)))
-
-    measurements = [
-        Measurement.cavity_population(0, 1),
-        *(Measurement.population(_emitter_site(i)) for i in range(n_emitters)),
-    ]
-
     return TavisCummingsModel(
-        full_hamiltonians=full_hamiltonians,
-        local_hamiltonians=local_hamiltonians,
-        c_ops_full=c_ops_full,
-        c_ops_local=c_ops_local,
-        psi0=psi0,
-        e_ops=e_ops,
-        measurements=measurements,
+        full_hamiltonians=[Hamiltonian(matrix) for matrix in block.full_hamiltonians],
+        local_hamiltonians=[LocalHamiltonian(matrix, sites) for matrix, sites in block.local_hamiltonians],
+        c_ops_full=[Operator(matrix) for matrix in block.c_ops_full],
+        c_ops_local=[LocalOperator(matrix, sites) for matrix, sites in block.c_ops_local],
+        psi0=State(block.state, num_qubits),
+        e_ops=[Operator(matrix) for matrix in block.e_ops],
+        measurements=_block_measurements(0, n_emitters),
         num_qubits=num_qubits,
         n_emitters=n_emitters,
     )
