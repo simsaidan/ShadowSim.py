@@ -25,6 +25,7 @@ from shadowsim.cli.run import (
     _MAX_TIME_STEPS,
     _MAX_TROTTER_DEPTH,
     _backend_class,
+    _backend_has_shot_budget,
     _backend_record,
     _initial_state,
     _measured_result,
@@ -262,6 +263,8 @@ def test_a_backend_setup_without_a_class_is_rejected(monkeypatch: pytest.MonkeyP
         _backend_record("missing")
     with pytest.raises(ValueError, match="unknown backend"):
         _backend_record("numpy")
+    assert _backend_has_shot_budget("numpy") is False
+    assert _backend_has_shot_budget("missing") is False
 
 
 @pytest.mark.parametrize("time_steps", [0, True, 1.5])
@@ -2214,7 +2217,11 @@ def test_added_terms_fail_before_optional_imports(forbid_qutip: None) -> None:
 
 
 def test_a_posted_shot_count_is_rejected_when_the_backend_was_skipped(monkeypatch: pytest.MonkeyPatch) -> None:
+    def missing(module: str, *, extra: str) -> object:
+        raise ImportError(f"{module} requires the {extra} extra")
+
     monkeypatch.setattr("shadowsim.cli.run.listed_backends", lambda: [{"id": "numpy", "shots": False}])
+    monkeypatch.setattr("shadowsim.cli.run.import_optional", missing)
     with pytest.raises(ValueError, match="shots must be a positive integer"):
         build_simulator(_selection(simulator="trotterization", time_steps=2, shots=0))
     with pytest.raises(ValueError, match=f"shots must be from 1 to {_MAX_SHOTS}"):

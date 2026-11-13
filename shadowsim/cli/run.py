@@ -533,9 +533,10 @@ def _load_exported(module_name: str, extra: str | None, class_name: str, missing
 def _backend_has_shot_budget(backend_id: str) -> bool:
     """Return whether ``backend_id`` reads a shot budget.
 
-    A posted shot count is still checked when that backend's module was not
+    A posted shot count is still checked when that backend's module cannot be
     imported, including when other backends imported and the catalog is only
-    partial. The number is reported before the missing extra.
+    partial. The number is reported before the missing extra. A module that
+    imports but is absent from the catalog does not read a shot budget.
     """
     try:
         records = listed_backends()
@@ -544,7 +545,26 @@ def _backend_has_shot_budget(backend_id: str) -> bool:
     for record in records:
         if record["id"] == backend_id:
             return bool(record["shots"])
-    return True
+    return _backend_import_failed(backend_id)
+
+
+def _backend_import_failed(backend_id: str) -> bool:
+    """Return whether the export named ``backend_id`` cannot be imported."""
+    for class_name, (module_name, extra) in _BACKEND_EXPORTS.items():
+        if not class_name.endswith("Backend") or class_name == "CircuitBackend":
+            continue
+        title = class_name.removesuffix("CircuitBackend").removesuffix("Backend")
+        if title.lower() != backend_id:
+            continue
+        try:
+            if extra is None:
+                importlib.import_module(module_name)
+            else:
+                import_optional(module_name, extra=extra)
+        except ImportError:
+            return True
+        return False
+    return False
 
 
 def _backend_record(backend_id: str) -> ListedBackend:
