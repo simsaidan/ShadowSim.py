@@ -23,6 +23,11 @@ def test_local_hamiltonian_to_full_follows_site_order():
     expected = np.kron(np.kron(Z, y_matrix), x_matrix)
     assert np.allclose(permuted.to_full_hamiltonian(3).matrix, expected)
 
+    zz = np.kron(Z, Z)
+    gapped = LocalHamiltonian(zz, sites=[0, 2])
+    expected_gap = np.kron(Z, np.kron(np.eye(2, dtype=np.complex128), Z))
+    assert np.allclose(gapped.to_full_hamiltonian(3).matrix, expected_gap)
+
 
 def test_local_hamiltonian_to_full_and_accessors():
     local = LocalHamiltonian(Z, sites=[1], local_dim=2)
@@ -56,8 +61,6 @@ def test_local_hamiltonian_rejects_bad_matrix_and_sites():
         LocalHamiltonian(np.ones((1, 3), dtype=np.complex128), sites=[0])
     with pytest.raises(ValueError, match=r"all sites must be unique; got \[0, 0\]"):
         LocalHamiltonian(np.eye(4), sites=[0, 0], local_dim=2)
-    with pytest.raises(ValueError, match=r"contiguous range of integers; got \[0, 2\]"):
-        LocalHamiltonian(np.eye(4), sites=[0, 2], local_dim=2)
     with pytest.raises(TypeError, match="numpy array"):
         LocalHamiltonian([[1.0, 0.0], [0.0, 1.0]], sites=[0])  # type: ignore[arg-type]
 

@@ -4,6 +4,7 @@ import numpy as np
 import pytest
 
 from shadowsim.core import PauliString
+from shadowsim.core.combined_hamiltonian_matrix import combined_hamiltonian_matrix
 from shadowsim.models import IsingModel, ising
 from shadowsim.simulators import Measurement
 from shadowsim.utils import tensor
@@ -73,20 +74,22 @@ def test_transverse_psi0_is_all_plus():
     np.testing.assert_allclose(model.psi0.to_numpy(), tensor([plus, plus]))
 
 
-def test_periodic_wrap_in_full_not_local():
-    model = ising(n_qubits=4, J=1.0, h=0.0, boundary="periodic")
+def test_periodic_wrap_is_local():
+    model = ising(n_qubits=4, J=1.0, h=0.3, boundary="periodic")
 
     assert model.edges == [(0, 1), (1, 2), (2, 3), (0, 3)]
     assert "ZIIZ" in model.pauli_sum.terms
     assert model.pauli_sum.terms["ZIIZ"] == pytest.approx(1.0)
 
-    local_sites = [tuple(h.sites) for h in model.local_hamiltonians]
-    assert local_sites == [(0, 1), (1, 2), (2, 3)]
-    assert (0, 3) not in local_sites
-    assert len(model.full_hamiltonians) == 4
+    local_sites = [tuple(term.sites) for term in model.local_hamiltonians]
+    assert local_sites == [(0, 1), (1, 2), (2, 3), (0, 3), (0,), (1,), (2,), (3,)]
+    assert len(model.full_hamiltonians) == len(model.local_hamiltonians) == 8
+    full = combined_hamiltonian_matrix(model.full_hamiltonians, 4)
+    local = combined_hamiltonian_matrix(model.local_hamiltonians, 4)
+    assert np.linalg.norm(full - local) == pytest.approx(0.0)
 
 
-def test_custom_edges_and_noncontiguous_local_omission():
+def test_custom_long_range_edges_are_local():
     edges = [(0, 1), (1, 4), (0, 3)]
     model = ising(n_qubits=5, J=1.0, h=0.2, field="classical", edges=edges)
 
@@ -94,12 +97,15 @@ def test_custom_edges_and_noncontiguous_local_omission():
     assert model.boundary == "open"
     assert model.edges == [(0, 1), (1, 4), (0, 3)]
 
-    local_sites = [tuple(h.sites) for h in model.local_hamiltonians]
+    local_sites = [tuple(term.sites) for term in model.local_hamiltonians]
     assert (0, 1) in local_sites
-    assert (1, 4) not in local_sites
-    assert (0, 3) not in local_sites
+    assert (1, 4) in local_sites
+    assert (0, 3) in local_sites
     assert model.pauli_sum.terms["IZIIZ"] == pytest.approx(1.0)
     assert model.pauli_sum.terms["ZIIZI"] == pytest.approx(1.0)
+    full = combined_hamiltonian_matrix(model.full_hamiltonians, model.num_qubits)
+    local = combined_hamiltonian_matrix(model.local_hamiltonians, model.num_qubits)
+    np.testing.assert_allclose(full, local)
 
 
 def test_custom_edges_conflict_with_boundary():

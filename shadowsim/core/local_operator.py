@@ -1,16 +1,15 @@
-"""Local operators on contiguous sites."""
+"""Local operators on chosen sites."""
 
 import numpy as np
 
 from shadowsim.core.operator import Operator, _Matrix
-from shadowsim.utils.tensor import tensor
 
 
 def _matrix_on_increasing_sites(matrix: _Matrix, sites: list[int], local_dim: int) -> _Matrix:
     """Return ``matrix`` with tensor factors ordered by increasing site index.
 
     ``sites[i]`` is tensor factor ``i`` of ``matrix``, and factor 0 is the most
-    significant factor. Embedding places the first factor of the result on
+    significant factor. The first factor of the result corresponds to
     ``min(sites)``. A sorted ``sites`` list is returned unchanged.
     """
     ordered = sorted(sites)
@@ -25,13 +24,39 @@ def _matrix_on_increasing_sites(matrix: _Matrix, sites: list[int], local_dim: in
     return np.ascontiguousarray(permuted)
 
 
+def _embed_with_identity_gaps(matrix: _Matrix, sites: list[int], total_sites: int, local_dim: int) -> _Matrix:
+    """Embed ``matrix`` on ``sites`` with identity on every other site.
+
+    Tensor factors follow ``sites`` and are reordered to increasing site index
+    first. Factor 0 is the most significant factor. The result uses that order
+    on ``0 .. total_sites - 1``, so a gap such as ``[0, 2]`` leaves identity on
+    site 1.
+    """
+    ordered_sites = sorted(sites)
+    ordered = _matrix_on_increasing_sites(matrix, sites, local_dim)
+    present = set(ordered_sites)
+    missing = [site for site in range(total_sites) if site not in present]
+    embedded = ordered
+    eye = np.eye(local_dim, dtype=np.asarray(ordered).dtype)
+    for _ in missing:
+        embedded = np.kron(embedded, eye)
+    current = ordered_sites + missing
+    inverse = [current.index(site) for site in range(total_sites)]
+    factored = np.asarray(embedded).reshape((local_dim,) * (2 * total_sites))
+    axes = inverse + [total_sites + index for index in inverse]
+    permuted = np.transpose(factored, axes)
+    full_dim = local_dim**total_sites
+    return np.ascontiguousarray(permuted.reshape((full_dim, full_dim)))
+
+
 class LocalOperator(Operator):
     """Represent an operator that acts non-trivially on given sites.
 
     The operator acts on the given ``sites`` of a tensor-product space.
     ``sites[i]`` is tensor factor ``i`` of ``matrix``, and factor 0 is the most
-    significant factor, in the same order as ``tensor``. The sites are one
-    contiguous block, so ``[0, 1]`` and ``[1, 0]`` name different operators.
+    significant factor, in the same order as ``tensor``. Site order names the
+    factors, so ``[0, 1]`` and ``[1, 0]`` are different operators. Sites may
+    skip indexes; embedding puts identity on every skipped site.
     """
 
     def __init__(self, matrix: _Matrix, sites: list[int], local_dim: int = 2) -> None:
@@ -42,7 +67,7 @@ class LocalOperator(Operator):
 
         Parameter sites: The sites on which the operator acts non-trivially, in
             tensor-factor order. ``sites[0]`` is the first factor of ``matrix``.
-        Precondition: sites is a list of contiguous integers.
+        Precondition: sites is a non-empty list of distinct integers.
 
         Parameter local_dim: The local dimension of the operator.
         Precondition: local_dim is a positive integer.
@@ -59,8 +84,6 @@ class LocalOperator(Operator):
             raise ValueError(f"all sites must be unique; got {sites}")
         if len(sites) < 1:
             raise ValueError(f"there must be at least one site; got {sites}")
-        if max(sites) - min(sites) + 1 != len(sites):
-            raise ValueError(f"sites must be a contiguous range of integers; got {sites}")
         if not isinstance(local_dim, int):
             raise TypeError(f"local_dim must be an integer; got {type(local_dim)!r}")
         if local_dim <= 0:
@@ -98,11 +121,11 @@ class LocalOperator(Operator):
     def to_full_operator(self, total_sites: int) -> Operator:
         """Embed this local operator into a full system of ``total_sites``.
 
-        The operator acts on its contiguous block ``self.sites`` and identity
-        acts on all other sites. ``sites[0]`` is the first tensor factor of the
-        stored matrix. A site list that is not in increasing order is permuted
-        into that order before the block is placed between ``min(sites)`` and
-        ``max(sites)``.
+        The operator acts on ``self.sites`` and identity acts on every other
+        site, including sites that sit in a gap. ``sites[0]`` is the first
+        tensor factor of the stored matrix. A site list that is not in
+        increasing order is permuted into that order before the identities are
+        inserted.
 
         Parameter total_sites: The total number of sites in the full system.
         Precondition: total_sites is a positive integer.
@@ -118,11 +141,7 @@ class LocalOperator(Operator):
         if hi >= total_sites:
             raise ValueError(f"total_sites={total_sites} is too small for local sites {self.sites}")
 
-        eye = np.eye(self.local_dim, dtype=self.matrix.dtype)
-        left_id = [eye] * lo
-        right_id = [eye] * (total_sites - hi - 1)
-        ordered = _matrix_on_increasing_sites(self.matrix, self.sites, self.local_dim)
-        full_matrix = tensor(left_id + [ordered] + right_id)
+        full_matrix = _embed_with_identity_gaps(self.matrix, self.sites, total_sites, self.local_dim)
         return Operator(full_matrix)
 
     def __str__(self) -> str:

@@ -11,14 +11,12 @@ def test_local_operator_requires_square_matrix():
         LocalOperator([[1.0, 0.0], [0.0, 1.0]], sites=[0], local_dim=2)  # type: ignore[arg-type]
 
 
-def test_local_operator_requires_contiguous_unique_integer_sites():
+def test_local_operator_requires_unique_integer_sites():
     mat = np.eye(4)
     with pytest.raises(ValueError, match=r"all sites must be unique; got \[0, 0\]"):
         LocalOperator(mat, sites=[0, 0], local_dim=2)
     with pytest.raises(TypeError, match=r"all sites must be integers; got \[0, '1'\]"):
         LocalOperator(mat, sites=[0, "1"], local_dim=2)
-    with pytest.raises(ValueError, match=r"contiguous range of integers; got \[0, 2\]"):
-        LocalOperator(mat, sites=[0, 2], local_dim=2)
     with pytest.raises(ValueError, match=r"at least one site; got \[\]"):
         LocalOperator(np.eye(2), sites=[], local_dim=2)
     with pytest.raises(TypeError, match="sites must be a list"):
@@ -66,6 +64,20 @@ def test_local_operator_to_full_operator_follows_site_order():
     permuted = LocalOperator(stored, sites=[0, 2, 1], local_dim=2)
     expected = np.kron(np.kron(z_matrix, y_matrix), x_matrix)
     assert np.allclose(permuted.to_full_operator(3).matrix, expected)
+
+
+def test_local_operator_to_full_operator_fills_gaps_with_identity():
+    z_matrix = np.diag([1.0, -1.0])
+    x_matrix = np.array([[0.0, 1.0], [1.0, 0.0]])
+    zz = np.kron(z_matrix, z_matrix)
+    gapped = LocalOperator(zz, sites=[0, 2], local_dim=2)
+    expected = np.kron(z_matrix, np.kron(np.eye(2), z_matrix))
+    assert np.allclose(gapped.to_full_operator(3).matrix, expected)
+
+    zx = np.kron(z_matrix, x_matrix)
+    reversed_gap = LocalOperator(zx, sites=[2, 0], local_dim=2)
+    expected_gap = np.kron(x_matrix, np.kron(np.eye(2), z_matrix))
+    assert np.allclose(reversed_gap.to_full_operator(3).matrix, expected_gap)
 
 
 def test_local_operator_to_full_operator_validates_total_sites():
