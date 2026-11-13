@@ -92,7 +92,7 @@ def test_probabilities_match_aer_statevector(circuit: QuantumCircuit):
 
     np.testing.assert_allclose(numpy_probabilities, aer_probabilities, atol=_TOLERANCE, rtol=0)
     qubits = list(range(circuit.num_qubits))
-    assert NumpyCircuitBackend().z_expectations(circuit, qubits, shots=1, seed=None) == pytest.approx(
+    assert NumpyCircuitBackend().z_expectations(from_qiskit(circuit), qubits, shots=1, seed=None) == pytest.approx(
         _z_expectations(aer_probabilities),
         abs=_TOLERANCE,
     )
@@ -102,8 +102,9 @@ def test_hadamard_shot_frequencies_agree_with_aer():
     circuit = QuantumCircuit(1, 1)
     circuit.h(0)
     circuit.measure(0, 0)
-    numpy_counts = NumpyCircuitBackend().run_counts(circuit, shots=_SHOTS, seed=0)
-    aer_counts = AerCircuitBackend().run_counts(circuit, shots=_SHOTS, seed=0)
+    program = from_qiskit(circuit)
+    numpy_counts = NumpyCircuitBackend().run_counts(program, shots=_SHOTS, seed=0)
+    aer_counts = AerCircuitBackend().run_counts(program, shots=_SHOTS, seed=0)
     numpy_fraction = numpy_counts.get("0", 0) / _SHOTS
     aer_fraction = aer_counts.get("0", 0) / _SHOTS
 

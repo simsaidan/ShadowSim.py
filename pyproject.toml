@@ -33,7 +33,16 @@ viz = ["matplotlib"]
 pauli_propagation = ["juliacall==0.9.37"]
 qulacs = ["qulacs"]
 cirq = ["cirq"]
-all = ["shadowsim[qutip]", "shadowsim[qiskit]", "shadowsim[viz]", "shadowsim[qulacs]", "shadowsim[cirq]"]
+# Product-formula simulators need SciPy for expm. Core stays NumPy-only.
+circuits = ["scipy>=1.14"]
+all = [
+    "shadowsim[qutip]",
+    "shadowsim[qiskit]",
+    "shadowsim[viz]",
+    "shadowsim[qulacs]",
+    "shadowsim[cirq]",
+    "shadowsim[circuits]",
+]
 
 [project.urls]
 Repository = "https://github.com/simsaidan/ShadowSim.py"
@@ -181,6 +190,7 @@ markers = [
     "pauli_propagation: tests that require the pauli_propagation extra",
     "qulacs: tests that require the qulacs extra",
     "cirq: tests that require the cirq extra",
+    "circuits: tests that require the circuits extra",
     "cross_extra: tests that require more than one optional extra",
 ]
 

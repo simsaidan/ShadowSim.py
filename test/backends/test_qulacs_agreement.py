@@ -12,18 +12,16 @@ this backend matches ``cos(2t)`` at ``1e-8``.
 import numpy as np
 import pytest
 
-pytestmark = [pytest.mark.qiskit, pytest.mark.qulacs, pytest.mark.cross_extra]
+pytestmark = [pytest.mark.circuits, pytest.mark.qulacs, pytest.mark.cross_extra]
 
-pytest.importorskip("qiskit")
 pytest.importorskip("qulacs")
 pytest.importorskip("scipy")
 
-from qiskit import QuantumCircuit
-from qiskit.circuit.library import UnitaryGate
+from backends.agreement_programs import hadamard_counts, programs
 
-from shadowsim.backends.circuit import from_qiskit
 from shadowsim.backends.numpy import NumpyCircuitBackend
 from shadowsim.backends.numpy_statevector import statevector
+from shadowsim.backends.program import Program
 from shadowsim.backends.qulacs import QulacsCircuitBackend, _evolve, _qulacs
 from shadowsim.core import LocalHamiltonian, State
 from shadowsim.simulators import TrotterizationSimulator
@@ -32,82 +30,37 @@ _TOLERANCE = 1e-8
 _SHOTS = 4000
 _SHOT_TOLERANCE = 0.05
 _X = np.array([[0.0, 1.0], [1.0, 0.0]], dtype=np.complex128)
+_IDS = ["hadamard", "rotation", "bell", "prepared", "dense", "named"]
 
 
-def _qulacs_amplitudes(circuit: QuantumCircuit) -> np.ndarray:
+def _qulacs_amplitudes(program: Program) -> np.ndarray:
     """Return the statevector from the same evolution the backend uses."""
-    state = _evolve(_qulacs(), circuit)
+    state = _evolve(_qulacs(), program)
     return np.asarray(state.get_vector(), dtype=np.complex128)
 
 
-def _circuits() -> list[QuantumCircuit]:
-    """Return the small circuits used for the NumPy statevector comparison."""
-    hadamard = QuantumCircuit(1)
-    hadamard.h(0)
-
-    rotation = QuantumCircuit(1)
-    rotation.rx(0.4, 0)
-    rotation.s(0)
-
-    bell = QuantumCircuit(2)
-    bell.h(0)
-    bell.cx(0, 1)
-
-    amplitude = np.sqrt(1.0 - 0.01 - 0.09 - 0.04)
-    prepared = QuantumCircuit(2)
-    prepared.initialize([0.1, 0.3, 0.2, amplitude], [1, 0])
-    prepared.barrier()
-    prepared.h(0)
-
-    raw = np.random.default_rng(0).normal(size=(4, 4)) + 1j * np.random.default_rng(1).normal(size=(4, 4))
-    unitary, _ = np.linalg.qr(raw)
-    dense = QuantumCircuit(2)
-    dense.append(UnitaryGate(unitary), [1, 0])
-
-    named = QuantumCircuit(2)
-    named.h(0)
-    named.x(1)
-    named.y(0)
-    named.z(1)
-    named.s(0)
-    named.sdg(1)
-    named.t(0)
-    named.tdg(1)
-    named.sx(0)
-    named.sxdg(1)
-    named.cx(0, 1)
-    named.cz(1, 0)
-    named.swap(0, 1)
-    named.rx(0.3, 0)
-    named.ry(-0.2, 1)
-    named.rz(0.5, 0)
-    return [hadamard, rotation, bell, prepared, dense, named]
-
-
-@pytest.mark.parametrize("circuit", _circuits())
-def test_statevectors_match_numpy(circuit: QuantumCircuit) -> None:
-    numpy_amplitudes = statevector(from_qiskit(circuit))
-    qubits = list(range(circuit.num_qubits))
+@pytest.mark.parametrize("program", programs(), ids=_IDS)
+def test_statevectors_match_numpy(program: Program) -> None:
+    numpy_amplitudes = statevector(program)
+    qubits = list(range(program.num_qubits))
     qulacs = QulacsCircuitBackend()
     numpy = NumpyCircuitBackend()
 
-    np.testing.assert_allclose(_qulacs_amplitudes(circuit), numpy_amplitudes, atol=_TOLERANCE, rtol=0)
-    assert qulacs.z_expectations(circuit, qubits, shots=1, seed=None) == pytest.approx(
-        numpy.z_expectations(circuit, qubits, shots=2, seed=0),
+    np.testing.assert_allclose(_qulacs_amplitudes(program), numpy_amplitudes, atol=_TOLERANCE, rtol=0)
+    assert qulacs.z_expectations(program, qubits, shots=1, seed=None) == pytest.approx(
+        numpy.z_expectations(program, qubits, shots=2, seed=0),
         abs=_TOLERANCE,
     )
-    assert qulacs.x_expectations(circuit, qubits, shots=3, seed=1) == pytest.approx(
-        numpy.x_expectations(circuit, qubits, shots=4, seed=None),
+    assert qulacs.x_expectations(program, qubits, shots=3, seed=1) == pytest.approx(
+        numpy.x_expectations(program, qubits, shots=4, seed=None),
         abs=_TOLERANCE,
     )
 
 
 def test_hadamard_shot_frequencies_agree_with_numpy() -> None:
-    circuit = QuantumCircuit(1, 1)
-    circuit.h(0)
-    circuit.measure(0, 0)
-    qulacs_counts = QulacsCircuitBackend().run_counts(circuit, shots=_SHOTS, seed=0)
-    numpy_counts = NumpyCircuitBackend().run_counts(circuit, shots=_SHOTS, seed=1)
+    program = hadamard_counts()
+    qulacs_counts = QulacsCircuitBackend().run_counts(program, shots=_SHOTS, seed=0)
+    numpy_counts = NumpyCircuitBackend().run_counts(program, shots=_SHOTS, seed=1)
     qulacs_fraction = qulacs_counts.get("0", 0) / _SHOTS
     numpy_fraction = numpy_counts.get("0", 0) / _SHOTS
 

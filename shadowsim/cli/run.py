@@ -559,7 +559,10 @@ def _backend_record(backend_id: str) -> ListedBackend:
             continue
         title = class_name.removesuffix("CircuitBackend").removesuffix("Backend")
         if title.lower() == backend_id:
-            import_optional(module_name, extra=extra)
+            if extra is None:
+                importlib.import_module(module_name)
+            else:
+                import_optional(module_name, extra=extra)
             break
     raise ValueError("unknown backend")
 

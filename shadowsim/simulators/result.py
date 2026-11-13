@@ -14,6 +14,9 @@ import numpy as np
 import numpy.typing as npt
 from numpy.lib.npyio import NpzFile
 
+from shadowsim.backends.circuit import from_qiskit
+from shadowsim.backends.program import Program
+
 # Real, integer, and complex arrays. Object arrays are excluded: NumPy stores
 # them as pickles, and unpickling runs the payload.
 _NUMERIC_KINDS = frozenset("biufc")
@@ -299,6 +302,8 @@ def _circuit_metric_fields(simulator: object) -> dict[str, int | str]:
         methods.append(method)
     try:
         circuit = build()
+        if not isinstance(circuit, Program) and hasattr(circuit, "data"):
+            circuit = from_qiskit(circuit)
         values = [method(circuit) for method in methods]
     except NotImplementedError:
         return unavailable

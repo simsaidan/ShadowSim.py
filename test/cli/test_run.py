@@ -260,6 +260,8 @@ def test_a_backend_setup_without_a_class_is_rejected(monkeypatch: pytest.MonkeyP
     monkeypatch.setattr("shadowsim.cli.run.listed_backends", lambda: [])
     with pytest.raises(ValueError, match="unknown backend"):
         _backend_record("missing")
+    with pytest.raises(ValueError, match="unknown backend"):
+        _backend_record("numpy")
 
 
 @pytest.mark.parametrize("time_steps", [0, True, 1.5])
@@ -1121,8 +1123,10 @@ def test_aer_posted_basis_that_cannot_compile_is_a_value_error() -> None:
     )
     circuit = QuantumCircuit(1)
     circuit.t(0)
-    with pytest.raises(ValueError, match=r"^Cannot compile t into x, y, and z\.$"):
-        simulator.circuit_backend.t_count(circuit)
+    from shadowsim.backends.circuit import from_qiskit
+
+    with pytest.raises(ValueError, match=r"^Cannot compile .+ into x, y, and z\.$"):
+        simulator.circuit_backend.t_count(from_qiskit(circuit))
 
 
 @pytest.mark.qiskit
@@ -1590,7 +1594,11 @@ def test_listed_backends_reads_concrete_classes(monkeypatch: pytest.MonkeyPatch)
         assert extra == "qiskit"
         return module
 
+    def fake_module(name: str) -> types.ModuleType:
+        raise ImportError(name)
+
     monkeypatch.setattr("shadowsim.backends.catalog.import_optional", fake_import)
+    monkeypatch.setattr("shadowsim.backends.catalog.importlib.import_module", fake_module)
     assert listed_backends() == [
         {
             "id": "aer",
@@ -1626,7 +1634,11 @@ def test_listed_backends_reraises_the_first_import_error(monkeypatch: pytest.Mon
     def fake_import(name: str, *, extra: str) -> types.ModuleType:
         raise ImportError(f"missing {name}")
 
+    def fake_module(name: str) -> types.ModuleType:
+        raise ImportError(f"missing {name}")
+
     monkeypatch.setattr("shadowsim.backends.catalog.import_optional", fake_import)
+    monkeypatch.setattr("shadowsim.backends.catalog.importlib.import_module", fake_module)
 
     with pytest.raises(ImportError, match="missing shadowsim.backends.aer"):
         listed_backends()
@@ -1636,7 +1648,11 @@ def test_listed_backends_rejects_an_empty_catalog(monkeypatch: pytest.MonkeyPatc
     def fake_import(name: str, *, extra: str) -> types.ModuleType:
         return types.ModuleType(name)
 
+    def fake_module(name: str) -> types.ModuleType:
+        return types.ModuleType(name)
+
     monkeypatch.setattr("shadowsim.backends.catalog.import_optional", fake_import)
+    monkeypatch.setattr("shadowsim.backends.catalog.importlib.import_module", fake_module)
 
     with pytest.raises(ImportError, match="no circuit backends"):
         listed_backends()

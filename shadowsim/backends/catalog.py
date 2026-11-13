@@ -1,5 +1,6 @@
 """List the concrete circuit backends for the builder page."""
 
+import importlib
 import inspect
 import math
 from types import ModuleType
@@ -65,7 +66,10 @@ def listed_backends() -> list[ListedBackend]:
             continue
         seen.add(module_name)
         try:
-            module = import_optional(module_name, extra=extra)
+            if extra is None:
+                module = importlib.import_module(module_name)
+            else:
+                module = import_optional(module_name, extra=extra)
         except ImportError as exc:
             if first_error is None:
                 first_error = exc

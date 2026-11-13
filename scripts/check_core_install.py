@@ -4,7 +4,8 @@ import sys
 
 import numpy as np
 
-from shadowsim import interop, simulators
+from shadowsim import backends, interop, simulators
+from shadowsim.backends import circuit
 from shadowsim.core import Hamiltonian, State
 from shadowsim.models import ising, jaynes_cummings, tavis_cummings
 from shadowsim.shadow import ShadowHamiltonian
@@ -44,6 +45,8 @@ def main() -> None:
     for obj in (Hamiltonian, ShadowHamiltonian, ising, jaynes_cummings, tavis_cummings, interop, simulators.Simulator):
         if obj is None:
             raise SystemExit("core import returned None")
+    if backends.CircuitBackend is not circuit.CircuitBackend:
+        raise SystemExit("CircuitBackend export does not match the protocol")
 
     loaded = [name for name in ("qutip", "qiskit", "qiskit_aer", "scipy", "matplotlib") if name in sys.modules]
     if loaded:
@@ -51,8 +54,11 @@ def main() -> None:
 
     _expect_extra(lambda: simulators.QutipSimulator, "qutip")
     _expect_extra(lambda: interop.from_qutip, "qutip")
-    _expect_extra(lambda: simulators.HybridWMLSimulator, "qiskit")
-    _expect_extra(lambda: simulators.SplitJMatrixSimulator, "qiskit")
+    _expect_extra(lambda: simulators.HybridWMLSimulator, "circuits")
+    _expect_extra(lambda: simulators.SplitJMatrixSimulator, "circuits")
+    _expect_extra(lambda: simulators.TrotterizationSimulator, "circuits")
+    _expect_extra(lambda: backends.from_qiskit, "qiskit")
+    _expect_extra(lambda: backends.to_qiskit, "qiskit")
     _expect_extra(_plot, "viz")
 
 

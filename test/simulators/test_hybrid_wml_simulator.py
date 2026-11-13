@@ -6,15 +6,11 @@ from concurrent.futures import Future
 import numpy as np
 import pytest
 
-pytestmark = pytest.mark.qiskit
-
-pytest.importorskip("qiskit")
-pytest.importorskip("qiskit_aer")
 pytest.importorskip("scipy")
 
-import shadowsim.backends.aer as aer_backend_module
 import shadowsim.simulators._time_points as time_points
 import shadowsim.simulators.hybrid_wml_simulator as hybrid_module
+from shadowsim.backends.program import Unitary
 from shadowsim.core import Hamiltonian, LocalHamiltonian, LocalOperator, Operator, State
 from shadowsim.simulators import HybridWMLSimulator, Measurement
 from shadowsim.simulators.hybrid_wml_simulator import _hybrid_wml, _hybrid_wml_circuit
@@ -31,10 +27,19 @@ _CLOSED_TOLERANCE = 0.12
 _DAMPING_TOLERANCE = 0.10
 
 
+def _aer():
+    """Return the Aer backend module. Callers need the qiskit extra."""
+    pytest.importorskip("qiskit")
+    pytest.importorskip("qiskit_aer")
+    import shadowsim.backends.aer as aer_backend_module
+
+    return aer_backend_module
+
+
 def _make(*, shots: int = 32, **kwargs: object) -> HybridWMLSimulator:
     backend = kwargs.get("circuit_backend", _MISSING)
     if backend is _MISSING:
-        kwargs["circuit_backend"] = aer_backend_module.AerCircuitBackend(shots=shots)
+        kwargs["circuit_backend"] = _aer().AerCircuitBackend(shots=shots)
     elif backend is not None and hasattr(backend, "shots"):
         backend.shots = shots  # type: ignore[attr-defined]
     defaults: dict[str, object] = {
@@ -51,16 +56,7 @@ def _make(*, shots: int = 32, **kwargs: object) -> HybridWMLSimulator:
     return HybridWMLSimulator(**defaults)  # type: ignore[arg-type]
 
 
-def _instruction_signature(circuit: object) -> list[tuple[str, tuple[int, ...], tuple[bytes, ...]]]:
-    """Return gate names, qubit indexes, and parameter bytes, ignoring register names."""
-    rows: list[tuple[str, tuple[int, ...], tuple[bytes, ...]]] = []
-    for instruction in circuit.data:  # type: ignore[attr-defined]
-        qubits = tuple(int(circuit.find_bit(qubit).index) for qubit in instruction.qubits)  # type: ignore[attr-defined]
-        params = tuple(np.asarray(param).tobytes() for param in instruction.operation.params)
-        rows.append((instruction.operation.name, qubits, params))
-    return rows
-
-
+@pytest.mark.qiskit
 def test_run_settings_are_keyword_only() -> None:
     hamiltonians = [LocalHamiltonian(Z, [0])]
     state = State(np.array([1.0, 0.0], dtype=np.complex128), 1)
@@ -76,6 +72,7 @@ def test_run_settings_are_keyword_only() -> None:
     assert simulator.basis == "Z"
 
 
+@pytest.mark.qiskit
 def test_omitted_backend_is_aer() -> None:
     simulator = HybridWMLSimulator(
         [LocalHamiltonian(Z, [0])],
@@ -86,11 +83,12 @@ def test_omitted_backend_is_aer() -> None:
         time_steps=2,
         num_steps=1,
     )
-    assert isinstance(simulator.circuit_backend, aer_backend_module.AerCircuitBackend)
+    assert isinstance(simulator.circuit_backend, _aer().AerCircuitBackend)
     assert simulator.seed is None
     assert simulator.basis == "Z"
 
 
+@pytest.mark.qiskit
 def test_rejects_non_local_operators() -> None:
     with pytest.raises(TypeError, match="LocalHamiltonian"):
         _make(hamiltonians=[Hamiltonian(Z)])
@@ -98,6 +96,7 @@ def test_rejects_non_local_operators() -> None:
         _make(lindblads=[Operator(Z)])
 
 
+@pytest.mark.qiskit
 def test_rejects_operators_off_the_register() -> None:
     qutrit = np.eye(3, dtype=np.complex128)
     with pytest.raises(ValueError, match="local_dim must be 2"):
@@ -112,6 +111,7 @@ def test_rejects_operators_off_the_register() -> None:
         _make(lindblads=[LocalOperator(Z, [4])])
 
 
+@pytest.mark.qiskit
 def test_rejects_a_zero_sampling_weight() -> None:
     zero = np.zeros((2, 2), dtype=np.complex128)
     with pytest.raises(ValueError, match="nonzero"):
@@ -138,21 +138,28 @@ def test_rejects_a_zero_sampling_weight() -> None:
         ({"basis": "XX"}, ValueError, "basis must be 1 letters from X, Y, and Z"),
     ],
 )
+@pytest.mark.qiskit
 def test_rejects_bad_run_settings(kwargs: dict[str, object], exc: type[Exception], match: str) -> None:
     with pytest.raises(exc, match=match):
         _make(**kwargs)
 
 
+@pytest.mark.circuits
 def test_rejects_a_backend_without_a_shot_budget() -> None:
     class Expectations:
         name = "expectations"
 
+    class Budget:
+        name = "budget"
+        shots = 1
+
     with pytest.raises(ValueError, match="shot budget"):
         _make(circuit_backend=Expectations())
     with pytest.raises(ValueError, match="shots must be a positive integer"):
-        _make(shots=0)
+        _make(circuit_backend=Budget(), shots=0)
 
 
+@pytest.mark.qiskit
 def test_t0_counts_are_the_initial_computational_state() -> None:
     shots = 32
     one = _make(
@@ -187,6 +194,7 @@ def test_t0_counts_are_the_initial_computational_state() -> None:
     assert two.simulate().counts == [{"10": shots}]
 
 
+@pytest.mark.qiskit
 def test_x_basis_reads_the_plus_state_as_zero() -> None:
     plus = np.array([1.0, 1.0], dtype=np.complex128) / np.sqrt(2.0)
     shots = 32
@@ -202,6 +210,7 @@ def test_x_basis_reads_the_plus_state_as_zero() -> None:
     assert simulator.simulate().counts == [{"0": shots}]
 
 
+@pytest.mark.qiskit
 def test_t0_with_only_a_lindblad_stays_in_the_initial_state() -> None:
     shots = 16
     zero = np.zeros((2, 2), dtype=np.complex128)
@@ -219,9 +228,11 @@ def test_t0_with_only_a_lindblad_stays_in_the_initial_state() -> None:
     assert simulator.simulate().counts == [{"1": shots}, {"1": shots}]
 
     circuit = _hybrid_wml_circuit([], [LocalOperator(LOWERING, [0])], state, 1, t=0.0, num_steps=1)
-    assert [register.name for register in circuit.qregs] == ["ancilla", "system"]
+    assert circuit.num_qubits == 2
+    assert circuit.num_clbits == 1
 
 
+@pytest.mark.qiskit
 def test_a_seed_repeats_the_same_counts() -> None:
     settings: dict[str, object] = {
         "shots": 24,
@@ -237,6 +248,7 @@ def test_a_seed_repeats_the_same_counts() -> None:
     assert len(first) == 3
 
 
+@pytest.mark.qiskit
 def test_workers_match_the_serial_counts() -> None:
     settings: dict[str, object] = {
         "shots": 8,
@@ -252,6 +264,7 @@ def test_workers_match_the_serial_counts() -> None:
     assert len(serial) == 2
 
 
+@pytest.mark.qiskit
 def test_serial_run_is_quiet_by_default(monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
     monkeypatch.setattr(hybrid_module, "_hybrid_wml", lambda *args, **kwargs: {"0": 4})
 
@@ -260,6 +273,7 @@ def test_serial_run_is_quiet_by_default(monkeypatch: pytest.MonkeyPatch, capsys:
     assert capsys.readouterr().out == ""
 
 
+@pytest.mark.qiskit
 def test_serial_run_reports_progress_when_verbose(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -299,6 +313,7 @@ class _RunSubmitted:
         return None
 
 
+@pytest.mark.qiskit
 def test_parallel_run_reports_progress_and_keeps_system_bits(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -321,6 +336,7 @@ def test_parallel_run_reports_progress_and_keeps_system_bits(
     assert "Working on time step 0.2" in output
 
 
+@pytest.mark.circuits
 def test_metrics_circuit_matches_the_final_executed_circuit() -> None:
     class Recording:
         name = "recording"
@@ -348,10 +364,11 @@ def test_metrics_circuit_matches_the_final_executed_circuit() -> None:
     )
     simulator.simulate()
 
-    assert _instruction_signature(simulator.metrics_circuit()) == _instruction_signature(backend.circuit)
+    assert simulator.metrics_circuit() == backend.circuit
     assert len(set(backend.seeds)) == 3
 
 
+@pytest.mark.qiskit
 def test_str_and_repr() -> None:
     simulator = _make(shots=42, seed=7, num_steps=5)
     text = str(simulator)
@@ -366,6 +383,7 @@ def test_str_and_repr() -> None:
     assert "progress=" in rep
 
 
+@pytest.mark.circuits
 def test_hybrid_wml_rejects_bad_shots_seed_time_and_steps() -> None:
     state = State(np.array([1.0, 0.0], dtype=np.complex128), 1)
     hamiltonians = [LocalHamiltonian(Z, [0])]
@@ -385,6 +403,7 @@ def test_hybrid_wml_rejects_bad_shots_seed_time_and_steps() -> None:
         _hybrid_wml_circuit(hamiltonians, [], state, 1, t=0.0, num_steps=1.5)  # type: ignore[arg-type]
 
 
+@pytest.mark.qiskit
 def test_hybrid_wml_defaults_to_aer_and_forwards_an_unseeded_run() -> None:
     counts = _hybrid_wml(
         [LocalHamiltonian(Z, [0])],
@@ -399,6 +418,7 @@ def test_hybrid_wml_defaults_to_aer_and_forwards_an_unseeded_run() -> None:
     assert counts == {"0": 1}
 
 
+@pytest.mark.circuits
 def test_unseeded_run_passes_no_simulator_seed() -> None:
     class Recording:
         name = "recording"
@@ -426,6 +446,7 @@ def test_unseeded_run_passes_no_simulator_seed() -> None:
     assert backend.seed is None
 
 
+@pytest.mark.circuits
 def test_verbose_circuit_prints_every_tenth_step(capsys: pytest.CaptureFixture[str]) -> None:
     class Recording:
         name = "recording"
@@ -466,15 +487,12 @@ def test_verbose_circuit_prints_every_tenth_step(capsys: pytest.CaptureFixture[s
     assert "Working on iteration 10 out of 11" in output
     assert "Working on iteration 1 out of 11" not in output
     assert backend.circuit is not None
-    sizes = {
-        np.asarray(instruction.operation.params[0]).shape
-        for instruction in backend.circuit.data  # type: ignore[attr-defined]
-        if instruction.operation.name == "unitary"
-    }
+    sizes = {operation.matrix.shape for operation in backend.circuit.operations if isinstance(operation, Unitary)}
     assert (16, 16) in sizes
     assert (4, 4) in sizes
 
 
+@pytest.mark.qiskit
 @pytest.mark.cross_extra
 def test_closed_one_qubit_agrees_with_qutip() -> None:
     pytest.importorskip("qutip")
@@ -509,6 +527,7 @@ def test_closed_one_qubit_agrees_with_qutip() -> None:
     assert metrics[0]["observables"][0]["linf"] < _CLOSED_TOLERANCE
 
 
+@pytest.mark.qiskit
 @pytest.mark.cross_extra
 def test_amplitude_damping_agrees_with_qutip() -> None:
     pytest.importorskip("qutip")

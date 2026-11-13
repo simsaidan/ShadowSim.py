@@ -4,12 +4,13 @@ import json
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import TYPE_CHECKING
 
 import numpy as np
 import numpy.typing as npt
 
 from shadowsim._optional import import_optional
+from shadowsim.backends.circuit import CircuitBackend, backend_samples, backend_shots
+from shadowsim.backends.program import Prepare, Program, Unitary
 from shadowsim.core.hamiltonian import Hamiltonian
 from shadowsim.core.local_hamiltonian import LocalHamiltonian
 from shadowsim.core.operator import Operator
@@ -18,11 +19,6 @@ from shadowsim.core.state import State
 from shadowsim.shadow.shadow_hamiltonian import ShadowHamiltonian, _infer_num_qubits
 from shadowsim.shadow.shadow_state import ShadowState
 from shadowsim.utils.next_power_of_two import next_power_of_two
-
-if TYPE_CHECKING:
-    from qiskit import QuantumCircuit
-
-    from shadowsim.backends.circuit import CircuitBackend
 
 
 @dataclass(frozen=True)
@@ -365,15 +361,13 @@ def _hadamard_test_circuit(
     psi0: npt.NDArray[np.complexfloating],
     evolution: npt.NDArray[np.complexfloating],
     k: int,
-) -> "QuantumCircuit":
-    """Return a circuit whose ancilla ``⟨X⟩`` is ``Re⟨k|evolution|psi0⟩``.
+) -> Program:
+    """Return a program whose ancilla ``⟨X⟩`` is ``Re⟨k|evolution|psi0⟩``.
 
-    Circuit qubit 0 is the ancilla and the most significant bit of the joint
-    index, the convention ``_trotter_circuit`` uses. The register starts in
+    Qubit 0 is the ancilla and the most significant bit of the joint index, the
+    convention ``_trotter_circuit`` uses. The register starts in
     ``(|0⟩|psi0⟩ + |1⟩|k⟩) / √2`` and ``evolution`` acts only on the ``|0⟩`` branch.
     """
-    qiskit = import_optional("qiskit", extra="qiskit")
-    library = import_optional("qiskit.circuit.library", extra="qiskit")
     dim = int(psi0.shape[0])
     reference = np.zeros(dim, dtype=np.complex128)
     reference[k] = 1.0
@@ -381,12 +375,9 @@ def _hadamard_test_circuit(
     controlled = np.zeros((2 * dim, 2 * dim), dtype=np.complex128)
     controlled[:dim, :dim] = evolution
     controlled[dim:, dim:] = np.eye(dim, dtype=np.complex128)
-
-    circuit = qiskit.QuantumCircuit(dim.bit_length())
-    qubits = list(reversed(circuit.qubits))
-    circuit.initialize(joint, qubits)
-    circuit.append(library.UnitaryGate(controlled), qubits)
-    return circuit
+    width = dim.bit_length()
+    qubits = tuple(reversed(range(width)))
+    return Program(width, 0, (Prepare(joint, qubits), Unitary(controlled, qubits)))
 
 
 def _signed_expectations(
@@ -394,14 +385,13 @@ def _signed_expectations(
     shadow_state: ShadowState,
     h_s_dimension: int,
     times: npt.NDArray[np.float64],
-    circuit_backend: "CircuitBackend",
+    circuit_backend: CircuitBackend,
     *,
     seed: int | None,
 ) -> list[npt.NDArray[np.float64]]:
     """Return ``√A · ψ_k(t)`` for each closure-basis index ``k``, one curve per index."""
-    linalg = import_optional("scipy.linalg", extra="qiskit")
-    circuit = import_optional("shadowsim.backends.circuit", extra="qiskit")
-    shots = circuit.backend_shots(circuit_backend) if circuit.backend_samples(circuit_backend) else 1
+    linalg = import_optional("scipy.linalg", extra="circuits")
+    shots = backend_shots(circuit_backend) if backend_samples(circuit_backend) else 1
     psi0 = shadow_state.to_numpy()
     scale = np.sqrt(shadow_state.A)
     curves = np.zeros((h_s_dimension, times.shape[0]), dtype=np.float64)
@@ -437,7 +427,7 @@ def run_shadow_simulation(
     *,
     total_time: float,
     time_steps: int,
-    circuit_backend: "CircuitBackend",
+    circuit_backend: CircuitBackend,
     num_qubits: int | None = None,
     shadow_observables: OperatorSet | None = None,
     seed: int | None = None,

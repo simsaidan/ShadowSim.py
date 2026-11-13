@@ -12,6 +12,8 @@ from qiskit.circuit import CircuitInstruction
 
 from shadowsim._optional import import_optional
 from shadowsim.backends._arguments import _qubit_indexes, _UnsupportedCircuitMetrics
+from shadowsim.backends.circuit import to_qiskit
+from shadowsim.backends.program import Program
 
 # OpenQASMInterface exists on this revision, not on the package's current main branch.
 _QASM_REVISION = 'Pkg.add(url="https://github.com/SparqleSim/PauliPropagation.jl", rev="6e8c1ae")'
@@ -51,7 +53,7 @@ _QASM_BASIS = (
 class PauliPropagationBackend(_UnsupportedCircuitMetrics):
     """Propagate one Pauli observable per requested qubit.
 
-    The circuit is written as OpenQASM 2 and read by
+    The program is translated to Qiskit and written as OpenQASM 2 for
     ``PauliPropagation.OpenQASMInterface.readqasm``. ``z_expectations`` and
     ``x_expectations`` return the expectation of Z or X on ``|0...0>`` after
     that circuit. Shot counts are not available.
@@ -77,23 +79,23 @@ class PauliPropagationBackend(_UnsupportedCircuitMetrics):
         self.max_weight = _nonnegative_real(max_weight, "max_weight", allow_inf=True)
         self.min_abs_coeff = _nonnegative_real(min_abs_coeff, "min_abs_coeff", allow_inf=False)
 
-    def run_counts(self, circuit: QuantumCircuit, *, shots: int, seed: int | None) -> dict[str, int]:
+    def run_counts(self, program: Program, *, shots: int, seed: int | None) -> dict[str, int]:
         """Reject a request for shot counts.
 
         Args:
-            circuit: Unused. PauliPropagation does not sample a circuit.
+            program: Unused. PauliPropagation does not sample a program.
             shots: Unused.
             seed: Unused.
 
         Raises:
             NotImplementedError: PauliPropagation does not support shot counts.
         """
-        del circuit, shots, seed
+        del program, shots, seed
         raise NotImplementedError("PauliPropagation does not support shot counts")
 
     def z_expectations(
         self,
-        circuit: QuantumCircuit,
+        program: Program,
         qubits: Sequence[int],
         *,
         shots: int,
@@ -104,8 +106,8 @@ class PauliPropagationBackend(_UnsupportedCircuitMetrics):
         Truncation uses ``max_weight`` and ``min_abs_coeff`` stored on this backend.
 
         Args:
-            circuit: Circuit to propagate, without measurements or resets.
-            qubits: 0-based indexes in ``circuit.qubits``. The result follows this order.
+            program: Program to propagate, without measurements or resets.
+            qubits: 0-based indexes in ``program``. The result follows this order.
             shots: Unused. The value is not estimated from shots.
             seed: Unused.
 
@@ -113,16 +115,16 @@ class PauliPropagationBackend(_UnsupportedCircuitMetrics):
             One expectation per entry of ``qubits``.
 
         Raises:
-            ValueError: An index is outside ``circuit``, the Julia package is missing,
-                or the circuit cannot be read.
+            ValueError: An index is outside ``program``, the Julia package is missing,
+                or the program cannot be read.
             ImportError: The ``pauli_propagation`` extra is not installed.
         """
         del shots, seed
-        return _expectations(self, circuit, qubits, "Z")
+        return _expectations(self, program, qubits, "Z")
 
     def x_expectations(
         self,
-        circuit: QuantumCircuit,
+        program: Program,
         qubits: Sequence[int],
         *,
         shots: int,
@@ -133,8 +135,8 @@ class PauliPropagationBackend(_UnsupportedCircuitMetrics):
         Truncation uses ``max_weight`` and ``min_abs_coeff`` stored on this backend.
 
         Args:
-            circuit: Circuit to propagate, without measurements or resets.
-            qubits: 0-based indexes in ``circuit.qubits``. The result follows this order.
+            program: Program to propagate, without measurements or resets.
+            qubits: 0-based indexes in ``program``. The result follows this order.
             shots: Unused. The value is not estimated from shots.
             seed: Unused.
 
@@ -142,25 +144,25 @@ class PauliPropagationBackend(_UnsupportedCircuitMetrics):
             One expectation per entry of ``qubits``.
 
         Raises:
-            ValueError: An index is outside ``circuit``, the Julia package is missing,
-                or the circuit cannot be read.
+            ValueError: An index is outside ``program``, the Julia package is missing,
+                or the program cannot be read.
             ImportError: The ``pauli_propagation`` extra is not installed.
         """
         del shots, seed
-        return _expectations(self, circuit, qubits, "X")
+        return _expectations(self, program, qubits, "X")
 
 
 def _expectations(
     backend: PauliPropagationBackend,
-    circuit: QuantumCircuit,
+    program: Program,
     qubits: Sequence[int],
     pauli: Literal["Z", "X"],
 ) -> list[float]:
     """Return one propagated expectation for each index in ``qubits``."""
-    indexes = _qubit_indexes(qubits, circuit.num_qubits, register="circuit")
+    indexes = _qubit_indexes(qubits, program.num_qubits, register="program")
     if not indexes:
         return []
-    prepared = _importable_circuit(circuit)
+    prepared = _importable_circuit(to_qiskit(program))
     module = _julia_module()
     nqubits, gates, thetas = _read_qasm(module, prepared)
     return [

@@ -9,18 +9,20 @@ from typing import Any, cast
 
 import numpy as np
 import scipy.linalg
-from qiskit import ClassicalRegister, QuantumCircuit, QuantumRegister
-from qiskit.circuit.library import UnitaryGate
 
-from shadowsim.backends.aer import AerCircuitBackend
 from shadowsim.backends.circuit import CircuitBackend, backend_shots
+from shadowsim.backends.program import Barrier, Measure, Operation, Prepare, Program, Reset, Unitary
 from shadowsim.core.hamiltonian import Hamiltonian
 from shadowsim.core.local_hamiltonian import LocalHamiltonian
 from shadowsim.core.local_operator import LocalOperator
 from shadowsim.core.operator import Operator
 from shadowsim.core.state import State
 from shadowsim.simulators._time_points import TimeCall
-from shadowsim.simulators.product_formula_simulator import ProductFormulaSimulator, _rotate_to_basis
+from shadowsim.simulators.product_formula_simulator import (
+    ProductFormulaSimulator,
+    _default_circuit_backend,
+    _rotate_to_basis,
+)
 
 __all__ = ["HybridWMLSimulator"]
 
@@ -201,63 +203,32 @@ def _jump_unitary(lindblad: np.ndarray, angle: float) -> np.ndarray:
 
 
 def _apply_program_step(
-    circuit: QuantumCircuit,
-    body: QuantumRegister,
-    prog: QuantumRegister,
+    operations: list[Operation],
+    num_qubits: int,
+    program_width: int,
     term: _ProgramTerm,
-    gate: UnitaryGate,
+    matrix: np.ndarray,
 ) -> None:
-    """Load ``term`` onto the program register, swap it in, and trace it out."""
+    """Load ``term`` onto the program register, swap it in, and trace it out.
+
+    The program register starts at qubit ``1 + num_qubits``. Every qubit of that
+    register is reset, including ones this term does not use.
+    """
     width = len(term.sites)
-    program_qubits = [prog[i] for i in range(width)]
-    circuit.initialize(np.array(term.state, copy=True), list(reversed(program_qubits)))
-    system_qubits = [body[site] for site in term.sites]
-    circuit.append(gate, reversed([*system_qubits, *program_qubits]))
-    for qubit in prog:
-        circuit.reset(qubit)
+    program_qubits = [1 + num_qubits + index for index in range(width)]
+    operations.append(Prepare(np.array(term.state, copy=True), tuple(reversed(program_qubits))))
+    system_qubits = [1 + site for site in term.sites]
+    operations.append(Unitary(matrix, tuple(reversed([*system_qubits, *program_qubits]))))
+    for index in range(program_width):
+        operations.append(Reset(1 + num_qubits + index))
 
 
-def _apply_jump_step(
-    circuit: QuantumCircuit,
-    body: QuantumRegister,
-    ancilla: QuantumRegister,
-    term: _JumpTerm,
-    gate: UnitaryGate,
-) -> None:
+def _apply_jump_step(operations: list[Operation], term: _JumpTerm, matrix: np.ndarray) -> None:
     """Apply one J-gate on the ancilla plus ``term`` and trace the ancilla out."""
-    circuit.reset(ancilla[0])
-    circuit.append(gate, reversed([ancilla[0], *[body[site] for site in term.sites]]))
-    circuit.reset(ancilla[0])
-
-
-def _program_applier(
-    circuit: QuantumCircuit,
-    body: QuantumRegister,
-    prog: QuantumRegister,
-    term: _ProgramTerm,
-    gate: UnitaryGate,
-) -> Callable[[], None]:
-    """Return a closure that applies one sampled Hamiltonian step."""
-
-    def apply() -> None:
-        _apply_program_step(circuit, body, prog, term, gate)
-
-    return apply
-
-
-def _jump_applier(
-    circuit: QuantumCircuit,
-    body: QuantumRegister,
-    ancilla: QuantumRegister,
-    term: _JumpTerm,
-    gate: UnitaryGate,
-) -> Callable[[], None]:
-    """Return a closure that applies one sampled Lindblad step."""
-
-    def apply() -> None:
-        _apply_jump_step(circuit, body, ancilla, term, gate)
-
-    return apply
+    operations.append(Reset(0))
+    indexes = (0, *[1 + site for site in term.sites])
+    operations.append(Unitary(matrix, tuple(reversed(indexes))))
+    operations.append(Reset(0))
 
 
 def _hybrid_wml_circuit(
@@ -272,16 +243,16 @@ def _hybrid_wml_circuit(
     seed: int | None = None,
     time_index: int = 0,
     basis: str | None = None,
-) -> QuantumCircuit:
-    """Return one hybrid WML circuit for time ``t``, including the measurement.
+) -> Program:
+    """Return one hybrid WML program for time ``t``, including the measurement.
 
     Each of the ``num_steps`` samples one spectral Hamiltonian term or one
     Lindblad. A Hamiltonian term is prepared on the program register and coupled
     with ``exp(-i sgn(λ) SWAP Δ)``, where ``Δ = c t / num_steps``. A Lindblad
     ``L`` is applied as ``exp(-i J_L sqrt(τ))`` with
     ``τ = c t / (num_steps ||L||_F^2)``, so the expected accumulated jump time is
-    ``t``. The ancilla and program register are not measured. Circuit qubit 0 is
-    the ancilla, and system qubit ``i`` is circuit qubit ``i + 1``.
+    ``t``. The ancilla and program register are not measured. Qubit 0 is the
+    ancilla, and system qubit ``i`` is qubit ``i + 1``.
 
     Raises:
         ValueError: ``num_steps`` is not positive, ``t`` is negative, or every
@@ -294,33 +265,24 @@ def _hybrid_wml_circuit(
     delta = prepared.c * t / num_steps
     # tau = c*t / (n*||L||_F^2). Drawn with probability ||L||_F^2/c, the expected time is t.
     jump_gates = [
-        UnitaryGate(_jump_unitary(jump.matrix, math.sqrt(prepared.c * t / (num_steps * jump.weight))))
-        for jump in prepared.jumps
+        _jump_unitary(jump.matrix, math.sqrt(prepared.c * t / (num_steps * jump.weight))) for jump in prepared.jumps
     ]
-    swap_gates: dict[tuple[int, float], UnitaryGate] = {}
+    swap_gates: dict[tuple[int, float], np.ndarray] = {}
     for term in prepared.program:
         key = (len(term.sites), term.sign)
         if key not in swap_gates:
-            unitary = scipy.linalg.expm(-1j * term.sign * _swap_matrix(len(term.sites)) * delta)
-            swap_gates[key] = UnitaryGate(unitary)
+            swap_gates[key] = scipy.linalg.expm(-1j * term.sign * _swap_matrix(len(term.sites)) * delta)
 
-    ancilla = QuantumRegister(1, name="ancilla")
-    body = QuantumRegister(num_qubits, name="system")
-    classical = ClassicalRegister(num_qubits, name="c")
-    appliers: list[Callable[[], None]] = []
-    if prepared.program_width:
-        prog = QuantumRegister(prepared.program_width, name="program")
-        circuit = QuantumCircuit(ancilla, body, prog, classical)
-        for term in prepared.program:
-            gate = swap_gates[(len(term.sites), term.sign)]
-            appliers.append(_program_applier(circuit, body, prog, term, gate))
-    else:
-        circuit = QuantumCircuit(ancilla, body, classical)
-    for jump, gate in zip(prepared.jumps, jump_gates, strict=True):
-        appliers.append(_jump_applier(circuit, body, ancilla, jump, gate))
+    steps: list[tuple[_ProgramTerm | _JumpTerm, np.ndarray]] = [
+        (program_term, swap_gates[(len(program_term.sites), program_term.sign)]) for program_term in prepared.program
+    ]
+    steps.extend(zip(prepared.jumps, jump_gates, strict=True))
 
-    circuit.initialize(initial_state.to_numpy(), list(reversed(body)))
-    circuit.barrier(body)
+    body = tuple(range(1, 1 + num_qubits))
+    operations: list[Operation] = [
+        Prepare(initial_state.to_numpy(), tuple(reversed(body))),
+        Barrier(body),
+    ]
     sequence_seed = _sequence_seed(seed, time_index)
     choices = np.random.default_rng(sequence_seed).choice(
         len(prepared.weights),
@@ -330,11 +292,15 @@ def _hybrid_wml_circuit(
     for step, choice in enumerate(choices):
         if verbose and step % 10 == 0:
             print(f"Working on iteration {step} out of {num_steps}")
-        appliers[int(choice)]()
-    circuit.barrier(body)
-    _rotate_to_basis(circuit, body, basis, num_qubits)
-    circuit.measure(body, classical)
-    return circuit
+        chosen, matrix = steps[int(choice)]
+        if isinstance(chosen, _ProgramTerm):
+            _apply_program_step(operations, num_qubits, prepared.program_width, chosen, matrix)
+        else:
+            _apply_jump_step(operations, chosen, matrix)
+    operations.append(Barrier(body))
+    operations.extend(_rotate_to_basis(basis, num_qubits, offset=1))
+    operations.extend(Measure(1 + index, index) for index in range(num_qubits))
+    return Program(1 + num_qubits + prepared.program_width, num_qubits, operations)
 
 
 def _hybrid_wml(
@@ -354,8 +320,8 @@ def _hybrid_wml(
 ) -> dict[str, int]:
     """Run one hybrid WML circuit and return raw counts of the system qubits.
 
-    The circuit is :func:`_hybrid_wml_circuit`. ``circuit_backend`` executes it.
-    Omitting that backend uses :class:`AerCircuitBackend`. Counts use Qiskit
+    The program is :func:`_hybrid_wml_circuit`. ``circuit_backend`` executes it.
+    Omitting that backend uses Aer. Counts use Qiskit
     endianness; the simulator flips them so bit ``i`` is system qubit ``i``.
 
     Raises:
@@ -377,7 +343,7 @@ def _hybrid_wml(
         time_index=time_index,
         basis=basis,
     )
-    counts_backend = circuit_backend if circuit_backend is not None else AerCircuitBackend()
+    counts_backend = circuit_backend if circuit_backend is not None else _default_circuit_backend()
     return counts_backend.run_counts(circuit, shots=shots, seed=_sequence_seed(seed, time_index))
 
 
@@ -394,7 +360,7 @@ class HybridWMLSimulator(ProductFormulaSimulator):
     ``τ = c t / (num_steps ||L||_F^2)``, then resets the ancilla. One seeded
     sequence is frozen into the circuit and reused for every shot.
 
-    Counts come from ``circuit_backend``. Omitting it uses :class:`AerCircuitBackend`.
+    Counts come from ``circuit_backend``. Omitting it uses Aer.
     The shot count is that backend's ``shots`` attribute. Before the measurement,
     each system qubit is rotated into its letter of ``basis`` (default all ``Z``).
     The ancilla and the program register are not measured. Bit ``i`` of a counts
@@ -489,8 +455,8 @@ class HybridWMLSimulator(ProductFormulaSimulator):
         """Return the Lindblad count stored on the result."""
         return {"lindblad_count": len(self.lindblads)}
 
-    def metrics_circuit(self) -> QuantumCircuit:
-        """Return the circuit executed at the final time, including measurement."""
+    def metrics_circuit(self) -> Program:
+        """Return the program executed at the final time, including measurement."""
         return _hybrid_wml_circuit(
             cast(list[LocalHamiltonian], self.hamiltonians),
             cast(list[LocalOperator], self.lindblads),

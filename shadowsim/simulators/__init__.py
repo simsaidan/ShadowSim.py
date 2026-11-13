@@ -19,10 +19,10 @@ if TYPE_CHECKING:
 # extra is None when the simulator has no optional dependency.
 # Keep entries alphabetical by module name; the new-simulator command inserts that way.
 _EXPORTS: dict[str, tuple[str, str | None]] = {
-    "HybridWMLSimulator": ("shadowsim.simulators.hybrid_wml_simulator", "qiskit"),
+    "HybridWMLSimulator": ("shadowsim.simulators.hybrid_wml_simulator", "circuits"),
     "QutipSimulator": ("shadowsim.simulators.qutip_simulator", "qutip"),
-    "SplitJMatrixSimulator": ("shadowsim.simulators.splitjmatrix_simulator", "qiskit"),
-    "TrotterizationSimulator": ("shadowsim.simulators.trotterization_simulator", "qiskit"),
+    "SplitJMatrixSimulator": ("shadowsim.simulators.splitjmatrix_simulator", "circuits"),
+    "TrotterizationSimulator": ("shadowsim.simulators.trotterization_simulator", "circuits"),
 }
 
 __all__ = [

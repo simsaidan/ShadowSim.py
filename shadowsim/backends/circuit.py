@@ -1,14 +1,13 @@
 """Circuit backend protocol and Qiskit program translation."""
 
+from __future__ import annotations
+
 from collections.abc import Sequence
-from typing import Protocol
+from typing import TYPE_CHECKING, Protocol
 
 import numpy as np
-from qiskit import QuantumCircuit
-from qiskit.circuit import Instruction
-from qiskit.circuit.exceptions import CircuitError
-from qiskit.circuit.library import Initialize, UnitaryGate
 
+from shadowsim._optional import import_optional
 from shadowsim.backends._arguments import _require_shots
 from shadowsim.backends.program import (
     Barrier,
@@ -21,9 +20,13 @@ from shadowsim.backends.program import (
     Unitary,
 )
 
+if TYPE_CHECKING:
+    from qiskit import QuantumCircuit
+    from qiskit.circuit import Instruction
+
 
 class CircuitBackend(Protocol):
-    """Execute one circuit and return shot counts or Pauli expectations.
+    """Execute one program and return shot counts or Pauli expectations.
 
     Attributes:
         name: Identifier stored on simulation result metadata.
@@ -31,11 +34,11 @@ class CircuitBackend(Protocol):
 
     name: str
 
-    def run_counts(self, circuit: QuantumCircuit, *, shots: int, seed: int | None) -> dict[str, int]:
-        """Run ``circuit`` for ``shots`` and return bitstring counts.
+    def run_counts(self, program: Program, *, shots: int, seed: int | None) -> dict[str, int]:
+        """Run ``program`` for ``shots`` and return bitstring counts.
 
         Args:
-            circuit: Circuit to execute. Implementations transpile it for their target.
+            program: Program to execute. Implementations compile it for their target.
             shots: Number of shots.
             seed: Optional seed. Implementations use it only when the target accepts one.
 
@@ -46,7 +49,7 @@ class CircuitBackend(Protocol):
 
     def z_expectations(
         self,
-        circuit: QuantumCircuit,
+        program: Program,
         qubits: Sequence[int],
         *,
         shots: int,
@@ -55,8 +58,8 @@ class CircuitBackend(Protocol):
         """Return ``⟨Z⟩`` for each qubit in ``qubits``.
 
         Args:
-            circuit: Circuit to execute, before the computational-basis measurement.
-            qubits: 0-based indexes in ``circuit.qubits``. The result follows this order.
+            program: Program to execute, before the computational-basis measurement.
+            qubits: 0-based indexes in ``program``. The result follows this order.
             shots: Number of shots used when the backend estimates from counts.
             seed: Optional seed. Implementations use it only when the target accepts one.
 
@@ -64,13 +67,13 @@ class CircuitBackend(Protocol):
             One expectation per entry of ``qubits``.
 
         Raises:
-            ValueError: An index is outside ``circuit``.
+            ValueError: An index is outside ``program``.
         """
         ...
 
     def x_expectations(
         self,
-        circuit: QuantumCircuit,
+        program: Program,
         qubits: Sequence[int],
         *,
         shots: int,
@@ -79,8 +82,8 @@ class CircuitBackend(Protocol):
         """Return ``⟨X⟩`` for each qubit in ``qubits``.
 
         Args:
-            circuit: Circuit to execute, before the X-basis measurement.
-            qubits: 0-based indexes in ``circuit.qubits``. The result follows this order.
+            program: Program to execute, before the X-basis measurement.
+            qubits: 0-based indexes in ``program``. The result follows this order.
             shots: Number of shots used when the backend estimates from counts.
             seed: Optional seed. Implementations use it only when the target accepts one.
 
@@ -88,60 +91,60 @@ class CircuitBackend(Protocol):
             One expectation per entry of ``qubits``.
 
         Raises:
-            ValueError: An index is outside ``circuit``.
+            ValueError: An index is outside ``program``.
         """
         ...
 
-    def depth(self, circuit: QuantumCircuit) -> int:
-        """Return the depth of ``circuit`` after transpilation for this backend.
+    def depth(self, program: Program) -> int:
+        """Return the depth of ``program`` after compilation for this backend.
 
         Args:
-            circuit: Circuit to measure. Implementations transpile it for their target.
+            program: Program to measure. Implementations compile it for their target.
 
         Returns:
-            Length of the critical path on the transpiled circuit.
+            Length of the critical path on the compiled circuit.
 
         Raises:
             NotImplementedError: This backend does not expose gate counts.
         """
         ...
 
-    def width(self, circuit: QuantumCircuit) -> int:
-        """Return the number of qubits on ``circuit`` after transpilation.
+    def width(self, program: Program) -> int:
+        """Return the number of qubits on ``program`` after compilation.
 
         Args:
-            circuit: Circuit to measure. Implementations transpile it for their target.
+            program: Program to measure. Implementations compile it for their target.
 
         Returns:
-            Qubit count of the transpiled circuit. Classical bits are not included.
+            Qubit count of the compiled circuit. Classical bits are not included.
 
         Raises:
             NotImplementedError: This backend does not expose gate counts.
         """
         ...
 
-    def gate_count(self, circuit: QuantumCircuit) -> int:
-        """Return the instruction count of ``circuit`` after transpilation.
+    def gate_count(self, program: Program) -> int:
+        """Return the instruction count of ``program`` after compilation.
 
         Args:
-            circuit: Circuit to measure. Implementations transpile it for their target.
+            program: Program to measure. Implementations compile it for their target.
 
         Returns:
-            Total number of instructions on the transpiled circuit, including
-            measurements when ``circuit`` contains them.
+            Total number of instructions on the compiled circuit, including
+            measurements when ``program`` contains them.
 
         Raises:
             NotImplementedError: This backend does not expose gate counts.
         """
         ...
 
-    def t_count(self, circuit: QuantumCircuit) -> int:
-        """Return the number of ``t`` gates on ``circuit`` after transpilation.
+    def t_count(self, program: Program) -> int:
+        """Return the number of ``t`` gates on ``program`` after compilation.
 
         ``tdg`` is not included.
 
         Args:
-            circuit: Circuit to measure. Implementations transpile it for their target.
+            program: Program to measure. Implementations compile it for their target.
 
         Returns:
             Count of instructions named ``t``.
@@ -151,13 +154,13 @@ class CircuitBackend(Protocol):
         """
         ...
 
-    def toffoli_count(self, circuit: QuantumCircuit) -> int:
-        """Return the number of Toffoli gates on ``circuit`` after transpilation.
+    def toffoli_count(self, program: Program) -> int:
+        """Return the number of Toffoli gates on ``program`` after compilation.
 
         A Toffoli is ``ccx`` or ``ccz``.
 
         Args:
-            circuit: Circuit to measure. Implementations transpile it for their target.
+            program: Program to measure. Implementations compile it for their target.
 
         Returns:
             Sum of ``ccx`` and ``ccz`` instructions.
@@ -210,9 +213,11 @@ def from_qiskit(circuit: QuantumCircuit) -> Program:
         The operations on ``circuit``, in order.
 
     Raises:
+        ImportError: Qiskit is not installed.
         ValueError: An instruction has no matrix and is not initialize, reset,
             barrier, or measure.
     """
+    import_optional("qiskit", extra="qiskit")
     operations: list[Operation] = []
     for instruction in circuit.data:
         qubits = tuple(int(circuit.find_bit(qubit).index) for qubit in instruction.qubits)
@@ -233,8 +238,12 @@ def to_qiskit(program: Program) -> QuantumCircuit:
 
     Returns:
         A circuit with those operations.
+
+    Raises:
+        ImportError: Qiskit is not installed.
     """
-    circuit = QuantumCircuit(program.num_qubits, program.num_clbits)
+    qiskit = import_optional("qiskit", extra="qiskit")
+    circuit = qiskit.QuantumCircuit(program.num_qubits, program.num_clbits)
     for operation in program.operations:
         _append(circuit, operation)
     return circuit
@@ -242,8 +251,9 @@ def to_qiskit(program: Program) -> QuantumCircuit:
 
 def _operation(operation: Instruction, qubits: tuple[int, ...], clbits: tuple[int, ...]) -> Operation:
     """Translate one Qiskit instruction into a program operation."""
-    if isinstance(operation, Initialize):
-        return Prepare(_amplitudes(operation), qubits)
+    library = import_optional("qiskit.circuit.library", extra="qiskit")
+    if isinstance(operation, library.Initialize):
+        return Prepare(np.asarray(operation.params, dtype=np.complex128), qubits)
     name = operation.name
     if name == "h" and len(qubits) == 1:
         return Hadamard(qubits[0])
@@ -261,31 +271,28 @@ def _operation(operation: Instruction, qubits: tuple[int, ...], clbits: tuple[in
 
 def _matrix(operation: Instruction) -> np.ndarray | None:
     """Return the matrix of ``operation`` when the instruction defines one."""
+    exceptions = import_optional("qiskit.circuit.exceptions", extra="qiskit")
     to_matrix = getattr(operation, "to_matrix", None)
     if not callable(to_matrix):
         return None
     try:
         matrix = np.asarray(to_matrix(), dtype=np.complex128)
-    except (AttributeError, CircuitError, TypeError, ValueError):
+    except (AttributeError, exceptions.CircuitError, TypeError, ValueError):
         return None
     if matrix.ndim != 2:
         return None
     return matrix
 
 
-def _amplitudes(operation: Initialize) -> np.ndarray:
-    """Return the statevector stored on an initialize instruction."""
-    return np.asarray(operation.params, dtype=np.complex128)
-
-
 def _append(circuit: QuantumCircuit, operation: Operation) -> None:
     """Append ``operation`` to ``circuit``."""
+    library = import_optional("qiskit.circuit.library", extra="qiskit")
     if isinstance(operation, Prepare):
         circuit.initialize(np.array(operation.amplitudes, copy=True), _qubits(circuit, operation.qubits))
         return
     if isinstance(operation, Unitary):
         matrix = np.array(operation.matrix, copy=True)
-        circuit.append(UnitaryGate(matrix), _qubits(circuit, operation.qubits))
+        circuit.append(library.UnitaryGate(matrix), _qubits(circuit, operation.qubits))
         return
     if isinstance(operation, Hadamard):
         circuit.h(circuit.qubits[operation.qubit])
