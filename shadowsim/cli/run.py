@@ -533,8 +533,9 @@ def _load_exported(module_name: str, extra: str | None, class_name: str, missing
 def _backend_has_shot_budget(backend_id: str) -> bool:
     """Return whether ``backend_id`` reads a shot budget.
 
-    A posted shot count is still checked when no backend module can be imported,
-    so that number is reported before the missing extra.
+    A posted shot count is still checked when that backend's module was not
+    imported, including when other backends imported and the catalog is only
+    partial. The number is reported before the missing extra.
     """
     try:
         records = listed_backends()
@@ -543,7 +544,7 @@ def _backend_has_shot_budget(backend_id: str) -> bool:
     for record in records:
         if record["id"] == backend_id:
             return bool(record["shots"])
-    return False
+    return True
 
 
 def _backend_record(backend_id: str) -> ListedBackend:

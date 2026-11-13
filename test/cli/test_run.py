@@ -2213,6 +2213,14 @@ def test_added_terms_fail_before_optional_imports(forbid_qutip: None) -> None:
         )
 
 
+def test_a_posted_shot_count_is_rejected_when_the_backend_was_skipped(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("shadowsim.cli.run.listed_backends", lambda: [{"id": "numpy", "shots": False}])
+    with pytest.raises(ValueError, match="shots must be a positive integer"):
+        build_simulator(_selection(simulator="trotterization", time_steps=2, shots=0))
+    with pytest.raises(ValueError, match=f"shots must be from 1 to {_MAX_SHOTS}"):
+        build_simulator(_selection(simulator="trotterization", time_steps=2, shots=_MAX_SHOTS + 1))
+
+
 def test_a_posted_shot_count_is_rejected_when_no_backend_imports(monkeypatch: pytest.MonkeyPatch) -> None:
     def explode() -> list[object]:
         raise ImportError("no circuit backends could be imported")
