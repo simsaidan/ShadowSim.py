@@ -113,6 +113,7 @@ function fillIsing(qubits, total) {
 const request = JSON.parse(process.argv[3]);
 if (request.complete) fillIsing(request.qubits, request.total);
 else resetPage();
+if (request.accept) applyCheck();
 
 const button = find(settingsComponent(), (node) => node.className === "run");
 document.querySelector = (selector) => (selector === ".run" ? button : null);
@@ -131,9 +132,9 @@ vm.runInContext(`${fs.readFileSync(process.argv[2], "utf8")}\n${probe}`, sandbox
 """
 
 
-def _page(*, complete: bool, qubits: str = "", total: str = "") -> dict[str, Any]:
+def _page(*, complete: bool, qubits: str = "", total: str = "", accept: bool = False) -> dict[str, Any]:
     """Return the status and Run button state for one builder selection."""
-    scenario = {"complete": complete, "qubits": qubits, "total": total}
+    scenario = {"complete": complete, "qubits": qubits, "total": total, "accept": accept}
     try:
         completed = subprocess.run(
             ["node", "-e", _HARNESS, str(CHECKS), str(BUILDER), json.dumps(scenario)],
@@ -166,7 +167,6 @@ def _assert_disabled(page: dict[str, Any], status: str) -> None:
         pytest.param("-1", "1", "Qubits must be an integer of at least 2.", id="negative-qubits"),
         pytest.param("1.5", "1", "Qubits must be an integer of at least 2.", id="fractional-qubits"),
         pytest.param("1", "1", "Qubits must be an integer of at least 2.", id="ising-one-qubit"),
-        pytest.param("16", "1", "Qubits must be from 2 to 15.", id="ising-too-many-qubits"),
         pytest.param("2", "0", "Total time must be a positive number.", id="zero-time"),
         pytest.param("2", "-1", "Total time must be a positive number.", id="negative-time"),
     ],
@@ -175,8 +175,26 @@ def test_invalid_numbers_disable_run(qubits: str, total: str, status: str) -> No
     _assert_disabled(_page(complete=True, qubits=qubits, total=total), status)
 
 
-def test_complete_selection_enables_run() -> None:
+def test_ising_qubit_cap_waits_for_the_check() -> None:
+    page = _page(complete=True, qubits="16", total="1")
+    assert page["label"] == "Run simulation"
+    assert page["status"] == "Checking the selection."
+    assert page["ready"] is True
+    assert page["renderedDisabled"] is True
+    assert page["syncedDisabled"] is True
+
+
+def test_complete_selection_waits_for_the_check() -> None:
     page = _page(complete=True, qubits="2", total="1")
+    assert page["label"] == "Run simulation"
+    assert page["status"] == "Checking the selection."
+    assert page["ready"] is True
+    assert page["renderedDisabled"] is True
+    assert page["syncedDisabled"] is True
+
+
+def test_complete_selection_enables_run() -> None:
+    page = _page(complete=True, qubits="2", total="1", accept=True)
     assert page["label"] == "Run simulation"
     assert page["status"] == "Ready to run."
     assert page["ready"] is True

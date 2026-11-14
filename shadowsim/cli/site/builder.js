@@ -129,6 +129,15 @@ let statusHold = null;
 let runStartedAt = 0;
 let runTimer = null;
 let shownRun = null;
+let acceptedBody = null;
+let acceptedQubits = null;
+let rejectedBody = null;
+let checkError = null;
+let checkTimer = null;
+let checkSerial = 0;
+let pendingBody = null;
+let checkInFlight = false;
+const CHECK_DELAY = 200;
 const laneNotes = { model: "", simulator: "", backend: "" };
 
 const CURVE_COLORS = ["#4c4cb8", "#1f7a6c", "#a67c1a", "#b66880", "#6a4ca8"];
@@ -179,6 +188,7 @@ function currentPage() {
     maxNumSteps: MAX_NUM_STEPS,
     maxTrotterDepth: MAX_TROTTER_DEPTH,
     maxShots: MAX_SHOTS,
+    checkedQubits: checkError == null && acceptedBody != null ? acceptedQubits : null,
   };
 }
 
@@ -351,8 +361,16 @@ function settingsReady() {
   return check(checks.settingsReady);
 }
 
-function runAllowed() {
+function locallyReady() {
   return check(checks.runAllowed);
+}
+
+function accepted() {
+  return acceptedBody != null && acceptedBody === documentBody() && checkError == null;
+}
+
+function runAllowed() {
+  return locallyReady() && accepted();
 }
 
 function postedTerms() {
@@ -364,6 +382,7 @@ function entryBody(entry) {
 }
 
 function previewText() {
+  if (!accepted()) return "";
   return check(checks.previewText);
 }
 
@@ -426,10 +445,19 @@ function blockCard(lane, block, { inSlot, onPlace, onRemove, blocked }) {
   return card;
 }
 
+function acceptedLayoutQubits() {
+  if (acceptedBody == null || acceptedBody !== documentBody() || checkError != null) return null;
+  return acceptedQubits;
+}
+
 function preexistingDetail() {
-  if (preexistingId === "jaynes_cummings") return "3 qubits";
+  if (preexistingId === "jaynes_cummings") {
+    const qubits = acceptedLayoutQubits();
+    if (qubits == null) return "3 qubits";
+    return qubits === 1 ? "1 qubit" : `${qubits} qubits`;
+  }
   if (jaynesHubbardSelected()) {
-    const qubits = fixedFactoryQubits();
+    const qubits = acceptedLayoutQubits();
     if (qubits == null) return "Set cavities and hopping";
     const cavities = cavityCount();
     const cavityLabel = cavities === 1 ? "1 cavity" : `${cavities} cavities`;
@@ -437,12 +465,12 @@ function preexistingDetail() {
   }
   if (preexistingId === "tavis_cummings") {
     const count = emitterCount();
-    if (count == null) return "Set the emitter count";
-    const qubits = 2 + count;
+    const qubits = acceptedLayoutQubits();
+    if (count == null || qubits == null) return "Set the emitter count";
     return count === 1 ? `1 emitter, ${qubits} qubits` : `${count} emitters, ${qubits} qubits`;
   }
   if (hubbardSelected()) {
-    const qubits = fixedFactoryQubits();
+    const qubits = acceptedLayoutQubits();
     if (qubits == null) return "Set cavities, emitters, and hopping";
     const cavities = cavityCount();
     const emitters = emitterCount();
@@ -552,21 +580,32 @@ function postedFactory() {
   return body;
 }
 
-function refreshCavityModel() {
-  syncModelQubits();
+function modelAlert() {
+  if (checkError) return checkError;
+  return factoryAlert();
+}
+
+function syncFactoryDetail() {
   const detail = document.querySelector(".preexisting-detail");
   if (detail) detail.textContent = preexistingDetail();
+}
+
+function syncModelAlert() {
   const alert = document.querySelector(".preexisting-alert");
-  if (alert) {
-    alert.hidden = !emitterProblem();
-    const text = factoryAlert();
-    if (text) {
-      alert.setAttribute("aria-label", text);
-      alert.title = text;
-    }
-  }
+  if (!alert) return;
+  const text = modelAlert();
+  alert.hidden = !text;
+  if (!text) return;
+  alert.setAttribute("aria-label", text);
+  alert.title = text;
+}
+
+function refreshCavityModel() {
+  syncModelQubits();
+  syncFactoryDetail();
   if (selection.state) refreshStateChip(selection.state);
   else refreshSummaryAndPreview();
+  syncModelAlert();
 }
 
 function replaceChip(node, next) {
@@ -630,7 +669,7 @@ function preexistingChip() {
       refreshCavityModel();
     },
   });
-  const alertText = factoryAlert() ?? "Check the model arguments";
+  const alertText = modelAlert() ?? "Check the model arguments";
   return el(
     "div",
     { className: `chip tone-teal preexisting${preexistingOpen ? " is-editing" : ""}` },
@@ -660,7 +699,7 @@ function preexistingChip() {
             role: "img",
             "aria-label": alertText,
             title: alertText,
-            hidden: !emitterProblem(),
+            hidden: !modelAlert(),
           },
           "!",
         ),
@@ -763,7 +802,7 @@ function syncModelQubits() {
     }
     return;
   }
-  const fixed = fixedFactoryQubits();
+  const fixed = acceptedLayoutQubits();
   settings.qubits = fixed == null ? "" : String(fixed);
   qubitsSource = "model";
   syncMeasureChip();
@@ -1846,7 +1885,147 @@ function releaseStatusHold() {
   statusHold = null;
 }
 
+function documentBody() {
+  return JSON.stringify(runRequest());
+}
+
+function cancelScheduledCheck() {
+  if (checkTimer != null && typeof clearTimeout === "function") clearTimeout(checkTimer);
+  checkTimer = null;
+}
+
+function dropAcceptance() {
+  acceptedBody = null;
+  acceptedQubits = null;
+  rejectedBody = null;
+  checkError = null;
+  checkInFlight = false;
+  pendingBody = null;
+}
+
+function scheduleCheck() {
+  if (!locallyReady()) {
+    cancelScheduledCheck();
+    checkSerial += 1;
+    dropAcceptance();
+    return;
+  }
+  const requested = documentBody();
+  if (acceptedBody === requested && checkError == null) {
+    cancelScheduledCheck();
+    pendingBody = null;
+    return;
+  }
+  if (checkError != null && rejectedBody === requested) {
+    cancelScheduledCheck();
+    pendingBody = null;
+    return;
+  }
+  if (pendingBody === requested) return;
+  cancelScheduledCheck();
+  checkSerial += 1;
+  const serial = checkSerial;
+  pendingBody = requested;
+  acceptedBody = null;
+  acceptedQubits = null;
+  rejectedBody = null;
+  checkError = null;
+  checkInFlight = false;
+  if (typeof fetch !== "function" || typeof setTimeout !== "function") {
+    pendingBody = null;
+    return;
+  }
+  checkTimer = setTimeout(() => {
+    checkTimer = null;
+    void postCheck(requested, serial);
+  }, CHECK_DELAY);
+}
+
+function applyAcceptedQubits() {
+  if (!cavityModelSelected() || acceptedQubits == null) return;
+  settings.qubits = String(acceptedQubits);
+  qubitsSource = "model";
+}
+
+async function postCheck(requested, serial) {
+  if (serial !== checkSerial || requested !== documentBody()) return;
+  checkInFlight = true;
+  showCheckStatus();
+  try {
+    const response = await fetch("/runs/check", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: requested,
+    });
+    let payload = {};
+    try {
+      payload = await response.json();
+    } catch {
+      payload = {};
+    }
+    if (serial !== checkSerial || requested !== documentBody()) return;
+    if (!response.ok || !Number.isInteger(payload.qubits) || payload.qubits < 1) {
+      checkError =
+        typeof payload.error === "string" && payload.error ? payload.error : "The selection was rejected.";
+      rejectedBody = requested;
+      acceptedBody = null;
+      acceptedQubits = null;
+      return;
+    }
+    acceptedQubits = payload.qubits;
+    applyAcceptedQubits();
+    if (documentBody() !== requested) {
+      acceptedQubits = null;
+      return;
+    }
+    checkError = null;
+    rejectedBody = null;
+    acceptedBody = requested;
+  } catch {
+    if (serial !== checkSerial || requested !== documentBody()) return;
+    checkError = "The selection could not be checked.";
+    rejectedBody = requested;
+    acceptedBody = null;
+    acceptedQubits = null;
+  } finally {
+    if (serial !== checkSerial) return;
+    checkInFlight = false;
+    pendingBody = null;
+    refreshSummaryAndPreview();
+  }
+}
+
+function applyCheck(qubits) {
+  if (!locallyReady()) return false;
+  cancelScheduledCheck();
+  checkSerial += 1;
+  checkError = null;
+  rejectedBody = null;
+  checkInFlight = false;
+  pendingBody = null;
+  acceptedQubits = qubits == null ? null : Number(qubits);
+  applyAcceptedQubits();
+  acceptedBody = documentBody();
+  refreshSummaryAndPreview();
+  return true;
+}
+
+function showCheckStatus() {
+  if (running) return;
+  const status = document.querySelector(".status");
+  if (status) status.replaceWith(statusComponent());
+  const panel = document.querySelector('.panel[aria-label="Code preview"]');
+  const body = panel?.querySelector("pre, .placeholder");
+  if (body) body.replaceWith(codeBody());
+  syncCopyButton();
+  syncRunButton();
+}
+
 function refreshSummaryAndPreview() {
+  scheduleCheck();
+  syncModelQubits();
+  syncFactoryDetail();
+  syncModelAlert();
   const summary = document.querySelector(".summary");
   if (summary) summary.replaceWith(summaryComponent());
   if (!running) {
@@ -1883,6 +2062,8 @@ function statusMessage() {
   if (!shotsReady()) return "Enter a shot count.";
   if (!check(checks.backendFieldsReady)) return check(checks.backendFieldStatus, false);
   if (!savePathReady()) return pathMessage(false);
+  if (checkError) return `${checkError.replace(/[.!?]$/, "")}.`;
+  if (checkInFlight || !accepted()) return "Checking the selection.";
   return "Ready to run.";
 }
 
@@ -1965,7 +2146,9 @@ function codeBody() {
     else if (shotsProblem(true)) message = shotsProblem(true);
     else if (!shotsReady()) message = "Enter a shot count to preview the script.";
     else if (!check(checks.backendFieldsReady)) message = check(checks.backendFieldStatus, true);
-    else message = pathMessage(true);
+    else if (!savePathReady()) message = pathMessage(true);
+    else if (checkError) message = `${checkError.replace(/[.!?]$/, "")} to preview the script.`;
+    else message = "Checking the selection.";
   }
   return el("p", { className: "placeholder" }, message);
 }
@@ -2665,6 +2848,7 @@ function draw(board) {
     panelsComponent(),
   );
   rememberBoard();
+  scheduleCheck();
 }
 
 function termSummary() {

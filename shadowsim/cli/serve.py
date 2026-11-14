@@ -24,7 +24,7 @@ from typing import Any
 from urllib.parse import parse_qs, urlsplit
 
 from shadowsim.backends import listed_backends
-from shadowsim.cli.run import run_page
+from shadowsim.cli.run import check_page, run_page
 from shadowsim.models.catalog import listed_model_terms, listed_models
 from shadowsim.simulators.catalog import listed_simulators
 
@@ -242,19 +242,23 @@ class _Handler(BaseHTTPRequestHandler):
         self.wfile.write(body)
 
     def do_POST(self) -> None:
-        """Run a posted selection, cancel the run in flight, or accept a startup token.
+        """Run a posted selection, check it, cancel the run in flight, or accept a startup token.
 
         ``POST /auth`` is served only when this server does not accept a query
         token. It reads an ``application/x-www-form-urlencoded`` body of at most
         1 KiB and, on a match, stores the token in a cookie. Otherwise it is 404.
-        ``POST /runs/cancel`` stops the child process. A second ``POST /runs``
-        while it is still going receives 409 and does not start another one.
-        When the server has a startup token, both run routes require that token in
-        a cookie or in ``Authorization: Bearer`` before any run is started or
-        stopped. ``POST /runs`` also requires ``Content-Type: application/json``
-        before the body is parsed, and rejects a body larger than 8 MiB. The read
-        timeout stays until that body arrives, then it is cleared before the run
-        starts. ``POST /runs/cancel`` has no body, so its timeout is cleared first.
+        ``POST /runs/check`` builds the selection in this process and returns its
+        qubit count. It does not simulate and does not take the run slot. A
+        document the build rejects is 400. ``POST /runs/cancel`` stops the child
+        process. A second ``POST /runs`` while it is still going receives 409 and
+        does not start another one. When the server has a startup token, the run
+        routes require that token in a cookie or in ``Authorization: Bearer``
+        before any run is checked, started, or stopped. ``POST /runs`` and
+        ``POST /runs/check`` also require ``Content-Type: application/json``
+        before the body is parsed, and reject a body larger than 8 MiB. The read
+        timeout stays until that body arrives, then it is cleared before the
+        check or the run starts. ``POST /runs/cancel`` has no body, so its
+        timeout is cleared first.
         """
         path = urlsplit(self.path).path
         if path == "/runs/cancel":
@@ -269,20 +273,17 @@ class _Handler(BaseHTTPRequestHandler):
         if path == "/auth":
             _exchange_posted_token(self)
             return
+        if path == "/runs/check":
+            selection = _posted_selection(self)
+            if selection is None:
+                return
+            _reply_check(self, selection)
+            return
         if path != "/runs":
             self.send_error(404)
             return
-        if not _authorize_post(self):
-            return
-        if not _json_content(self):
-            _send_json(self, 415, {"error": _JSON_REQUIRED})
-            return
-        try:
-            body = self._body()
-            _end_read_timeout(self)
-            selection = _json_object(body)
-        except ValueError as exc:
-            _send_json(self, 400, {"error": str(exc)})
+        selection = _posted_selection(self)
+        if selection is None:
             return
         if not _slot.running.acquire(blocking=False):
             _send_json(self, 409, {"error": _BUSY})
@@ -311,6 +312,53 @@ class _Handler(BaseHTTPRequestHandler):
     def log_message(self, format: str, *args: object) -> None:
         """Keep request logs off the terminal."""
         return
+
+
+def _posted_selection(handler: _Handler) -> dict[str, Any] | None:
+    """Return the posted selection, or ``None`` when the response is already written.
+
+    Auth is required first. The body must be ``application/json`` and at most
+    8 MiB. The read timeout is cleared once that body has arrived.
+
+    Args:
+        handler: Request for ``POST /runs`` or ``POST /runs/check``.
+
+    Returns:
+        The JSON object, or ``None`` when this function already sent 401, 415, or 400.
+    """
+    if not _authorize_post(handler):
+        return None
+    if not _json_content(handler):
+        _send_json(handler, 415, {"error": _JSON_REQUIRED})
+        return None
+    try:
+        body = handler._body()
+        _end_read_timeout(handler)
+        return _json_object(body)
+    except ValueError as exc:
+        _send_json(handler, 400, {"error": str(exc)})
+        return None
+
+
+def _reply_check(handler: BaseHTTPRequestHandler, selection: dict[str, Any]) -> None:
+    """Build ``selection`` in this process and send its qubit count.
+
+    A document :func:`~shadowsim.cli.run.check_page` rejects is 400. Any other
+    failure is 500. This does not take the run slot and does not start a child.
+
+    Args:
+        handler: Request for ``POST /runs/check``.
+        selection: The version 1 document ``check_page`` reads.
+    """
+    try:
+        payload = check_page(selection, output_root=_server_output_root(handler))
+    except ValueError as exc:
+        _send_json(handler, 400, {"error": str(exc)})
+        return
+    except Exception as exc:
+        _send_internal_error(handler, exc)
+        return
+    _send_json(handler, 200, payload)
 
 
 def _end_read_timeout(handler: BaseHTTPRequestHandler) -> None:
@@ -691,7 +739,7 @@ def _authorize_post(handler: BaseHTTPRequestHandler) -> bool:
     ``Authorization: Bearer`` must match. A query token is not accepted.
 
     Args:
-        handler: Request for ``POST /runs`` or ``POST /runs/cancel``.
+        handler: Request for ``POST /runs``, ``POST /runs/check``, or ``POST /runs/cancel``.
 
     Returns:
         ``True`` when the caller should continue. ``False`` when this function

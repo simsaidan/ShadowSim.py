@@ -555,6 +555,7 @@ if (request.action === "roundtrip") {
   click(empty);
   const emptyWrites = writes.length;
   fillIsing();
+  applyCheck();
   const full = walk(panelsComponent(), []).find((node) => node.className === "copy");
   click(full);
   result = {
@@ -723,9 +724,11 @@ if (request.action === "roundtrip") {
   draw(board);
   const chip = openChip(board, "backend");
   const gates = labeled(board, "Gates");
+  applyCheck();
   const blankPreview = previewText();
   const blankStatus = statusMessage();
   typeInto(gates, "RX, ry, RX");
+  applyCheck();
   const detail = chip.querySelector(".backend-detail");
   result = {
     shots: Boolean(labeled(board, "Shots")),
@@ -873,7 +876,7 @@ def test_counts_chip_edits_the_expression() -> None:
     assert page["blankStatus"] == "Enter a counts expression."
     assert page["blankHint"] == "Keys list qubits 0, 1 in that order. shots is the total."
     assert page["blankPlaceholder"] == 'counts["00"] / shots'
-    assert page["typedStatus"] == "Ready to run."
+    assert page["typedStatus"] == "Checking the selection."
     assert page["typedRequest"] == 'counts["01"] / shots'
     assert page["narrowStatus"] == "Counts keys must be 1 characters of 0 and 1."
     assert page["narrowHint"] == "Keys list qubit 0 in that order. shots is the total."

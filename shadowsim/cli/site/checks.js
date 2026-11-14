@@ -177,8 +177,7 @@
   function emitterCount() {
     const text = page.emitterText.trim();
     if (!positiveIntText(text)) return null;
-    const count = Number(text);
-    return count <= page.maxEmitters ? count : null;
+    return Number(text);
   }
 
   function usesEmitterCount() {
@@ -206,37 +205,16 @@
     return Number.isFinite(value) ? value : null;
   }
 
-  function hubbardQubits() {
-    const cavities = cavityCount();
-    const emitters = emitterCount();
-    const limit = page.stateLimits?.basis ?? 15;
-    if (cavities == null || emitters == null) return null;
-    const qubits = cavities * (2 + emitters);
-    return qubits <= limit ? qubits : null;
-  }
-
-  function jaynesHubbardQubits() {
-    const cavities = cavityCount();
-    const limit = page.stateLimits?.basis ?? 15;
-    if (cavities == null) return null;
-    const qubits = cavities * 3;
-    return qubits <= limit ? qubits : null;
-  }
-
   function factoryAlert() {
     if (page.selection.model !== "preexisting") return null;
-    if (page.preexistingId === "tavis_cummings" && emitterCount() == null) {
-      return "Enter an emitter count from 1 to 13";
-    }
+    if (page.preexistingId === "tavis_cummings" && emitterCount() == null) return "Enter an emitter count";
     if (jaynesHubbardSelected()) {
       if (cavityCount() == null) return "Enter a cavity count of at least 1";
       if (hoppingValue() == null) return "Enter a real hopping strength";
-      if (jaynesHubbardQubits() == null) return "Cavities must use at most 15 qubits";
     } else if (hubbardSelected()) {
       if (cavityCount() == null) return "Enter a cavity count of at least 1";
-      if (emitterCount() == null) return "Enter an emitter count from 1 to 13";
+      if (emitterCount() == null) return "Enter an emitter count";
       if (hoppingValue() == null) return "Enter a real hopping strength";
-      if (hubbardQubits() == null) return "Cavities and emitters must use at most 15 qubits";
     }
     return paramAlert();
   }
@@ -297,29 +275,6 @@
     return pairs;
   }
 
-  function edgeIssue(pairs) {
-    const qubits = settingNumber("qubits");
-    const known = qubits != null && Number.isInteger(qubits);
-    const seen = new Set();
-    for (const [left, right] of pairs) {
-      if (left === right) return "Edges cannot contain a self-loop";
-      if (known && (left >= qubits || right >= qubits)) return "Edges must stay within the qubits";
-      const key = `${Math.min(left, right)}-${Math.max(left, right)}`;
-      if (seen.has(key)) return "Edges cannot repeat a pair";
-      seen.add(key);
-    }
-    return null;
-  }
-
-  function paramByName(name) {
-    return factoryParams().find((param) => param.name === name) ?? null;
-  }
-
-  function movedFromDefault(name) {
-    const param = paramByName(name);
-    return Boolean(param) && factoryFieldText(param).trim() !== String(param.default ?? "").trim();
-  }
-
   function paramAlert() {
     for (const param of factoryParams()) {
       const text = factoryFieldText(param).trim();
@@ -332,40 +287,12 @@
             ? `Enter real numbers for ${param.label}`
             : `Enter a real number for ${param.label}`;
         }
-        const count = emitterCount();
-        if (text.includes(",") && count != null && values.length !== count) {
-          return `Enter ${count} numbers for ${param.label}`;
-        }
       } else if (param.kind === "choice") {
         const choices = Array.isArray(param.choices) ? param.choices : [];
         if (!choices.includes(text)) return `Choose ${choices.join(" or ")} for ${param.label}`;
       } else if (param.kind === "edges") {
-        const pairs = parseEdges(text);
-        if (pairs == null) return "Enter edges as pairs such as 0-1, 1-2";
-        const issue = edgeIssue(pairs);
-        if (issue) return issue;
+        if (parseEdges(text) == null) return "Enter edges as pairs such as 0-1, 1-2";
       }
-    }
-    const coupling = paramByName("J");
-    const field = paramByName("h");
-    if (coupling && field && realText(factoryFieldText(coupling)) === 0 && realText(factoryFieldText(field)) === 0) {
-      return "J and h cannot both be zero";
-    }
-    const edges = paramByName("edges");
-    const pairs = edges ? parseEdges(factoryFieldText(edges)) : [];
-    if (pairs && pairs.length && (movedFromDefault("topology") || movedFromDefault("boundary"))) {
-      return "Edges use the chain preset. Set topology to chain and boundary to open";
-    }
-    const boundary = paramByName("boundary");
-    const qubits = settingNumber("qubits");
-    if (
-      boundary &&
-      factoryFieldText(boundary).trim() === "periodic" &&
-      qubits != null &&
-      Number.isInteger(qubits) &&
-      qubits < 3
-    ) {
-      return "Periodic boundary needs at least 3 qubits";
     }
     return null;
   }
@@ -378,15 +305,9 @@
   }
 
   function fixedFactoryQubits() {
-    if (page.selection.model !== "preexisting") return null;
-    if (page.preexistingId === "jaynes_cummings") return 3;
-    if (jaynesHubbardSelected()) return jaynesHubbardQubits();
-    if (page.preexistingId === "tavis_cummings") {
-      const count = emitterCount();
-      return count == null ? null : 2 + count;
-    }
-    if (hubbardSelected()) return hubbardQubits();
-    return null;
+    if (!cavityModelSelected()) return null;
+    const stored = page.checkedQubits;
+    return Number.isInteger(stored) ? stored : null;
   }
 
   function emitterProblem() {
@@ -422,7 +343,6 @@
   }
 
   function stateInputProblem() {
-    if (stateSizeProblem() != null) return "size";
     if (page.selection.state === "basis") return page.basisBits === "" ? "basis" : null;
     if (page.selection.state === "gray") return page.grayBits === "" ? "gray" : null;
     if (page.selection.state === "angle") return numberList(page.angleText, page.stateLimits.angle) ? null : "angle";
@@ -698,8 +618,8 @@
 
   function qubitBounds() {
     if (usingAddedOperators()) return { min: 1, max: page.maxOperatorQubits };
-    // The factory that takes n_qubits is Ising: at least 2, at most 15.
-    if (page.selection.model === "preexisting" && chosenFactory()?.qubits) return { min: 2, max: 15 };
+    // The factory that takes n_qubits is Ising: at least 2. The upper cap is the server's.
+    if (page.selection.model === "preexisting" && chosenFactory()?.qubits) return { min: 2, max: null };
     return { min: 1, max: null };
   }
 
@@ -721,9 +641,15 @@
   }
 
   function numberProblem(preview) {
-    if (settingNumber("qubits") == null || settingNumber("total") == null) {
-      return preview ? "Enter qubits and total time to preview the script." : "Enter qubits and total time.";
+    const qubits = settingNumber("qubits");
+    const total = settingNumber("total");
+    const needsQubits = !cavityModelSelected();
+    if (total == null || (needsQubits && qubits == null)) {
+      const missing = needsQubits ? "qubits and total time" : "a total time";
+      const tail = preview ? " to preview the script." : ".";
+      return `Enter ${missing}${tail}`;
     }
+    if (qubits == null) return totalProblem(preview);
     return qubitProblem(preview) ?? totalProblem(preview);
   }
 
