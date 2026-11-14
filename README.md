@@ -584,6 +584,21 @@ endpoints.
 uv run python examples/state_encoding.py
 ```
 
+### Example 5: Coupled oscillators on a smaller register
+
+[`examples/coupled_oscillators.py`](examples/coupled_oscillators.py) evolves a three-mass
+spring network four ways. Newton's equations are the reference. The block
+encoding of [Babbush et al.](https://arxiv.org/abs/2303.13012) and the shadow
+Hamiltonian of [Somma et al.](https://arxiv.org/abs/2407.21775)
+(`change_of_basis`) both have dimension 6 and pad to 3 qubits. The same means
+from a truncated Fock-space QuTiP run use cutoff 8, which is 9 qubits. The
+script prints the position, momentum, and first-mass kinetic-fraction
+deviations, then plots that fraction. It needs the `qutip` and `viz` extras.
+
+```bash
+uv run python examples/coupled_oscillators.py
+```
+
 ## Documentation
 
 - [API / site docs](https://simsaidan.github.io/ShadowSim.py/) (`docs/`; preview with `uv sync --group docs --extra qutip --extra qiskit && uv run mkdocs serve`)
