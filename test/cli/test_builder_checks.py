@@ -173,14 +173,11 @@ def test_fractional_qubits_are_not_ready() -> None:
     assert _call("runAllowed", page) is False
 
 
-@pytest.mark.parametrize(
-    ("qubits", "problem"),
-    [("15", None), ("16", "Qubits must be from 2 to 15.")],
-)
-def test_ising_qubit_count_is_capped_on_the_page(qubits: str, problem: str | None) -> None:
+@pytest.mark.parametrize("qubits", ["15", "16"])
+def test_ising_qubit_count_is_not_capped_on_the_page(qubits: str) -> None:
     page = _qutip_page()
     page["settings"]["qubits"] = qubits
-    assert _call("qubitProblem", page, False) == problem
+    assert _call("qubitProblem", page, False) is None
 
 
 def test_qutip_without_a_backend_is_ready() -> None:
@@ -479,6 +476,8 @@ def test_tavis_cummings_hubbard_preview_uses_cavities_and_hopping() -> None:
     ]
     assert _call("hubbardSelected", page) is True
     assert _call("cavityModelSelected", page) is True
+    assert _call("fixedFactoryQubits", page) is None
+    page["checkedQubits"] = 6
     assert _call("fixedFactoryQubits", page) == 6
     text = _call("previewText", page)
     assert isinstance(text, str)
@@ -486,9 +485,10 @@ def test_tavis_cummings_hubbard_preview_uses_cavities_and_hopping() -> None:
     assert "model = tavis_cummings_hubbard(n_cavities=2, n_emitters=1, nu=1.5)" in text
 
     page["emitterText"] = "6"
+    page["checkedQubits"] = None
     assert _call("fixedFactoryQubits", page) is None
-    assert _call("emitterProblem", page) is True
-    assert _call("factoryAlert", page) == "Cavities and emitters must use at most 15 qubits"
+    assert _call("emitterProblem", page) is False
+    assert _call("factoryAlert", page) is None
 
 
 def test_jaynes_cummings_hubbard_preview_uses_cavities_and_hopping() -> None:
@@ -510,6 +510,8 @@ def test_jaynes_cummings_hubbard_preview_uses_cavities_and_hopping() -> None:
     assert _call("hubbardSelected", page) is False
     assert _call("usesEmitterCount", page) is False
     assert _call("cavityModelSelected", page) is True
+    assert _call("fixedFactoryQubits", page) is None
+    page["checkedQubits"] = 6
     assert _call("fixedFactoryQubits", page) == 6
     text = _call("previewText", page)
     assert isinstance(text, str)
@@ -518,9 +520,10 @@ def test_jaynes_cummings_hubbard_preview_uses_cavities_and_hopping() -> None:
     assert "n_emitters" not in text
 
     page["cavityText"] = "6"
+    page["checkedQubits"] = None
     assert _call("fixedFactoryQubits", page) is None
-    assert _call("emitterProblem", page) is True
-    assert _call("factoryAlert", page) == "Cavities must use at most 15 qubits"
+    assert _call("emitterProblem", page) is False
+    assert _call("factoryAlert", page) is None
 
 
 def test_preview_imports_are_explicit() -> None:
@@ -740,8 +743,8 @@ def test_bad_ising_arguments_block_the_run() -> None:
     page = _qutip_page()
     page["modelFactories"][0]["params"] = _ISING_PARAMS
     page["factoryText"] = {"J": "0", "h": "0"}
-    assert _call("factoryAlert", page) == "J and h cannot both be zero"
-    assert _call("runAllowed", page) is False
+    assert _call("factoryAlert", page) is None
+    assert _call("runAllowed", page) is True
 
     page["factoryText"] = {"edges": "nope"}
     assert _call("factoryAlert", page) == "Enter edges as pairs such as 0-1, 1-2"
@@ -750,14 +753,14 @@ def test_bad_ising_arguments_block_the_run() -> None:
     page["settings"]["qubits"] = "4"
     page["basisBits"] = "0000"
     page["factoryText"] = {"boundary": "periodic", "edges": "0-1"}
-    assert _call("factoryAlert", page) == "Edges use the chain preset. Set topology to chain and boundary to open"
-    assert _call("runAllowed", page) is False
+    assert _call("factoryAlert", page) is None
+    assert _call("runAllowed", page) is True
 
     page["settings"]["qubits"] = "2"
     page["basisBits"] = "00"
     page["factoryText"] = {"boundary": "periodic"}
-    assert _call("factoryAlert", page) == "Periodic boundary needs at least 3 qubits"
-    assert _call("runAllowed", page) is False
+    assert _call("factoryAlert", page) is None
+    assert _call("runAllowed", page) is True
 
 
 def test_per_emitter_list_must_match_the_emitter_count() -> None:
@@ -787,7 +790,14 @@ def test_per_emitter_list_must_match_the_emitter_count() -> None:
     assert "g=[10.0, 20.0]" in text
 
     page["factoryText"] = {"g": "1, 2, 3"}
-    assert _call("factoryAlert", page) == "Enter 2 numbers for g"
+    assert _call("factoryAlert", page) is None
+    assert _call("runAllowed", page) is True
+    listed = _call("previewText", page)
+    assert isinstance(listed, str)
+    assert "g=[1.0, 2.0, 3.0]" in listed
+
+    page["emitterText"] = ""
+    assert _call("factoryAlert", page) == "Enter an emitter count"
     assert _call("runAllowed", page) is False
 
 

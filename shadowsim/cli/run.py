@@ -98,6 +98,17 @@ class _RunDocument:
     actions: Mapping[str, object]
 
 
+@dataclass(frozen=True)
+class _PreparedRun:
+    """Simulators built from a run document, before any of them runs."""
+
+    document: _RunDocument
+    simulators: tuple[Simulator, ...]
+    directory: Path | None
+    export_to: Path | None
+    benchmark: Benchmark | None
+
+
 def _exact_keys(body: Mapping[str, object], allowed: frozenset[str]) -> None:
     """Reject a key the document section does not list."""
     extra = set(body) - allowed
@@ -324,20 +335,70 @@ def _build_simulator(document: _RunDocument, index: int) -> Simulator:
     )
 
 
+def _prepare_page(selection: Mapping[str, object], *, output_root: Path | None) -> _PreparedRun:
+    """Read ``selection`` and build every simulator. Do not simulate.
+
+    Save and export paths are checked before the build. Two or more entries
+    construct a :class:`~shadowsim.benchmarking.benchmark.Benchmark` so a
+    mismatched time grid fails here. The benchmark is not run, and nothing is written.
+
+    Raises:
+        ValueError: The document cannot be built, or a save or export path is illegal.
+        ImportError: The extra required by a simulator or backend is not installed.
+    """
+    document = _read_document(selection)
+    directory = _save_directory(document, output_root)
+    export_to = _export_location(document, output_root)
+    simulators = tuple(_build_simulator(document, index) for index in range(len(document.simulators)))
+    benchmark = Benchmark(simulators[0], *simulators[1:]) if len(simulators) >= 2 else None
+    return _PreparedRun(
+        document=document,
+        simulators=simulators,
+        directory=directory,
+        export_to=export_to,
+        benchmark=benchmark,
+    )
+
+
+def check_page(selection: Mapping[str, object], *, output_root: Path | None = None) -> dict[str, object]:
+    """Build a version 1 document and return its qubit count. Do not simulate.
+
+    This is the build :func:`run_page` performs before it evolves the system.
+    One entry builds that simulator. Two or more build every entry and reject a
+    mismatched time grid. Nothing is written. ``qubits`` is the first simulator's
+    ``num_qubits``.
+
+    Args:
+        selection: The version 1 document described on :func:`build_simulator`.
+        output_root: Directory that save and export paths must stay under.
+            ``None`` leaves those paths unchanged.
+
+    Returns:
+        ``qubits``, the qubit count of the built model.
+
+    Raises:
+        ValueError: The document cannot run, including an illegal emitter count,
+            edge list, or qubit cap, or a save or export path outside ``output_root``.
+        ImportError: The extra required by a simulator or backend is not installed.
+    """
+    prepared = _prepare_page(selection, output_root=output_root)
+    return {"qubits": prepared.simulators[0].num_qubits}
+
+
 def run_page(selection: Mapping[str, object], *, output_root: Path | None = None) -> dict[str, object]:
     """Run every simulator in a version 1 document.
 
-    One ``simulators`` entry is one simulation. Two or more is a benchmark.
-    The first entry is the reference. Any exported simulator may be the reference
-    or a challenger. Every entry must share ``total`` and ``time_steps``, because
-    :class:`~shadowsim.benchmarking.benchmark.Benchmark` compares one time grid.
-    ``time_steps`` is read from that entry's arguments. ``actions`` lists the
-    ids to run. ``save`` writes each
-    result under ``save_path``, or ``results/run1`` when that key is missing.
-    One result is the directory itself. A benchmark writes ``sim_1``,
-    ``sim_2``, and so on inside it. ``export`` writes metrics JSON under
-    ``export_path``, or ``results/`` when that key is missing. A benchmark uses
-    :meth:`~shadowsim.benchmarking.benchmark.Benchmark.save_error_metrics`.
+    The simulators are built by the same steps as :func:`check_page`. None of
+    them runs until that build succeeds. One ``simulators`` entry is one simulation.
+    Two or more is a benchmark. The first entry is the reference. Any exported
+    simulator may be the reference or a challenger. Every entry must share ``total``
+    and ``time_steps``, because :class:`~shadowsim.benchmarking.benchmark.Benchmark`
+    compares one time grid. ``time_steps`` is read from that entry's arguments.
+    ``actions`` lists the ids to run. ``save`` writes each result under ``save_path``,
+    or ``results/run1`` when that key is missing. One result is the directory itself.
+    A benchmark writes ``sim_1``, ``sim_2``, and so on inside it. ``export`` writes
+    metrics JSON under ``export_path``, or ``results/`` when that key is missing.
+    A benchmark uses :meth:`~shadowsim.benchmarking.benchmark.Benchmark.save_error_metrics`.
     One simulator writes its runtime, shot budget, and circuit metrics with
     :func:`~shadowsim.simulators.result.save_resource_metrics`. ``plot`` is drawn by the
     page. The payload names each observable in ``labels`` and lists wall time,
@@ -355,19 +416,17 @@ def run_page(selection: Mapping[str, object], *, output_root: Path | None = None
         output_root: Directory that save and export paths must stay under.
             ``None`` leaves those paths unchanged.
     """
-    document = _read_document(selection)
-    directory = _save_directory(document, output_root)
-    export_to = _export_location(document, output_root)
-    if len(document.simulators) >= 2:
-        return _run_benchmark(selection, document, directory, export_to)
-    simulator = _build_simulator(document, 0)
+    prepared = _prepare_page(selection, output_root=output_root)
+    if prepared.benchmark is not None:
+        return _run_benchmark(selection, prepared, prepared.benchmark)
+    simulator = prepared.simulators[0]
     simulator.simulate()
     result = _measured_result(simulator, selection)
-    payload = _result_payload(result, simulator, document.measure)
-    saved = _write_results(directory, [result])
+    payload = _result_payload(result, simulator, prepared.document.measure)
+    saved = _write_results(prepared.directory, [result])
     if saved:
         payload["saved"] = saved
-    exported = _export_resources(export_to, simulator, result.runtime)
+    exported = _export_resources(prepared.export_to, simulator, result.runtime)
     if exported:
         payload["exported"] = exported
     return payload
@@ -499,17 +558,15 @@ def _series_name(report_id: str) -> str:
 
 def _run_benchmark(
     selection: Mapping[str, object],
-    document: _RunDocument,
-    directory: Path | None,
-    export_to: Path | None,
+    prepared: _PreparedRun,
+    benchmark: Benchmark,
 ) -> dict[str, object]:
-    """Build each entry, run them on one grid, and return curves, names, and resources."""
-    simulators = [_build_simulator(document, index) for index in range(len(document.simulators))]
-    benchmark = Benchmark(simulators[0], *simulators[1:])
+    """Run the prepared benchmark and return curves, names, and resources."""
+    simulators = prepared.simulators
     benchmark.run()
     recorded = [_measured_result(simulator, selection) for simulator in simulators]
     resources = benchmark.resource_metrics()
-    labels = _observable_labels(document.measure, simulators[0].num_qubits)
+    labels = _observable_labels(prepared.document.measure, simulators[0].num_qubits)
     series: list[dict[str, object]] = []
     for result, resource in zip(recorded, resources, strict=True):
         name = _series_name(str(resource["simulator_id"]))
@@ -533,10 +590,13 @@ def _run_benchmark(
         "runtime": float(sum(wall_times)),
         "algorithm": "benchmark",
     }
-    saved = _write_results(directory, [item.last_result for item in simulators if item.last_result is not None])
+    saved = _write_results(
+        prepared.directory,
+        [item.last_result for item in simulators if item.last_result is not None],
+    )
     if saved:
         payload["saved"] = saved
-    exported = _export_benchmark(export_to, benchmark)
+    exported = _export_benchmark(prepared.export_to, benchmark)
     if exported:
         payload["exported"] = exported
     return payload

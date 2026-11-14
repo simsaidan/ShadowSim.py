@@ -36,6 +36,7 @@ from shadowsim.cli.run import (
     _selection_positive_int,
     _series_name,
     build_simulator,
+    check_page,
     run_page,
 )
 from shadowsim.cli.serve import _MAX_BODY_BYTES, _Handler, _read_body
@@ -751,6 +752,64 @@ def test_jaynes_cummings_hubbard_sizes_from_cavities_and_hopping() -> None:
 def test_jaynes_cummings_hubbard_page_limits(forbid_qutip: None, overrides: dict[str, object], match: str) -> None:
     with pytest.raises(ValueError, match=match):
         build_simulator(_selection(model="jaynes_cummings_hubbard", basis="100", **overrides))
+
+
+def _block_evolution(monkeypatch: pytest.MonkeyPatch, qutip_simulator: types.ModuleType | None = None) -> None:
+    """Fail the test if a check evolves the system."""
+
+    def blocked(*_args: object, **_kwargs: object) -> None:
+        raise AssertionError("simulate was called")
+
+    monkeypatch.setattr("shadowsim.simulators.simulator.Simulator.simulate", blocked)
+    monkeypatch.setattr("shadowsim.benchmarking.benchmark.Benchmark.run", blocked)
+    if qutip_simulator is not None:
+        monkeypatch.setattr(qutip_simulator.QutipSimulator, "simulate", blocked)
+
+
+@pytest.mark.qutip
+@pytest.mark.parametrize(
+    ("model_id", "overrides", "qubits"),
+    [
+        ("tavis_cummings_hubbard", {"cavities": 2, "emitters": 1, "nu": 1.5, "basis": "000000"}, 6),
+        ("jaynes_cummings_hubbard", {"cavities": 2, "nu": 1.5, "basis": "000000"}, 6),
+    ],
+)
+def test_check_page_returns_the_built_qubit_count(
+    monkeypatch: pytest.MonkeyPatch,
+    model_id: str,
+    overrides: dict[str, object],
+    qubits: int,
+) -> None:
+    pytest.importorskip("qutip")
+    from shadowsim.simulators import qutip_simulator
+
+    _block_evolution(monkeypatch, qutip_simulator)
+    assert check_page(_selection(model=model_id, time_steps=2, **overrides)) == {"qubits": qubits}
+
+
+@pytest.mark.parametrize(
+    ("overrides", "match"),
+    [
+        (
+            {"model": "tavis_cummings", "emitters": 14, "basis": "100"},
+            "emitters must be an integer from 1 to 13",
+        ),
+        ({"factory": {"edges": "0-0"}}, "self-loop"),
+        (
+            {"model": "jaynes_cummings_hubbard", "cavities": 6, "basis": "100"},
+            "at most 15 qubits",
+        ),
+    ],
+)
+def test_check_page_rejects_emitter_count_edges_and_qubit_cap(
+    forbid_qutip: None,
+    monkeypatch: pytest.MonkeyPatch,
+    overrides: dict[str, object],
+    match: str,
+) -> None:
+    _block_evolution(monkeypatch)
+    with pytest.raises(ValueError, match=match):
+        check_page(_selection(**overrides))
 
 
 @pytest.mark.parametrize("model_id", ["tavis_cummings", "tavis_cummings_hubbard"])

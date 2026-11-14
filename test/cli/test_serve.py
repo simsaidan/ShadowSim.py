@@ -1111,6 +1111,218 @@ def test_a_posted_run_uses_the_output_directory(monkeypatch: pytest.MonkeyPatch,
     assert seen["output_root"] == root
 
 
+def test_a_check_returns_the_qubit_count_without_starting_a_run(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    seen: list[dict[str, object]] = []
+    children: list[object] = []
+
+    def check(selection: dict[str, object], *, output_root: object = None) -> dict[str, int]:
+        seen.append({"selection": selection, "output_root": output_root})
+        if selection.get("fail") == "invalid":
+            raise ValueError("cavities must use at most 15 qubits")
+        if selection.get("fail") == "boom":
+            raise RuntimeError("boom")
+        return {"qubits": 6}
+
+    def child(selection: dict[str, object], output_root: object = None) -> tuple[str, dict[str, bool]]:
+        children.append(selection)
+        return ("ok", {"ok": True})
+
+    monkeypatch.setattr("shadowsim.cli.serve.check_page", check)
+    monkeypatch.setattr("shadowsim.cli.serve._run_in_child", child)
+    server, thread = _open_server()
+    root = tmp_path.resolve()
+    server.output_root = root
+    port = server.server_address[1]
+    try:
+        status, body = _exchange(port, "POST", "/runs/check", b'{"n": 1}')
+        assert status == 200
+        assert json.loads(body) == {"qubits": 6}
+
+        status, body = _exchange(port, "POST", "/runs/check", b'{"fail": "invalid"}')
+        assert status == 400
+        assert json.loads(body) == {"error": "cavities must use at most 15 qubits"}
+
+        status, body = _exchange(port, "POST", "/runs/check", b'{"fail": "boom"}')
+        assert status == 500
+        assert json.loads(body) == {"error": "internal error"}
+
+        status, body = _exchange(port, "POST", "/runs/check", b"[]")
+        assert status == 400
+        assert json.loads(body) == {"error": "request body must be a JSON object"}
+
+        status, body = _exchange(port, "POST", "/runs/check", b"{}", {"Content-Type": "text/plain"})
+        assert status == 415
+        assert json.loads(body) == {"error": "Content-Type must be application/json"}
+
+        server.token = "test-token"
+        status, body = _exchange(port, "POST", "/runs/check", b"{}")
+        assert status == 401
+        assert json.loads(body) == {"error": "unauthorized"}
+        status, body = _exchange(
+            port,
+            "POST",
+            "/runs/check",
+            b'{"n": 2}',
+            {"Authorization": "Bearer test-token"},
+        )
+        assert status == 200
+        assert json.loads(body) == {"qubits": 6}
+    finally:
+        _close_server(server, thread)
+
+    assert seen == [
+        {"selection": {"n": 1}, "output_root": root},
+        {"selection": {"fail": "invalid"}, "output_root": root},
+        {"selection": {"fail": "boom"}, "output_root": root},
+        {"selection": {"n": 2}, "output_root": root},
+    ]
+    assert children == []
+    assert "RuntimeError: boom" in capsys.readouterr().err
+
+
+def test_a_check_does_not_take_the_run_slot(monkeypatch: pytest.MonkeyPatch) -> None:
+    started = threading.Event()
+    release = threading.Event()
+
+    def hold(selection: dict[str, object], output_root: object = None) -> tuple[str, dict[str, bool]]:
+        started.set()
+        assert release.wait(timeout=5)
+        return ("ok", {"ok": True})
+
+    def check(selection: dict[str, object], *, output_root: object = None) -> dict[str, int]:
+        return {"qubits": 3}
+
+    monkeypatch.setattr("shadowsim.cli.serve._run_in_child", hold)
+    monkeypatch.setattr("shadowsim.cli.serve.check_page", check)
+    server, thread = _open_server()
+    port = server.server_address[1]
+    first: dict[str, tuple[int, bytes]] = {}
+
+    def post_first() -> None:
+        first["result"] = _exchange(port, "POST", "/runs", b"{}")
+
+    poster = threading.Thread(target=post_first)
+    poster.start()
+    try:
+        assert started.wait(timeout=2)
+        status, body = _exchange(port, "POST", "/runs/check", b"{}")
+        assert status == 200
+        assert json.loads(body) == {"qubits": 3}
+        status, body = _exchange(port, "POST", "/runs", b"{}")
+        assert status == 409
+        assert json.loads(body) == {"error": "a run is still finishing"}
+    finally:
+        release.set()
+        poster.join(timeout=5)
+        _close_server(server, thread)
+    assert first["result"] == (200, b'{"ok": true}')
+
+
+def _version_one(model: dict[str, Any], basis: str) -> bytes:
+    """Return a version 1 document whose model arguments are ``model``."""
+    return json.dumps(
+        {
+            "version": 1,
+            "total": "0.5",
+            "state": {"id": "basis", "value": basis},
+            "model": model,
+            "simulators": [{"id": "qutip", "arguments": {"time_steps": 2}, "backend": None}],
+            "measure": {"id": "z", "sites": None},
+            "actions": {"ids": []},
+        }
+    ).encode()
+
+
+@pytest.mark.qutip
+def test_a_check_returns_a_legal_qubit_count_without_a_child(monkeypatch: pytest.MonkeyPatch) -> None:
+    pytest.importorskip("qutip")
+    from shadowsim.benchmarking.benchmark import Benchmark
+    from shadowsim.simulators import qutip_simulator
+
+    def blocked(*_args: object, **_kwargs: object) -> None:
+        raise AssertionError("simulate was called")
+
+    children: list[object] = []
+
+    def child(selection: dict[str, object], output_root: object = None) -> tuple[str, dict[str, bool]]:
+        children.append(selection)
+        return ("ok", {"ok": True})
+
+    monkeypatch.setattr(qutip_simulator.QutipSimulator, "simulate", blocked)
+    monkeypatch.setattr(Benchmark, "run", blocked)
+    monkeypatch.setattr("shadowsim.cli.serve._run_in_child", child)
+    server, thread = _open_server()
+    port = server.server_address[1]
+    body = _version_one(
+        {"id": "tavis_cummings_hubbard", "arguments": {"n_cavities": 2, "n_emitters": 1, "nu": 1.5}},
+        "000000",
+    )
+    try:
+        status, payload = _exchange(port, "POST", "/runs/check", body)
+    finally:
+        _close_server(server, thread)
+    assert status == 200
+    assert json.loads(payload) == {"qubits": 6}
+    assert children == []
+
+
+@pytest.mark.parametrize(
+    ("model", "basis", "match"),
+    [
+        (
+            {"id": "tavis_cummings", "arguments": {"n_emitters": 14}},
+            "100",
+            "emitters must be an integer from 1 to 13",
+        ),
+        (
+            {"id": "ising", "arguments": {"n_qubits": 2, "edges": "0-0"}},
+            "10",
+            "self-loop",
+        ),
+        (
+            {"id": "jaynes_cummings_hubbard", "arguments": {"n_cavities": 6}},
+            "100",
+            "at most 15 qubits",
+        ),
+    ],
+)
+def test_a_rejected_check_is_the_same_rejection_as_a_run(
+    monkeypatch: pytest.MonkeyPatch,
+    model: dict[str, Any],
+    basis: str,
+    match: str,
+) -> None:
+    from shadowsim.cli import serve as serve_cli
+
+    children: list[object] = []
+    real = serve_cli._run_in_child
+
+    def wrapped(selection: dict[str, Any], output_root: Path | None = None) -> tuple[str, Any]:
+        children.append(selection)
+        return real(selection, output_root)
+
+    monkeypatch.setattr(serve_cli, "_run_in_child", wrapped)
+    server, thread = _open_server()
+    port = server.server_address[1]
+    body = _version_one(model, basis)
+    try:
+        status, payload = _exchange(port, "POST", "/runs/check", body)
+        assert children == []
+        assert status == 400
+        error = json.loads(payload)
+        assert match in error["error"]
+        status, payload = _exchange(port, "POST", "/runs", body)
+    finally:
+        _close_server(server, thread)
+    assert status == 400
+    assert json.loads(payload) == error
+    assert children == [json.loads(body)]
+
+
 @pytest.mark.parametrize(
     "payload",
     [b"", b"GET /session HTTP/1.1\r\nHost: 127.0.0.1\r\n"],
