@@ -115,9 +115,7 @@ const DEFAULT_SHOTS = "256";
 let dragging = null;
 let running = false;
 const BOARD_KEY = "shadowsim.builder.board";
-const BOARD_VERSION = 1;
 let boardReady = false;
-let serverSession = null;
 let copyTimer = 0;
 let statusHold = null;
 let runStartedAt = 0;
@@ -3255,212 +3253,41 @@ function clearLane(laneId) {
   commitLane(laneId, laneId === "model");
 }
 
-function copyStrings(value) {
-  const copy = {};
-  if (!value || typeof value !== "object") return copy;
-  for (const [key, item] of Object.entries(value)) {
-    if (typeof item === "string") copy[key] = item;
-  }
-  return copy;
-}
-
-function storedText(value, fallback) {
-  return typeof value === "string" ? value : fallback;
-}
-
-function storedSites(value) {
-  if (!Array.isArray(value)) return null;
-  return value.filter((site) => Number.isInteger(site));
-}
-
 function knownBlock(laneId, blockId) {
   return typeof blockId === "string" && Boolean(blockById(laneId, blockId));
 }
 
-function boardSnapshot() {
-  return {
-    version: BOARD_VERSION,
-    server: serverSession,
-    selection: {
-      state: selection.state,
-      model: selection.model,
-      simulator: selection.simulator,
-      backend: selection.backend,
-      measure: selection.measure,
-      then: selection.then,
-    },
-    settings: { qubits: settings.qubits, total: settings.total },
-    basisBits,
-    grayBits,
-    angleText,
-    amplitudeText,
-    qubitsSource,
-    preexistingId,
-    emitterText,
-    cavityText,
-    hoppingText,
-    factoryText: copyStrings(factoryText),
-    modelTerms: modelTerms.map((term) => ({
-      id: term.id,
-      matrix: typeof term.matrix === "string" ? term.matrix : "",
-      sites: Array.isArray(term.sites) ? term.sites.filter((site) => Number.isInteger(site)) : [],
-    })),
-    placedSims: placedSims.map((entry) => ({
-      id: entry.id,
-      params: copyStrings(entry.params),
-      backend: entry.backend ?? null,
-      shots: typeof entry.shots === "string" ? entry.shots : DEFAULT_SHOTS,
-      backendFields: entry.backendFields ? copyStrings(entry.backendFields) : null,
-    })),
-    placedThens: [...placedThens],
-    savePath,
-    exportPath,
-    measureSites: Array.isArray(measureSites) ? [...measureSites] : null,
-    countsExpression,
-  };
+function plainObject(value) {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
 
-function applyBoard(snapshot) {
-  if (!snapshot || typeof snapshot !== "object" || snapshot.version !== BOARD_VERSION) return false;
-  if (!snapshot.selection || typeof snapshot.selection !== "object") return false;
-  if (!snapshot.settings || typeof snapshot.settings !== "object") return false;
-
-  let nextPreexisting = typeof snapshot.preexistingId === "string" ? snapshot.preexistingId : null;
-  if (nextPreexisting && !modelFactories.some((item) => item.id === nextPreexisting)) nextPreexisting = null;
-  let nextModel = null;
-  if (snapshot.selection.model === "preexisting") nextModel = nextPreexisting ? "preexisting" : null;
-  else if (typeof snapshot.selection.model === "string" && snapshot.selection.model) nextModel = snapshot.selection.model;
-
-  const nextTerms = [];
-  if (nextModel !== "preexisting" && Array.isArray(snapshot.modelTerms)) {
-    for (const term of snapshot.modelTerms) {
-      if (!term || !knownBlock("model", term.id) || !blockById("model", term.id)?.adds) continue;
-      nextTerms.push({
-        id: term.id,
-        matrix: typeof term.matrix === "string" ? term.matrix : "",
-        sites: storedSites(term.sites) ?? [],
-      });
-    }
-  }
-
-  const nextSims = [];
-  if (Array.isArray(snapshot.placedSims)) {
-    for (const entry of snapshot.placedSims) {
-      if (!entry || !knownBlock("simulator", entry.id)) continue;
-      const params = copyStrings(entry.params);
-      const row = {
-        id: entry.id,
-        params: Object.keys(params).length ? params : freshParams(entry.id),
-        open: false,
-        backend: null,
-        shots: storedText(entry.shots, DEFAULT_SHOTS),
-        shotsOpen: false,
-        backendOpen: false,
-      };
-      if (typeof entry.backend === "string" && backendFits(row, entry.backend)) {
-        row.backend = entry.backend;
-        if (entry.backendFields && typeof entry.backendFields === "object" && !Array.isArray(entry.backendFields)) {
-          row.backendFields = copyStrings(entry.backendFields);
-        }
-      }
-      nextSims.push(row);
-    }
-  }
-
-  const nextThens = [];
-  if (Array.isArray(snapshot.placedThens)) {
-    for (const id of snapshot.placedThens) {
-      if (knownBlock("then", id) && !nextThens.includes(id)) nextThens.push(id);
-    }
-  }
-
-  const sources = ["user", "state", "hamiltonian", "model"];
-  selection.state = knownBlock("state", snapshot.selection.state) ? snapshot.selection.state : null;
-  selection.model = nextModel;
-  selection.simulator = nextSims[0]?.id ?? null;
-  selection.backend = null;
-  selection.measure = knownBlock("measure", snapshot.selection.measure) ? snapshot.selection.measure : null;
-  selection.then = nextThens[0] ?? null;
-  settings.qubits = storedText(snapshot.settings.qubits, "");
-  settings.total = storedText(snapshot.settings.total, "");
-  basisBits = storedText(snapshot.basisBits, "");
-  grayBits = storedText(snapshot.grayBits, "");
-  angleText = storedText(snapshot.angleText, "");
-  amplitudeText = storedText(snapshot.amplitudeText, "");
-  qubitsSource = sources.includes(snapshot.qubitsSource) ? snapshot.qubitsSource : null;
-  preexistingId = nextPreexisting;
-  emitterText = storedText(snapshot.emitterText, "1");
-  cavityText = storedText(snapshot.cavityText, "1");
-  hoppingText = storedText(snapshot.hoppingText, "0");
-  factoryText =
-    snapshot.factoryText && typeof snapshot.factoryText === "object" && !Array.isArray(snapshot.factoryText)
-      ? copyStrings(snapshot.factoryText)
-      : {};
-  modelTerms.splice(
-    0,
-    modelTerms.length,
-    ...nextTerms.map((term) => ({ ...term, key: ++modelTermKey })),
-  );
-  placedSims.splice(
-    0,
-    placedSims.length,
-    ...nextSims.map((entry) => ({ ...entry, key: ++simKey })),
-  );
-  placedThens.splice(0, placedThens.length, ...nextThens);
-  savePath = storedText(snapshot.savePath, DEFAULT_SAVE_PATH);
-  exportPath = storedText(snapshot.exportPath, DEFAULT_EXPORT_PATH);
-  measureSites = storedSites(snapshot.measureSites);
-  countsExpression = storedText(snapshot.countsExpression, "");
-  stateOpen = false;
-  measureOpen = false;
-  saveOpen = false;
-  exportOpen = false;
-  preexistingOpen = false;
-  return true;
+function textNumber(value) {
+  if (typeof value === "string") return value;
+  if (typeof value !== "number" || !Number.isFinite(value)) return "";
+  return Object.is(value, -0) ? "0" : String(value);
 }
 
-function forgetBoard() {
-  try {
-    localStorage.removeItem(BOARD_KEY);
-  } catch {
-    // Storage can be unavailable.
-  }
+function numberListText(value) {
+  if (!Array.isArray(value)) return "";
+  return value.map((item) => textNumber(item)).join(", ");
 }
 
-function restoreBoard() {
-  let raw = null;
-  try {
-    raw = localStorage.getItem(BOARD_KEY);
-  } catch {
-    return;
-  }
-  if (!raw || !serverSession) {
-    if (raw) forgetBoard();
-    return;
-  }
-  try {
-    const snapshot = JSON.parse(raw);
-    if (!snapshot || snapshot.server !== serverSession) {
-      forgetBoard();
-      return;
-    }
-    applyBoard(snapshot);
-  } catch {
-    forgetBoard();
-  }
+function complexText(entry) {
+  const re = Array.isArray(entry) ? Number(entry[0]) : Number(entry);
+  const im = Array.isArray(entry) ? Number(entry[1] ?? 0) : 0;
+  if (!im) return textNumber(re);
+  const magnitude = Math.abs(im) === 1 ? "j" : `${textNumber(Math.abs(im))}j`;
+  if (!re) return im < 0 ? `-${magnitude}` : magnitude;
+  return `${textNumber(re)}${im < 0 ? "-" : "+"}${magnitude}`;
 }
 
-function rememberBoard() {
-  if (!boardReady || !serverSession) return;
-  try {
-    localStorage.setItem(BOARD_KEY, JSON.stringify(boardSnapshot()));
-  } catch {
-    // Storage can be unavailable. The page still runs.
-  }
+function matrixText(matrix) {
+  if (!Array.isArray(matrix)) return "";
+  const rows = matrix.map((row) => `[${(Array.isArray(row) ? row : []).map((entry) => complexText(entry)).join(", ")}]`);
+  return `[${rows.join(", ")}]`;
 }
 
-function emptyBoard() {
-  if (running) return;
+function resetBoard() {
   selection.state = null;
   selection.model = null;
   selection.simulator = null;
@@ -3491,6 +3318,202 @@ function emptyBoard() {
   saveOpen = false;
   exportOpen = false;
   preexistingOpen = false;
+}
+
+function applyState(state) {
+  if (!plainObject(state)) return;
+  const id = knownBlock("state", state.id) ? state.id : null;
+  selection.state = id;
+  if (id === "basis" && typeof state.value === "string") basisBits = state.value;
+  else if (id === "gray" && typeof state.value === "string") grayBits = state.value;
+  else if (id === "angle") angleText = numberListText(state.value);
+  else if (id === "amplitude") amplitudeText = numberListText(state.value);
+}
+
+function applyModel(model) {
+  if (!plainObject(model)) return;
+  const terms = Array.isArray(model.terms) ? model.terms : [];
+  if (terms.length) {
+    settings.qubits = textNumber(model.qubits);
+    qubitsSource = "user";
+    const next = [];
+    for (const term of terms) {
+      if (!plainObject(term) || !knownBlock("model", term.id) || !blockById("model", term.id)?.adds) continue;
+      next.push({
+        id: term.id,
+        matrix: matrixText(term.matrix),
+        sites: Array.isArray(term.sites) ? term.sites.filter((site) => Number.isInteger(site)) : [],
+      });
+    }
+    modelTerms.splice(0, modelTerms.length, ...next.map((term) => ({ ...term, key: ++modelTermKey })));
+    return;
+  }
+  const id = typeof model.id === "string" && modelFactories.some((item) => item.id === model.id) ? model.id : null;
+  if (!id) return;
+  selection.model = "preexisting";
+  preexistingId = id;
+  const args = plainObject(model.arguments) ? model.arguments : {};
+  if ("n_qubits" in args) {
+    settings.qubits = textNumber(args.n_qubits);
+    qubitsSource = "user";
+  }
+  if ("n_emitters" in args) emitterText = textNumber(args.n_emitters);
+  if ("n_cavities" in args) cavityText = textNumber(args.n_cavities);
+  if ("nu" in args) hoppingText = textNumber(args.nu);
+  const structural = new Set(["n_qubits", "n_emitters", "n_cavities", "nu"]);
+  for (const [key, value] of Object.entries(args)) {
+    if (structural.has(key)) continue;
+    if (typeof value === "string" || typeof value === "number") factoryText[key] = textNumber(value);
+  }
+}
+
+function simParams(args) {
+  const params = {};
+  if (!plainObject(args)) return params;
+  if ("time_steps" in args) params.timeSteps = textNumber(args.time_steps);
+  if ("num_steps" in args) params.numSteps = textNumber(args.num_steps);
+  if ("seed" in args) params.seed = textNumber(args.seed);
+  if ("trotter_depth" in args) params.trotterDepth = textNumber(args.trotter_depth);
+  if ("order" in args) params.order = textNumber(args.order);
+  return params;
+}
+
+function applySims(entries) {
+  const next = [];
+  for (const entry of Array.isArray(entries) ? entries : []) {
+    if (!plainObject(entry) || !knownBlock("simulator", entry.id)) continue;
+    const params = simParams(entry.arguments);
+    const row = {
+      id: entry.id,
+      params: Object.keys(params).length ? params : freshParams(entry.id),
+      open: false,
+      backend: null,
+      shots: DEFAULT_SHOTS,
+      shotsOpen: false,
+      backendOpen: false,
+    };
+    const backend = entry.backend;
+    if (plainObject(backend) && typeof backend.id === "string" && backendFits(row, backend.id)) {
+      row.backend = backend.id;
+      const args = plainObject(backend.arguments) ? backend.arguments : {};
+      if ("shots" in args) row.shots = textNumber(args.shots);
+      const fields = {};
+      for (const [key, value] of Object.entries(args)) {
+        if (key === "shots") continue;
+        if (typeof value === "string" || typeof value === "number") fields[key] = textNumber(value);
+      }
+      if (Object.keys(fields).length) row.backendFields = fields;
+    }
+    next.push(row);
+  }
+  placedSims.splice(0, placedSims.length, ...next.map((entry) => ({ ...entry, key: ++simKey })));
+  selection.simulator = placedSims[0]?.id ?? null;
+}
+
+function applyMeasure(measure) {
+  if (!plainObject(measure)) return;
+  selection.measure = knownBlock("measure", measure.id) ? measure.id : null;
+  measureSites = Array.isArray(measure.sites) ? measure.sites.filter((site) => Number.isInteger(site)) : null;
+  if (selection.measure === "counts" && typeof measure.expression === "string") countsExpression = measure.expression;
+}
+
+function applyActions(actions) {
+  if (!plainObject(actions)) return;
+  const next = [];
+  for (const id of Array.isArray(actions.ids) ? actions.ids : []) {
+    if (knownBlock("then", id) && !next.includes(id)) next.push(id);
+  }
+  placedThens.splice(0, placedThens.length, ...next);
+  selection.then = next[0] ?? null;
+  if (typeof actions.save_path === "string") savePath = actions.save_path;
+  if (typeof actions.export_path === "string") exportPath = actions.export_path;
+}
+
+function applyDocument(saved) {
+  if (!plainObject(saved)) return;
+  resetBoard();
+  if (typeof saved.total === "string" || typeof saved.total === "number") settings.total = textNumber(saved.total);
+  applyState(saved.state);
+  applyModel(saved.model);
+  applySims(saved.simulators);
+  applyMeasure(saved.measure);
+  applyActions(saved.actions);
+}
+
+function forgetBoard() {
+  try {
+    localStorage.removeItem(BOARD_KEY);
+  } catch {
+    // Storage can be unavailable.
+  }
+}
+
+async function restoreBoard() {
+  let raw = null;
+  try {
+    raw = localStorage.getItem(BOARD_KEY);
+  } catch {
+    return;
+  }
+  if (!raw) return;
+  let saved = null;
+  try {
+    saved = JSON.parse(raw);
+  } catch {
+    forgetBoard();
+    return;
+  }
+  if (!plainObject(saved)) {
+    forgetBoard();
+    return;
+  }
+  let response = null;
+  let payload = {};
+  try {
+    response = await fetch("/runs/check", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: raw,
+    });
+    try {
+      payload = await response.json();
+    } catch {
+      payload = {};
+    }
+  } catch {
+    statusHold = "The selection could not be checked.";
+    return;
+  }
+  if (!response.ok || !Number.isInteger(payload.qubits) || payload.qubits < 1) {
+    statusHold = typeof payload.error === "string" && payload.error ? payload.error : "The selection was rejected.";
+    return;
+  }
+  applyDocument(saved);
+  acceptedQubits = payload.qubits;
+  applyAcceptedQubits();
+  checkError = null;
+  rejectedBody = null;
+  checkInFlight = false;
+  pendingBody = null;
+  if (documentBody() === raw) {
+    acceptedBody = raw;
+    releaseStatusHold();
+  } else acceptedBody = null;
+}
+
+function rememberBoard() {
+  if (!boardReady || !accepted()) return;
+  try {
+    localStorage.setItem(BOARD_KEY, acceptedBody);
+  } catch {
+    // Storage can be unavailable. The page still runs.
+  }
+}
+
+function emptyBoard() {
+  if (running) return;
+  resetBoard();
+  forgetBoard();
   releaseStatusHold();
   const board = document.querySelector(".board");
   if (board) draw(board);
@@ -3531,22 +3554,6 @@ async function loadLimits() {
     return response.ok && applyLimits(payload);
   } catch {
     return false;
-  }
-}
-
-async function loadSession() {
-  try {
-    const response = await fetch("/session");
-    let payload = {};
-    try {
-      payload = await response.json();
-    } catch {
-      payload = {};
-    }
-    if (!response.ok || typeof payload.id !== "string" || !payload.id) return null;
-    return payload.id;
-  } catch {
-    return null;
   }
 }
 
@@ -3600,15 +3607,13 @@ if (builder) {
     loadLane("/models", "model", "models"),
     loadLane("/simulators", "simulator", "simulators"),
     loadLane("/backends", "backend", "backends"),
-    loadSession(),
     loadLimits(),
-  ]).then((results) => {
-    serverSession = results[3];
-    if (!results[4]) {
+  ]).then(async (results) => {
+    if (!results[3]) {
       builder.append(el("p", { className: "placeholder" }, "Could not load limits."));
       return;
     }
-    restoreBoard();
+    await restoreBoard();
     boardReady = true;
     mount(builder);
   });

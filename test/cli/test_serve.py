@@ -652,27 +652,6 @@ def test_limits_match_the_validator_caps() -> None:
         _close_server(server, thread)
 
 
-def test_session_id_belongs_to_one_server() -> None:
-    first, first_thread = _open_server()
-    second, second_thread = _open_server()
-    try:
-        first_port = first.server_address[1]
-        second_port = second.server_address[1]
-        status, _headers, body = _open(first_port, "/session")
-        assert status == 200
-        payload = json.loads(body)
-        assert isinstance(payload["id"], str)
-        assert payload["id"]
-        again, _headers, again_body = _open(first_port, "/session")
-        assert again == 200
-        assert json.loads(again_body)["id"] == payload["id"]
-        _status, _headers, other = _open(second_port, "/session")
-        assert json.loads(other)["id"] != payload["id"]
-    finally:
-        _close_server(first, first_thread)
-        _close_server(second, second_thread)
-
-
 def test_send_json_ignores_a_disconnected_client() -> None:
     class _Closed:
         def __init__(self) -> None:
@@ -858,7 +837,7 @@ def test_the_page_exchanges_a_query_token_for_a_cookie() -> None:
         assert status == 200
         assert b"ShadowSim.py Simulation Builder" in body
         unauthorized = b"Open the URL printed when the server started.\n"
-        for path in ("/session", "/limits", "/models", "/simulators", "/backends", "/styles.css", "/builder.js"):
+        for path in ("/limits", "/models", "/simulators", "/backends", "/styles.css", "/builder.js"):
             status, headers, body = _open(port, path)
             assert status == 401
             assert body == unauthorized
@@ -867,7 +846,7 @@ def test_the_page_exchanges_a_query_token_for_a_cookie() -> None:
             assert status == 401
             assert body == unauthorized
             assert "Set-Cookie" not in headers
-        status, headers, body = _open(port, "/session", {"Cookie": "shadowsim-token=nope"})
+        status, headers, body = _open(port, "/limits", {"Cookie": "shadowsim-token=nope"})
         assert status == 401
         assert body == unauthorized
         assert "Set-Cookie" not in headers
@@ -1358,7 +1337,7 @@ def test_a_rejected_check_is_the_same_rejection_as_a_run(
 
 @pytest.mark.parametrize(
     "payload",
-    [b"", b"GET /session HTTP/1.1\r\nHost: 127.0.0.1\r\n"],
+    [b"", b"GET /limits HTTP/1.1\r\nHost: 127.0.0.1\r\n"],
     ids=["silent", "partial-headers"],
 )
 def test_a_stalled_request_is_closed(payload: bytes) -> None:
@@ -1370,9 +1349,9 @@ def test_a_stalled_request_is_closed(payload: bytes) -> None:
         if payload:
             client.sendall(payload)
         _assert_dropped(client, 2)
-        status, _headers, body = _open(port, "/session")
+        status, _headers, body = _open(port, "/limits")
         assert status == 200
-        assert isinstance(json.loads(body)["id"], str)
+        assert "states" in json.loads(body)
     finally:
         if client is not None:
             client.close()
@@ -1396,9 +1375,9 @@ def test_a_stalled_authenticated_body_is_closed() -> None:
             b'{"partial"'
         )
         _assert_dropped(client, 2)
-        status, _headers, body = _open(port, "/session", {"Cookie": "shadowsim-token=test-token"})
+        status, _headers, body = _open(port, "/limits", {"Cookie": "shadowsim-token=test-token"})
         assert status == 200
-        assert isinstance(json.loads(body)["id"], str)
+        assert "states" in json.loads(body)
     finally:
         if client is not None:
             client.close()
@@ -1457,16 +1436,16 @@ def test_a_full_handler_cap_closes_the_next_connection(monkeypatch: pytest.Monke
         assert started.wait(timeout=2)
         extra = socket.create_connection(("127.0.0.1", port), timeout=2)
         try:
-            extra.sendall(b"GET /session HTTP/1.1\r\nHost: 127.0.0.1\r\n\r\n")
+            extra.sendall(b"GET /limits HTTP/1.1\r\nHost: 127.0.0.1\r\n\r\n")
         except OSError:
             pass
         _assert_dropped(extra, 2)
         release.set()
         poster.join(timeout=5)
         assert outcome["result"] == (200, b'{"ok": true}')
-        status, _headers, body = _open(port, "/session")
+        status, _headers, body = _open(port, "/limits")
         assert status == 200
-        assert isinstance(json.loads(body)["id"], str)
+        assert "states" in json.loads(body)
     finally:
         release.set()
         poster.join(timeout=5)

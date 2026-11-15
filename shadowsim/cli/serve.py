@@ -88,8 +88,6 @@ _slot = _Slot()
 class HTTPServer(ThreadingMixIn, _HTTPServer):
     """Serve each request on a daemon thread so one run does not block the page.
 
-    ``session`` is a new id for this process. The builder keeps a saved board only
-    while that id still matches, so launching the server again starts empty.
     ``request_timeout`` is how long, in seconds, a client may take to send the
     request line, the headers, and an authenticated body. At most
     ``_MAX_HANDLERS`` connections are handled at once. A further connection is
@@ -101,7 +99,6 @@ class HTTPServer(ThreadingMixIn, _HTTPServer):
     output_root: Path | None = None
     tls: bool = False
     accept_query_token: bool = True
-    session: str
     request_timeout: float
     _handler_slots: threading.BoundedSemaphore
 
@@ -114,7 +111,7 @@ class HTTPServer(ThreadingMixIn, _HTTPServer):
         request_timeout: float = _REQUEST_TIMEOUT,
         max_handlers: int = _MAX_HANDLERS,
     ) -> None:
-        """Bind the server and assign this process its board id.
+        """Bind the server.
 
         Args:
             server_address: Address and port to bind.
@@ -126,7 +123,6 @@ class HTTPServer(ThreadingMixIn, _HTTPServer):
                 connection is closed.
         """
         super().__init__(server_address, request_handler_class, bind_and_activate)
-        self.session = secrets.token_urlsafe(16)
         self.request_timeout = request_timeout
         self._handler_slots = threading.BoundedSemaphore(max_handlers)
 
@@ -195,7 +191,7 @@ class _Handler(BaseHTTPRequestHandler):
         self.connection.settimeout(timeout)
 
     def do_GET(self) -> None:
-        """Return a site asset, a package catalog, the page caps, or this process id.
+        """Return a site asset, a package catalog, or the page caps.
 
         ``GET /`` is the one route that honors ``?token=``, and only when this
         server accepts a query token. A matching token is exchanged for a cookie
@@ -203,22 +199,14 @@ class _Handler(BaseHTTPRequestHandler):
         not accept a query token, ``GET /`` without the cookie returns a form and
         any ``?token=`` is refused. Any other ``GET /`` on a server with a token
         needs that cookie. Every other read needs that cookie too, and does not
-        accept a query token. ``GET /session`` returns the id created when this
-        process started. ``GET /limits`` returns the builder page caps. The read
-        timeout is cleared first, because the headers have already arrived.
+        accept a query token. ``GET /limits`` returns the builder page caps. The
+        read timeout is cleared first, because the headers have already arrived.
         """
         _end_read_timeout(self)
         path = urlsplit(self.path).path
         if path == "/" and not _authorize_page(self):
             return
         if path != "/" and not _authorize_read(self):
-            return
-        if path == "/session":
-            session = getattr(self.server, "session", None)
-            if not isinstance(session, str) or not session:
-                self.send_error(404)
-                return
-            _send_json(self, 200, {"id": session})
             return
         if path == "/limits":
             _send_json(self, 200, _page_limits())
