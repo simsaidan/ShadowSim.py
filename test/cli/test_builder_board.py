@@ -73,6 +73,21 @@ Element.prototype.querySelector = function (selector) {
 Element.prototype.querySelectorAll = function (selector) {
   return findAll(this, selector);
 };
+Element.prototype.click = function () {
+  if (this.tag === "a") {
+    downloads.push({ name: this.attrs.download || "", href: this.attrs.href || "" });
+  }
+  const listeners = this.listeners && this.listeners.click;
+  if (!listeners) return;
+  for (const fn of listeners) fn({ currentTarget: this, target: this, stopPropagation() {} });
+};
+Element.prototype.remove = function () {
+  const parent = this.parentNode;
+  if (!parent || !parent.children) return;
+  const index = parent.children.indexOf(this);
+  if (index >= 0) parent.children.splice(index, 1);
+  this.parentNode = null;
+};
 Element.prototype.addEventListener = function (type, fn) {
   if (!this.listeners[type]) this.listeners[type] = [];
   this.listeners[type].push(fn);
@@ -195,6 +210,7 @@ function findAll(root, selector) {
 const pageRoot = new Element("html");
 const store = new Map();
 const writes = [];
+const downloads = [];
 const sandbox = {
   writes,
   console,
@@ -225,6 +241,20 @@ const sandbox = {
   },
 };
 sandbox.globalThis = sandbox;
+sandbox.Promise = Promise;
+sandbox.downloads = downloads;
+sandbox.Blob = function Blob(parts, options) {
+  this.parts = parts;
+  this.type = options && options.type;
+};
+sandbox.URL = {
+  createObjectURL(blob) {
+    downloads.push({ text: String(blob.parts[0]), type: blob.type });
+    return "blob:board";
+  },
+  revokeObjectURL() {},
+};
+sandbox.document.body = new Element("body");
 vm.createContext(sandbox);
 
 const probe = `
@@ -829,6 +859,76 @@ if (request.action === "roundtrip") {
   typeInto(local().querySelector("textarea"), "[[1, 0], [0, -1]]");
   const validLocal = operatorAlert(local());
   result = { nonhermitian, wrongSize, validHamiltonian, emptyLocal, splitLocal, splitLindblad, validLocal };
+} else if (request.action === "files") {
+  result = (async () => {
+    fillIsing();
+    boardReady = true;
+    const board = document.createElement("section");
+    board.className = "board";
+    document.documentElement.append(board);
+    draw(board);
+    const exportButton = () => walk(board, []).find((node) => node.className === "board-file export-board");
+    const earlyDisabled = Object.hasOwn(exportButton().attrs, "disabled");
+    applyCheck(2);
+    const file = JSON.stringify(runRequest());
+    const enabled = Object.hasOwn(exportButton().attrs, "disabled");
+    click(exportButton());
+    const blob = downloads.find((item) => item.text != null);
+    const link = downloads.find((item) => item.name != null);
+    resetPage();
+    fillIsing();
+    settings.total = "9";
+    draw(board);
+    const kept = localStorage.getItem("shadowsim.builder.board");
+    const keptState = selection.state;
+    const keptTotal = settings.total;
+    async function choose(text) {
+      const input = document.querySelector(".board-file-input");
+      input.files = [{ text: async () => text }];
+      input.listeners.change[0]({ target: input });
+      for (let step = 0; step < 8; step += 1) await Promise.resolve();
+    }
+    fetch = async () => ({ ok: false, json: async () => ({ error: "unknown version 2" }) });
+    await choose("{");
+    const malformed = {
+      status: statusHold,
+      state: selection.state,
+      total: settings.total,
+      stored: localStorage.getItem("shadowsim.builder.board") === kept,
+    };
+    await choose(JSON.stringify({ version: 2 }));
+    const rejected = {
+      status: statusHold,
+      state: selection.state,
+      total: settings.total,
+      stored: localStorage.getItem("shadowsim.builder.board") === kept,
+      present: localStorage.getItem("shadowsim.builder.board") != null,
+    };
+    let posted = null;
+    fetch = async (_url, options) => {
+      posted = options && options.body;
+      return { ok: true, json: async () => ({ qubits: 2 }) };
+    };
+    await choose(file);
+    const stored = localStorage.getItem("shadowsim.builder.board");
+    return {
+      earlyDisabled,
+      enabled,
+      file,
+      text: blob && blob.text,
+      type: blob && blob.type,
+      name: link && link.name,
+      posted: posted === file,
+      restored: JSON.stringify(runRequest()) === file,
+      state: selection.state,
+      bits: basisBits,
+      malformed,
+      rejected,
+      keptState,
+      keptTotal,
+      stored,
+    };
+  })();
 } else {
   throw new Error("unknown action");
 }
@@ -1064,3 +1164,38 @@ def test_copy_writes_the_script_only_when_one_is_shown() -> None:
     assert page["write"] == page["preview"]
     assert "from shadowsim.encoding import ComputationalBasisEncoding" in page["write"]
     assert "import *" not in page["write"]
+
+
+def test_export_and_import_round_trip_the_board() -> None:
+    page = _call("files")
+    assert page["earlyDisabled"] is True
+    assert page["enabled"] is False
+    assert page["text"] == page["file"]
+    assert page["type"] == "application/json"
+    assert page["name"] == "shadowsim-board.json"
+    assert page["posted"] is True
+    assert page["restored"] is True
+    assert page["state"] == "basis"
+    assert page["bits"] == "01"
+    assert json.loads(page["file"])["total"] == "1"
+    assert page["keptState"] == "basis"
+    assert page["keptTotal"] == "9"
+    assert page["malformed"] == {
+        "status": "The selection was rejected.",
+        "state": "basis",
+        "total": "9",
+        "stored": True,
+    }
+    assert page["rejected"] == {
+        "status": "unknown version 2",
+        "state": "basis",
+        "total": "9",
+        "stored": True,
+        "present": True,
+    }
+    stored = json.loads(page["stored"])
+    assert page["stored"] == page["file"]
+    assert stored["version"] == 1
+    assert "server" not in stored
+    assert stored["state"] == {"id": "basis", "value": "01"}
+    assert stored["total"] == "1"

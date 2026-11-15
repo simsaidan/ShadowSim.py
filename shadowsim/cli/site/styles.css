@@ -434,7 +434,8 @@ body {
   gap: 10px;
 }
 
-.clear {
+.clear,
+.board-file {
   appearance: none;
   border: 1px solid var(--line);
   background: #fff;
@@ -449,13 +450,19 @@ body {
   cursor: pointer;
 }
 
-.clear:disabled {
+.clear:disabled,
+.board-file:disabled {
   color: var(--faint);
   cursor: default;
 }
 
+.board-import {
+  display: inline-flex;
+}
+
 .run:focus-visible,
 .clear:focus-visible,
+.board-file:focus-visible,
 .block:focus-visible,
 .remove:focus-visible,
 .done:focus-visible,

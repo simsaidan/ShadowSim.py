@@ -1818,6 +1818,56 @@ function summaryComponent() {
   );
 }
 
+function downloadBoard() {
+  if (running || !accepted()) return;
+  const blob = new Blob([acceptedBody], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+  const link = el("a", { href: url, download: "shadowsim-board.json" });
+  document.body.append(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
+}
+
+async function importBoardFile(file) {
+  if (running || !file || typeof file.text !== "function") return;
+  let raw = "";
+  try {
+    raw = await file.text();
+  } catch {
+    holdImportStatus("The selection was rejected.");
+    return;
+  }
+  await importBoardText(raw);
+}
+
+function importBoardButton() {
+  const file = el("input", {
+    className: "board-file-input",
+    type: "file",
+    accept: "application/json,.json",
+    hidden: true,
+    "aria-label": "Board file",
+    onchange: (event) => {
+      const input = event.target;
+      const chosen = input.files && input.files[0];
+      input.value = "";
+      if (chosen) void importBoardFile(chosen);
+    },
+  });
+  return el(
+    "span",
+    { className: "board-import" },
+    file,
+    el("button", {
+      className: "board-file import-board",
+      type: "button",
+      disabled: running,
+      onclick: () => file.click(),
+    }, "Import board"),
+  );
+}
+
 function settingsComponent() {
   const field = (key, label, inputMode) =>
     el(
@@ -1857,6 +1907,13 @@ function settingsComponent() {
     el(
       "div",
       { className: "settings-actions" },
+      el("button", {
+        className: "board-file export-board",
+        type: "button",
+        disabled: running || !accepted(),
+        onclick: () => downloadBoard(),
+      }, "Export board"),
+      importBoardButton(),
       el("button", {
         className: "clear",
         type: "button",
@@ -1939,32 +1996,40 @@ function applyAcceptedQubits() {
   qubitsSource = "model";
 }
 
+async function requestCheck(body) {
+  const response = await fetch("/runs/check", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body,
+  });
+  let payload = {};
+  try {
+    payload = await response.json();
+  } catch {
+    payload = {};
+  }
+  if (!response.ok || !Number.isInteger(payload.qubits) || payload.qubits < 1) {
+    const error = typeof payload.error === "string" && payload.error ? payload.error : "The selection was rejected.";
+    return { ok: false, error };
+  }
+  return { ok: true, qubits: payload.qubits };
+}
+
 async function postCheck(requested, serial) {
   if (serial !== checkSerial || requested !== documentBody()) return;
   checkInFlight = true;
   showCheckStatus();
   try {
-    const response = await fetch("/runs/check", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: requested,
-    });
-    let payload = {};
-    try {
-      payload = await response.json();
-    } catch {
-      payload = {};
-    }
+    const result = await requestCheck(requested);
     if (serial !== checkSerial || requested !== documentBody()) return;
-    if (!response.ok || !Number.isInteger(payload.qubits) || payload.qubits < 1) {
-      checkError =
-        typeof payload.error === "string" && payload.error ? payload.error : "The selection was rejected.";
+    if (!result.ok) {
+      checkError = result.error;
       rejectedBody = requested;
       acceptedBody = null;
       acceptedQubits = null;
       return;
     }
-    acceptedQubits = payload.qubits;
+    acceptedQubits = result.qubits;
     applyAcceptedQubits();
     if (documentBody() !== requested) {
       acceptedQubits = null;
@@ -2667,7 +2732,23 @@ function stopRunClock() {
   runTimer = null;
 }
 
+function setButtonDisabled(button, disabled) {
+  if (!button) return;
+  button.disabled = disabled;
+  if (disabled) {
+    button.setAttribute("disabled", "");
+    return;
+  }
+  if (typeof button.removeAttribute === "function") button.removeAttribute("disabled");
+}
+
+function syncBoardFileButtons() {
+  setButtonDisabled(document.querySelector(".export-board"), running || !accepted());
+  setButtonDisabled(document.querySelector(".import-board"), running);
+}
+
 function syncRunButton() {
+  syncBoardFileButtons();
   const button = document.querySelector(".run");
   if (!button || running) return;
   button.disabled = !runAllowed();
@@ -2680,6 +2761,7 @@ function setRunButton(label) {
   button.disabled = label !== "Cancel" && !runAllowed();
   const clear = document.querySelector(".clear");
   if (clear) clear.disabled = label === "Cancel";
+  syncBoardFileButtons();
 }
 
 async function cancelRun() {
@@ -3508,6 +3590,53 @@ function rememberBoard() {
   } catch {
     // Storage can be unavailable. The page still runs.
   }
+}
+
+function holdImportStatus(message) {
+  statusHold = message;
+  const status = document.querySelector(".status");
+  if (status) status.replaceWith(statusComponent());
+}
+
+async function importBoardText(raw) {
+  if (running) return;
+  let saved = null;
+  try {
+    saved = JSON.parse(raw);
+  } catch {
+    holdImportStatus("The selection was rejected.");
+    return;
+  }
+  if (!plainObject(saved)) {
+    holdImportStatus("The selection was rejected.");
+    return;
+  }
+  let result = null;
+  try {
+    result = await requestCheck(raw);
+  } catch {
+    if (!running) holdImportStatus("The selection could not be checked.");
+    return;
+  }
+  if (running || !result.ok) {
+    if (!running) holdImportStatus(result && result.error ? result.error : "The selection was rejected.");
+    return;
+  }
+  cancelScheduledCheck();
+  checkSerial += 1;
+  applyDocument(saved);
+  acceptedQubits = result.qubits;
+  applyAcceptedQubits();
+  checkError = null;
+  rejectedBody = null;
+  checkInFlight = false;
+  pendingBody = null;
+  if (documentBody() === raw) {
+    acceptedBody = raw;
+    releaseStatusHold();
+  } else acceptedBody = null;
+  const board = document.querySelector(".board");
+  if (board) draw(board);
 }
 
 function emptyBoard() {
