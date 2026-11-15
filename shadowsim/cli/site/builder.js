@@ -70,7 +70,7 @@ const BLOCKS = {
   ],
 };
 
-const STATE_LIMITS = { basis: 15, gray: 15, angle: 15, amplitude: 16 };
+let limits = null;
 
 const selection = {
   state: null,
@@ -90,12 +90,6 @@ let emitterText = "1";
 let cavityText = "1";
 let hoppingText = "0";
 let factoryText = {};
-const MAX_EMITTERS = 13;
-const MAX_OPERATOR_QUBITS = 8;
-const MAX_TIME_STEPS = 500;
-const MAX_NUM_STEPS = 100;
-const MAX_TROTTER_DEPTH = 100;
-const MAX_SHOTS = 100000;
 
 const settings = { qubits: "", total: "" };
 let basisBits = "";
@@ -181,13 +175,13 @@ function currentPage() {
     measureSites,
     countsExpression,
     qubitsSource,
-    stateLimits: STATE_LIMITS,
-    maxEmitters: MAX_EMITTERS,
-    maxOperatorQubits: MAX_OPERATOR_QUBITS,
-    maxTimeSteps: MAX_TIME_STEPS,
-    maxNumSteps: MAX_NUM_STEPS,
-    maxTrotterDepth: MAX_TROTTER_DEPTH,
-    maxShots: MAX_SHOTS,
+    stateLimits: limits.states,
+    maxEmitters: limits.emitters,
+    maxOperatorQubits: limits.operatorQubits,
+    maxTimeSteps: limits.timeSteps,
+    maxNumSteps: limits.numSteps,
+    maxTrotterDepth: limits.trotterDepth,
+    maxShots: limits.shots,
     checkedQubits: checkError == null && acceptedBody != null ? acceptedQubits : null,
   };
 }
@@ -753,15 +747,15 @@ function grayPrepared(bits) {
 }
 
 function stateDetail(id) {
-  if (id === "basis") return basisBits ? `Start in |${basisBits}>` : "0s and 1s, up to 15";
-  if (id === "gray") return grayBits ? `Start in |${grayPrepared(grayBits)}>` : "0s and 1s, up to 15";
+  if (id === "basis") return basisBits ? `Start in |${basisBits}>` : `0s and 1s, up to ${limits.states.basis}`;
+  if (id === "gray") return grayBits ? `Start in |${grayPrepared(grayBits)}>` : `0s and 1s, up to ${limits.states.gray}`;
   if (id === "angle") {
-    const values = numberList(angleText, STATE_LIMITS.angle);
+    const values = numberList(angleText, limits.states.angle);
     if (!values) return "Radians, one per qubit";
     return values.length === 1 ? "1 angle" : `${values.length} angles`;
   }
-  const values = numberList(amplitudeText, STATE_LIMITS.amplitude);
-  if (!values || values.every((value) => value === 0)) return "Up to 16 numbers";
+  const values = numberList(amplitudeText, limits.states.amplitude);
+  if (!values || values.every((value) => value === 0)) return `Up to ${limits.states.amplitude} numbers`;
   const qubits = amplitudeQubits(values.length);
   return qubits === 1 ? "1 qubit" : `${qubits} qubits`;
 }
@@ -769,8 +763,8 @@ function stateDetail(id) {
 function stateReady(id) {
   if (id === "basis") return basisBits !== "";
   if (id === "gray") return grayBits !== "";
-  if (id === "angle") return numberList(angleText, STATE_LIMITS.angle) != null;
-  const values = numberList(amplitudeText, STATE_LIMITS.amplitude);
+  if (id === "angle") return numberList(angleText, limits.states.angle) != null;
+  const values = numberList(amplitudeText, limits.states.amplitude);
   return Boolean(values && values.some((value) => value !== 0));
 }
 
@@ -842,7 +836,7 @@ function stateChip(options) {
   const input = el("input", {
     type: "text",
     inputmode: options.bits ? "numeric" : "decimal",
-    ...(options.bits ? { maxlength: "15" } : {}),
+    ...(options.bits ? { maxlength: String(limits.states[options.id]) } : {}),
     "aria-label": options.aria,
     value: options.value,
     spellcheck: "false",
@@ -925,7 +919,7 @@ function basisChip() {
     bits: true,
     value: basisBits,
     oninput: (event) => {
-      const next = event.target.value.replace(/[^01]/g, "").slice(0, 15);
+      const next = event.target.value.replace(/[^01]/g, "").slice(0, limits.states.basis);
       if (event.target.value !== next) event.target.value = next;
       basisBits = next;
       refreshStateChip("basis");
@@ -943,7 +937,7 @@ function grayChip() {
     bits: true,
     value: grayBits,
     oninput: (event) => {
-      const next = event.target.value.replace(/[^01]/g, "").slice(0, 15);
+      const next = event.target.value.replace(/[^01]/g, "").slice(0, limits.states.gray);
       if (event.target.value !== next) event.target.value = next;
       grayBits = next;
       refreshStateChip("gray");
@@ -2702,8 +2696,8 @@ async function cancelRun() {
 function stateValue() {
   if (selection.state === "basis") return basisBits;
   if (selection.state === "gray") return grayBits;
-  if (selection.state === "angle") return numberList(angleText, STATE_LIMITS.angle);
-  if (selection.state === "amplitude") return numberList(amplitudeText, STATE_LIMITS.amplitude);
+  if (selection.state === "angle") return numberList(angleText, limits.states.angle);
+  if (selection.state === "amplitude") return numberList(amplitudeText, limits.states.amplitude);
   return null;
 }
 
@@ -3502,6 +3496,44 @@ function emptyBoard() {
   if (board) draw(board);
 }
 
+function validLimits(payload) {
+  const states = payload == null ? null : payload.states;
+  if (states == null || typeof states !== "object") return false;
+  return [
+    states.basis,
+    states.gray,
+    states.angle,
+    states.amplitude,
+    payload.emitters,
+    payload.operatorQubits,
+    payload.timeSteps,
+    payload.numSteps,
+    payload.trotterDepth,
+    payload.shots,
+  ].every((value) => Number.isInteger(value) && value > 0);
+}
+
+function applyLimits(payload) {
+  if (!validLimits(payload)) return false;
+  limits = payload;
+  return true;
+}
+
+async function loadLimits() {
+  try {
+    const response = await fetch("/limits");
+    let payload = {};
+    try {
+      payload = await response.json();
+    } catch {
+      payload = {};
+    }
+    return response.ok && applyLimits(payload);
+  } catch {
+    return false;
+  }
+}
+
 async function loadSession() {
   try {
     const response = await fetch("/session");
@@ -3569,8 +3601,13 @@ if (builder) {
     loadLane("/simulators", "simulator", "simulators"),
     loadLane("/backends", "backend", "backends"),
     loadSession(),
+    loadLimits(),
   ]).then((results) => {
     serverSession = results[3];
+    if (!results[4]) {
+      builder.append(el("p", { className: "placeholder" }, "Could not load limits."));
+      return;
+    }
     restoreBoard();
     boardReady = true;
     mount(builder);

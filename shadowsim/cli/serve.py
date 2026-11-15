@@ -24,7 +24,7 @@ from typing import Any
 from urllib.parse import parse_qs, urlsplit
 
 from shadowsim.backends import listed_backends
-from shadowsim.cli.run import check_page, run_page
+from shadowsim.cli.run import _page_limits, check_page, run_page
 from shadowsim.models.catalog import listed_model_terms, listed_models
 from shadowsim.simulators.catalog import listed_simulators
 
@@ -195,7 +195,7 @@ class _Handler(BaseHTTPRequestHandler):
         self.connection.settimeout(timeout)
 
     def do_GET(self) -> None:
-        """Return a site asset, a package catalog, or this process id.
+        """Return a site asset, a package catalog, the page caps, or this process id.
 
         ``GET /`` is the one route that honors ``?token=``, and only when this
         server accepts a query token. A matching token is exchanged for a cookie
@@ -204,8 +204,8 @@ class _Handler(BaseHTTPRequestHandler):
         any ``?token=`` is refused. Any other ``GET /`` on a server with a token
         needs that cookie. Every other read needs that cookie too, and does not
         accept a query token. ``GET /session`` returns the id created when this
-        process started. The read timeout is cleared first, because the headers
-        have already arrived.
+        process started. ``GET /limits`` returns the builder page caps. The read
+        timeout is cleared first, because the headers have already arrived.
         """
         _end_read_timeout(self)
         path = urlsplit(self.path).path
@@ -219,6 +219,9 @@ class _Handler(BaseHTTPRequestHandler):
                 self.send_error(404)
                 return
             _send_json(self, 200, {"id": session})
+            return
+        if path == "/limits":
+            _send_json(self, 200, _page_limits())
             return
         key = _CATALOGS.get(path)
         if key is not None:

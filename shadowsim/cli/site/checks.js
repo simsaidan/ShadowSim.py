@@ -176,8 +176,15 @@
 
   function emitterCount() {
     const text = page.emitterText.trim();
-    if (!positiveIntText(text)) return null;
+    if (!positiveIntAtMost(text, page.maxEmitters)) return null;
     return Number(text);
+  }
+
+  function emitterAlert() {
+    const text = page.emitterText.trim();
+    if (positiveIntAtMost(text, page.maxEmitters)) return null;
+    if (positiveIntText(text)) return `Emitters must be from 1 to ${page.maxEmitters}`;
+    return "Enter an emitter count";
   }
 
   function usesEmitterCount() {
@@ -207,13 +214,17 @@
 
   function factoryAlert() {
     if (page.selection.model !== "preexisting") return null;
-    if (page.preexistingId === "tavis_cummings" && emitterCount() == null) return "Enter an emitter count";
+    if (page.preexistingId === "tavis_cummings") {
+      const emitters = emitterAlert();
+      if (emitters) return emitters;
+    }
     if (jaynesHubbardSelected()) {
       if (cavityCount() == null) return "Enter a cavity count of at least 1";
       if (hoppingValue() == null) return "Enter a real hopping strength";
     } else if (hubbardSelected()) {
       if (cavityCount() == null) return "Enter a cavity count of at least 1";
-      if (emitterCount() == null) return "Enter an emitter count";
+      const emitters = emitterAlert();
+      if (emitters) return emitters;
       if (hoppingValue() == null) return "Enter a real hopping strength";
     }
     return paramAlert();
@@ -1168,7 +1179,9 @@
     if (parsed.error) return { problem: "Enter a square matrix." };
     const { matrix } = parsed;
     const size = matrix.length;
-    if (size > 256) return { problem: "At most 8 qubits." };
+    const maxQubits = page.maxOperatorQubits;
+    const noun = maxQubits === 1 ? "qubit" : "qubits";
+    if (size > 2 ** maxQubits) return { problem: `At most ${maxQubits} ${noun}.` };
     if (size < 2 || (size & (size - 1)) !== 0) return { problem: "Size must be a power of two." };
     return { matrix, qubits: Math.log2(size) };
   }

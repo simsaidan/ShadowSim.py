@@ -20,7 +20,11 @@ import pytest
 
 from shadowsim.backends import listed_backends
 from shadowsim.cli.run import (
+    _MAX_AMPLITUDES,
+    _MAX_EMITTERS,
+    _MAX_FACTORY_QUBITS,
     _MAX_NUM_STEPS,
+    _MAX_OPERATOR_QUBITS,
     _MAX_SHOTS,
     _MAX_TIME_STEPS,
     _MAX_TROTTER_DEPTH,
@@ -33,6 +37,7 @@ from shadowsim.cli.run import (
     _measurements,
     _model,
     _observable_labels,
+    _page_limits,
     _selection_positive_int,
     _series_name,
     build_simulator,
@@ -2502,6 +2507,23 @@ def test_ignored_actions_and_bad_numbers_fail_before_import(forbid_qutip: None) 
         build_simulator(_selection(simulator="trotterization", time_steps=None))
     with pytest.raises(ValueError, match="shots must be a positive integer"):
         build_simulator(_selection(simulator="trotterization", time_steps=2.0, shots=0))
+
+
+def test_page_limits_use_the_validator_caps() -> None:
+    assert _page_limits() == {
+        "states": {
+            "basis": _MAX_FACTORY_QUBITS,
+            "gray": _MAX_FACTORY_QUBITS,
+            "angle": _MAX_FACTORY_QUBITS,
+            "amplitude": _MAX_AMPLITUDES,
+        },
+        "emitters": _MAX_EMITTERS,
+        "operatorQubits": _MAX_OPERATOR_QUBITS,
+        "timeSteps": _MAX_TIME_STEPS,
+        "numSteps": _MAX_NUM_STEPS,
+        "trotterDepth": _MAX_TROTTER_DEPTH,
+        "shots": _MAX_SHOTS,
+    }
 
 
 def test_posted_workload_limits_fail_before_import(forbid_qutip: None) -> None:
