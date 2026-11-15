@@ -411,70 +411,95 @@ function fillCircuit() {
 const request = JSON.parse(process.argv[3]);
 if (!applyLimits(request.limits)) throw new Error("missing limits");
 const surface = { replaceChildren() {} };
-serverSession = "server-1";
 let result;
 if (request.action === "roundtrip") {
   fillIsing();
   draw(surface);
   const storedEarly = localStorage.getItem("shadowsim.builder.board");
-  const before = boardSnapshot();
   boardReady = true;
   draw(surface);
+  const storedBeforeAccept = localStorage.getItem("shadowsim.builder.board");
+  const accepted = applyCheck();
   const stored = localStorage.getItem("shadowsim.builder.board");
-  resetPage();
-  boardReady = true;
-  modelFactories = [{
-    id: "ising",
-    title: "Ising",
-    qubits: true,
-    setup: "model = ising(n_qubits={qubits})",
-  }];
-  BLOCKS.simulator = [{ id: "qutip", title: "QuTiP", observables: true, detail: "Reference" }];
-  restoreBoard();
-  const after = boardSnapshot();
+  const body = JSON.stringify(runRequest());
   settings.total = "4";
   refreshSummaryAndPreview();
-  const refreshed = JSON.parse(localStorage.getItem("shadowsim.builder.board"));
-  result = {
-    storedEarly,
-    stored,
-    before,
-    after,
-    openStored: Object.hasOwn(before.placedSims[0], "open"),
-    keyStored: Object.hasOwn(before.placedSims[0], "key"),
-    openAfter: placedSims[0].open,
-    keyAfter: placedSims[0].key,
-    refreshedTotal: refreshed.settings.total,
+  const duringEdit = localStorage.getItem("shadowsim.builder.board");
+  const checks = [];
+  fetch = async (url, options) => {
+    checks.push({
+      url,
+      method: options && options.method,
+      contentType: options && options.headers && options.headers["Content-Type"],
+      body: options && options.body,
+    });
+    return { ok: true, json: async () => ({ qubits: 2 }) };
   };
+  resetPage();
+  boardReady = true;
+  result = (async () => {
+    await restoreBoard();
+    return {
+      storedEarly,
+      storedBeforeAccept,
+      accepted,
+      matches: stored === body,
+      held: duringEdit === stored,
+      document: stored ? JSON.parse(stored) : null,
+      stored,
+      checks,
+      restored: JSON.stringify(runRequest()) === stored,
+      state: selection.state,
+      bits: basisBits,
+    };
+  })();
 } else if (request.action === "broken") {
-  fillIsing();
-  const before = JSON.stringify(boardSnapshot());
-  const rejected = [null, { version: 2 }, {}].every((snapshot) => applyBoard(snapshot) === false);
-  localStorage.setItem("shadowsim.builder.board", "{");
-  restoreBoard();
-  result = { rejected, unchanged: JSON.stringify(boardSnapshot()) === before };
+  result = (async () => {
+    fillIsing();
+    const before = selection.state;
+    const checks = [];
+    fetch = async (url, options) => {
+      checks.push({ url, body: options && options.body });
+      return { ok: false, json: async () => ({ error: "unknown version 2" }) };
+    };
+    localStorage.setItem("shadowsim.builder.board", "{");
+    await restoreBoard();
+    const malformed = {
+      state: selection.state,
+      stored: localStorage.getItem("shadowsim.builder.board"),
+      checks: checks.length,
+    };
+    resetPage();
+    const rejected = JSON.stringify({ version: 2 });
+    localStorage.setItem("shadowsim.builder.board", rejected);
+    await restoreBoard();
+    return {
+      before,
+      malformed,
+      status: statusHold,
+      state: selection.state,
+      bits: basisBits,
+      stored: localStorage.getItem("shadowsim.builder.board"),
+      check: checks[0],
+    };
+  })();
 } else if (request.action === "unknown") {
-  fillCircuit();
-  const snap = boardSnapshot();
-  snap.preexistingId = "gone";
-  snap.modelTerms = [
-    { id: "hamiltonian", matrix: "[[1, 0], [0, -1]]", sites: [0, 1.5] },
-    { id: "nope", matrix: "", sites: [] },
-  ];
-  const row = snap.placedSims[0];
-  snap.placedSims = [
-    { ...row, backend: "missing" },
-    { ...row, backend: "aer", shots: "128" },
-    { id: "missing", params: { timeSteps: "4" }, backend: "aer", shots: "8", backendFields: null },
-  ];
-  const applied = applyBoard(snap);
-  result = {
-    applied,
-    model: selection.model,
-    preexistingId,
-    terms: modelTerms.map((term) => ({ id: term.id, matrix: term.matrix, sites: term.sites })),
-    sims: placedSims.map((entry) => ({ id: entry.id, backend: entry.backend, shots: entry.shots })),
-  };
+  result = (async () => {
+    fillCircuit();
+    const before = JSON.stringify(runRequest());
+    localStorage.setItem(
+      "shadowsim.builder.board",
+      JSON.stringify({ version: 1, simulators: [{ id: "missing" }] }),
+    );
+    fetch = async () => ({ ok: false, json: async () => ({ error: "unknown simulator missing" }) });
+    await restoreBoard();
+    return {
+      state: selection.state,
+      status: statusHold,
+      unchanged: JSON.stringify(runRequest()) === before,
+      stored: localStorage.getItem("shadowsim.builder.board"),
+    };
+  })();
 } else if (request.action === "counts") {
   fillCircuit();
   BLOCKS.measure = [{ id: "counts", title: "Counts", detail: "Expression on all qubits", phrase: "Counts" }];
@@ -501,47 +526,66 @@ if (request.action === "roundtrip") {
   const narrowStatus = statusMessage();
   const narrowHint = hint();
   const narrowPlaceholder = input.placeholder;
-  const snap = boardSnapshot();
+  const body = JSON.stringify(runRequest());
   emptyBoard();
   const cleared = countsExpression;
-  applyBoard(snap);
-  selection.measure = "z";
-  result = {
-    blankStatus,
-    blankHint,
-    blankPlaceholder,
-    typedStatus,
-    typedRequest,
-    narrowStatus,
-    narrowHint,
-    narrowPlaceholder,
-    stored: snap.countsExpression,
-    cleared,
-    restored: countsExpression,
-    zRequest: Object.hasOwn(runRequest().measure, "expression"),
-  };
+  result = (async () => {
+    fetch = async () => ({ ok: true, json: async () => ({ qubits: 2 }) });
+    localStorage.setItem("shadowsim.builder.board", body);
+    await restoreBoard();
+    const rebuilt = JSON.stringify(runRequest());
+    selection.measure = "z";
+    return {
+      blankStatus,
+      blankHint,
+      blankPlaceholder,
+      typedStatus,
+      typedRequest,
+      narrowStatus,
+      narrowHint,
+      narrowPlaceholder,
+      stored: JSON.parse(body).measure.expression,
+      cleared,
+      restored: countsExpression,
+      matches: rebuilt === body,
+      zRequest: Object.hasOwn(runRequest().measure, "expression"),
+    };
+  })();
 } else if (request.action === "launch") {
-  fillIsing();
-  boardReady = true;
-  rememberBoard();
-  resetPage();
-  serverSession = "server-2";
-  boardReady = true;
-  restoreBoard();
-  result = { state: selection.state, stored: localStorage.getItem("shadowsim.builder.board") };
+  result = (async () => {
+    fillIsing();
+    boardReady = true;
+    applyCheck();
+    const saved = localStorage.getItem("shadowsim.builder.board");
+    resetPage();
+    boardReady = true;
+    fetch = async () => ({ ok: true, json: async () => ({ qubits: 2 }) });
+    await restoreBoard();
+    return {
+      saved,
+      stored: localStorage.getItem("shadowsim.builder.board"),
+      state: selection.state,
+      bits: basisBits,
+      matches: JSON.stringify(runRequest()) === saved,
+    };
+  })();
 } else if (request.action === "clear") {
   fillIsing();
   boardReady = true;
+  applyCheck();
+  const saved = localStorage.getItem("shadowsim.builder.board");
   running = true;
   emptyBoard();
   const kept = selection.state === "basis";
+  const keptStored = localStorage.getItem("shadowsim.builder.board");
   running = false;
   document.querySelector = (selector) => (selector === ".board" ? surface : null);
   const button = walk(settingsComponent(), []).find((node) => node.className === "clear");
   click(button);
-  const stored = JSON.parse(localStorage.getItem("shadowsim.builder.board"));
   result = {
     kept,
+    saved,
+    keptStored,
     state: selection.state,
     qubits: settings.qubits,
     bits: basisBits,
@@ -549,8 +593,7 @@ if (request.action === "roundtrip") {
     terms: modelTerms.length,
     thens: placedThens.length,
     preexistingId,
-    storedState: stored.selection.state,
-    storedServer: stored.server,
+    stored: localStorage.getItem("shadowsim.builder.board"),
   };
 } else if (request.action === "copy") {
   resetPage();
@@ -691,22 +734,22 @@ if (request.action === "roundtrip") {
   boundary.value = "periodic";
   boundary.listeners.change[0]({ target: boundary, currentTarget: boundary });
   const edgesLocked = control("edges").disabled === true;
-  const snap = boardSnapshot();
+  const body = runRequest();
   factoryText = { J: "9", h: "4" };
-  const applied = applyBoard(snap);
+  applyDocument(body);
   const hParam = modelFactories[0].params.find((param) => param.name === "h");
   result = {
     defaults,
     topologyLocked,
     boundaryLocked,
     edgesLocked,
-    applied,
-    storedJ: snap.factoryText.J,
-    storedEdges: snap.factoryText.edges,
-    storedBoundary: snap.factoryText.boundary,
-    storedH: Object.hasOwn(snap.factoryText, "h"),
+    applied: true,
+    storedJ: body.model.arguments.J,
+    storedEdges: body.model.arguments.edges,
+    storedBoundary: body.model.arguments.boundary,
+    storedH: body.model.arguments.h,
     restoredJ: factoryText.J,
-    restoredH: Object.hasOwn(factoryText, "h"),
+    restoredH: factoryText.h,
     hDefault: paramText(hParam),
     request: runRequest().model.arguments,
   };
@@ -789,7 +832,12 @@ if (request.action === "roundtrip") {
 } else {
   throw new Error("unknown action");
 }
-process.stdout.write(JSON.stringify(result));
+Promise.resolve(result).then((value) => {
+  process.stdout.write(JSON.stringify(value));
+}).catch((error) => {
+  console.error(error);
+  process.exit(1);
+});
 `;
 
 vm.runInContext(fs.readFileSync(process.argv[1], "utf8"), sandbox);
@@ -851,9 +899,9 @@ def test_factory_fields_keep_edits_and_fall_back_to_defaults() -> None:
     assert page["storedJ"] == "2"
     assert page["storedEdges"] == ""
     assert page["storedBoundary"] == "periodic"
-    assert page["storedH"] is False
+    assert page["storedH"] == "0"
     assert page["restoredJ"] == "2"
-    assert page["restoredH"] is False
+    assert page["restoredH"] == "0"
     assert page["hDefault"] == "0"
     assert page["request"] == {
         "J": "2",
@@ -866,19 +914,30 @@ def test_factory_fields_keep_edits_and_fall_back_to_defaults() -> None:
     }
 
 
-def test_board_snapshot_round_trip() -> None:
+def test_an_accepted_run_is_what_gets_stored() -> None:
     page = _call("roundtrip")
     assert page["storedEarly"] is None
-    assert page["openStored"] is False
-    assert page["keyStored"] is False
-    assert json.loads(page["stored"]) == page["before"]
-    assert page["after"] == page["before"]
-    assert page["openAfter"] is False
-    assert page["keyAfter"] != 3
-    assert page["before"]["basisBits"] == "01"
-    assert page["before"]["savePath"] == "results/kept"
-    assert page["before"]["measureSites"] == [0]
-    assert page["refreshedTotal"] == "4"
+    assert page["storedBeforeAccept"] is None
+    assert page["accepted"] is True
+    assert page["matches"] is True
+    assert page["held"] is True
+    document = page["document"]
+    assert set(document) == {"version", "total", "state", "model", "simulators", "measure", "actions"}
+    assert document["version"] == 1
+    assert document["total"] == "1"
+    assert document["state"] == {"id": "basis", "value": "01"}
+    assert "server" not in document
+    assert page["checks"] == [
+        {
+            "url": "/runs/check",
+            "method": "POST",
+            "contentType": "application/json",
+            "body": page["stored"],
+        }
+    ]
+    assert page["restored"] is True
+    assert page["state"] == "basis"
+    assert page["bits"] == "01"
 
 
 def test_counts_chip_edits_the_expression() -> None:
@@ -891,20 +950,29 @@ def test_counts_chip_edits_the_expression() -> None:
     assert page["narrowStatus"] == "Counts keys must be 1 characters of 0 and 1."
     assert page["narrowHint"] == "Keys list qubit 0 in that order. shots is the total."
     assert page["narrowPlaceholder"] == 'counts["0"] / shots'
-    assert page["stored"] == ' counts["01"] / shots '
+    assert page["stored"] == page["typedRequest"]
     assert page["cleared"] == ""
-    assert page["restored"] == ' counts["01"] / shots '
+    assert page["restored"] == page["typedRequest"]
+    assert page["matches"] is True
     assert page["zRequest"] is False
 
 
-def test_a_new_server_drops_the_saved_board() -> None:
+def test_a_new_server_keeps_the_saved_document() -> None:
     page = _call("launch")
-    assert page == {"state": None, "stored": None}
+    assert page["saved"] is not None
+    assert page["stored"] == page["saved"]
+    assert json.loads(page["stored"])["version"] == 1
+    assert "server" not in json.loads(page["stored"])
+    assert page["state"] == "basis"
+    assert page["bits"] == "01"
+    assert page["matches"] is True
 
 
 def test_clear_empties_the_board() -> None:
     page = _call("clear")
     assert page["kept"] is True
+    assert page["saved"] is not None
+    assert page["keptStored"] == page["saved"]
     assert page["state"] is None
     assert page["qubits"] == ""
     assert page["bits"] == ""
@@ -912,25 +980,26 @@ def test_clear_empties_the_board() -> None:
     assert page["terms"] == 0
     assert page["thens"] == 0
     assert page["preexistingId"] is None
-    assert page["storedState"] is None
-    assert page["storedServer"] == "server-1"
+    assert page["stored"] is None
 
 
-def test_broken_snapshot_is_ignored() -> None:
+def test_a_bad_saved_document_does_not_fill_the_board() -> None:
     page = _call("broken")
-    assert page == {"rejected": True, "unchanged": True}
+    assert page["before"] == "basis"
+    assert page["malformed"] == {"state": "basis", "stored": None, "checks": 0}
+    assert page["status"] == "unknown version 2"
+    assert page["state"] is None
+    assert page["bits"] == ""
+    assert json.loads(page["stored"]) == {"version": 2}
+    assert page["check"] == {"url": "/runs/check", "body": page["stored"]}
 
 
-def test_unknown_blocks_are_dropped() -> None:
+def test_a_rejected_check_leaves_the_board() -> None:
     page = _call("unknown")
-    assert page["applied"] is True
-    assert page["model"] is None
-    assert page["preexistingId"] is None
-    assert page["terms"] == [{"id": "hamiltonian", "matrix": "[[1, 0], [0, -1]]", "sites": [0]}]
-    assert page["sims"] == [
-        {"id": "trotterization", "backend": None, "shots": "256"},
-        {"id": "trotterization", "backend": "aer", "shots": "128"},
-    ]
+    assert page["state"] == "basis"
+    assert page["unchanged"] is True
+    assert page["status"] == "unknown simulator missing"
+    assert json.loads(page["stored"])["simulators"] == [{"id": "missing"}]
 
 
 def test_operator_alerts_name_the_current_problem() -> None:
