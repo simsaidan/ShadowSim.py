@@ -115,9 +115,7 @@ const DEFAULT_SHOTS = "256";
 let dragging = null;
 let running = false;
 const BOARD_KEY = "shadowsim.builder.board";
-const BOARD_VERSION = 1;
 let boardReady = false;
-let serverSession = null;
 let copyTimer = 0;
 let statusHold = null;
 let runStartedAt = 0;
@@ -3337,203 +3335,8 @@ function clearLane(laneId) {
   commitLane(laneId, laneId === "model");
 }
 
-function copyStrings(value) {
-  const copy = {};
-  if (!value || typeof value !== "object") return copy;
-  for (const [key, item] of Object.entries(value)) {
-    if (typeof item === "string") copy[key] = item;
-  }
-  return copy;
-}
-
-function storedText(value, fallback) {
-  return typeof value === "string" ? value : fallback;
-}
-
-function storedSites(value) {
-  if (!Array.isArray(value)) return null;
-  return value.filter((site) => Number.isInteger(site));
-}
-
 function knownBlock(laneId, blockId) {
   return typeof blockId === "string" && Boolean(blockById(laneId, blockId));
-}
-
-function boardSnapshot() {
-  return {
-    version: BOARD_VERSION,
-    server: serverSession,
-    selection: {
-      state: selection.state,
-      model: selection.model,
-      simulator: selection.simulator,
-      backend: selection.backend,
-      measure: selection.measure,
-      then: selection.then,
-    },
-    settings: { qubits: settings.qubits, total: settings.total },
-    basisBits,
-    grayBits,
-    angleText,
-    amplitudeText,
-    qubitsSource,
-    preexistingId,
-    emitterText,
-    cavityText,
-    hoppingText,
-    factoryText: copyStrings(factoryText),
-    modelTerms: modelTerms.map((term) => ({
-      id: term.id,
-      matrix: typeof term.matrix === "string" ? term.matrix : "",
-      sites: Array.isArray(term.sites) ? term.sites.filter((site) => Number.isInteger(site)) : [],
-    })),
-    placedSims: placedSims.map((entry) => ({
-      id: entry.id,
-      params: copyStrings(entry.params),
-      backend: entry.backend ?? null,
-      shots: typeof entry.shots === "string" ? entry.shots : DEFAULT_SHOTS,
-      backendFields: entry.backendFields ? copyStrings(entry.backendFields) : null,
-    })),
-    placedThens: [...placedThens],
-    savePath,
-    exportPath,
-    measureSites: Array.isArray(measureSites) ? [...measureSites] : null,
-    countsExpression,
-  };
-}
-
-function applyBoard(snapshot) {
-  if (!snapshot || typeof snapshot !== "object" || snapshot.version !== BOARD_VERSION) return false;
-  if (!snapshot.selection || typeof snapshot.selection !== "object") return false;
-  if (!snapshot.settings || typeof snapshot.settings !== "object") return false;
-
-  let nextPreexisting = typeof snapshot.preexistingId === "string" ? snapshot.preexistingId : null;
-  if (nextPreexisting && !modelFactories.some((item) => item.id === nextPreexisting)) nextPreexisting = null;
-  let nextModel = null;
-  if (snapshot.selection.model === "preexisting") nextModel = nextPreexisting ? "preexisting" : null;
-  else if (typeof snapshot.selection.model === "string" && snapshot.selection.model) nextModel = snapshot.selection.model;
-
-  const nextTerms = [];
-  if (nextModel !== "preexisting" && Array.isArray(snapshot.modelTerms)) {
-    for (const term of snapshot.modelTerms) {
-      if (!term || !knownBlock("model", term.id) || !blockById("model", term.id)?.adds) continue;
-      nextTerms.push({
-        id: term.id,
-        matrix: typeof term.matrix === "string" ? term.matrix : "",
-        sites: storedSites(term.sites) ?? [],
-      });
-    }
-  }
-
-  const nextSims = [];
-  if (Array.isArray(snapshot.placedSims)) {
-    for (const entry of snapshot.placedSims) {
-      if (!entry || !knownBlock("simulator", entry.id)) continue;
-      const params = copyStrings(entry.params);
-      const row = {
-        id: entry.id,
-        params: Object.keys(params).length ? params : freshParams(entry.id),
-        open: false,
-        backend: null,
-        shots: storedText(entry.shots, DEFAULT_SHOTS),
-        shotsOpen: false,
-        backendOpen: false,
-      };
-      if (typeof entry.backend === "string" && backendFits(row, entry.backend)) {
-        row.backend = entry.backend;
-        if (entry.backendFields && typeof entry.backendFields === "object" && !Array.isArray(entry.backendFields)) {
-          row.backendFields = copyStrings(entry.backendFields);
-        }
-      }
-      nextSims.push(row);
-    }
-  }
-
-  const nextThens = [];
-  if (Array.isArray(snapshot.placedThens)) {
-    for (const id of snapshot.placedThens) {
-      if (knownBlock("then", id) && !nextThens.includes(id)) nextThens.push(id);
-    }
-  }
-
-  const sources = ["user", "state", "hamiltonian", "model"];
-  selection.state = knownBlock("state", snapshot.selection.state) ? snapshot.selection.state : null;
-  selection.model = nextModel;
-  selection.simulator = nextSims[0]?.id ?? null;
-  selection.backend = null;
-  selection.measure = knownBlock("measure", snapshot.selection.measure) ? snapshot.selection.measure : null;
-  selection.then = nextThens[0] ?? null;
-  settings.qubits = storedText(snapshot.settings.qubits, "");
-  settings.total = storedText(snapshot.settings.total, "");
-  basisBits = storedText(snapshot.basisBits, "");
-  grayBits = storedText(snapshot.grayBits, "");
-  angleText = storedText(snapshot.angleText, "");
-  amplitudeText = storedText(snapshot.amplitudeText, "");
-  qubitsSource = sources.includes(snapshot.qubitsSource) ? snapshot.qubitsSource : null;
-  preexistingId = nextPreexisting;
-  emitterText = storedText(snapshot.emitterText, "1");
-  cavityText = storedText(snapshot.cavityText, "1");
-  hoppingText = storedText(snapshot.hoppingText, "0");
-  factoryText =
-    snapshot.factoryText && typeof snapshot.factoryText === "object" && !Array.isArray(snapshot.factoryText)
-      ? copyStrings(snapshot.factoryText)
-      : {};
-  modelTerms.splice(
-    0,
-    modelTerms.length,
-    ...nextTerms.map((term) => ({ ...term, key: ++modelTermKey })),
-  );
-  placedSims.splice(
-    0,
-    placedSims.length,
-    ...nextSims.map((entry) => ({ ...entry, key: ++simKey })),
-  );
-  placedThens.splice(0, placedThens.length, ...nextThens);
-  savePath = storedText(snapshot.savePath, DEFAULT_SAVE_PATH);
-  exportPath = storedText(snapshot.exportPath, DEFAULT_EXPORT_PATH);
-  measureSites = storedSites(snapshot.measureSites);
-  countsExpression = storedText(snapshot.countsExpression, "");
-  stateOpen = false;
-  measureOpen = false;
-  saveOpen = false;
-  exportOpen = false;
-  preexistingOpen = false;
-  return true;
-}
-
-function forgetBoard() {
-  try {
-    localStorage.removeItem(BOARD_KEY);
-  } catch {
-    // Storage can be unavailable.
-  }
-}
-
-function parsedSnapshot(raw) {
-  try {
-    return JSON.parse(raw);
-  } catch {
-    return undefined;
-  }
-}
-
-function restoreBoard() {
-  let raw = null;
-  try {
-    raw = localStorage.getItem(BOARD_KEY);
-  } catch {
-    return;
-  }
-  if (!raw || !serverSession) {
-    if (raw) forgetBoard();
-    return;
-  }
-  const snapshot = parsedSnapshot(raw);
-  if (!snapshot || snapshot.server !== serverSession) {
-    forgetBoard();
-    return;
-  }
-  applyBoard(snapshot);
 }
 
 function plainObject(value) {
@@ -3554,7 +3357,6 @@ function numberListText(value) {
 function complexText(entry) {
   const re = Array.isArray(entry) ? Number(entry[0]) : Number(entry);
   const im = Array.isArray(entry) ? Number(entry[1] ?? 0) : 0;
-  if (!Number.isFinite(re) || !Number.isFinite(im)) return "0";
   if (!im) return textNumber(re);
   const magnitude = Math.abs(im) === 1 ? "j" : `${textNumber(Math.abs(im))}j`;
   if (!re) return im < 0 ? `-${magnitude}` : magnitude;
@@ -3563,20 +3365,51 @@ function complexText(entry) {
 
 function matrixText(matrix) {
   if (!Array.isArray(matrix)) return "";
-  const rows = matrix.map((row) => {
-    const cells = (Array.isArray(row) ? row : []).map((entry) => complexText(entry));
-    return `[${cells.join(", ")}]`;
-  });
+  const rows = matrix.map((row) => `[${(Array.isArray(row) ? row : []).map((entry) => complexText(entry)).join(", ")}]`);
   return `[${rows.join(", ")}]`;
 }
 
+function resetBoard() {
+  selection.state = null;
+  selection.model = null;
+  selection.simulator = null;
+  selection.backend = null;
+  selection.measure = null;
+  selection.then = null;
+  settings.qubits = "";
+  settings.total = "";
+  basisBits = "";
+  grayBits = "";
+  angleText = "";
+  amplitudeText = "";
+  qubitsSource = null;
+  preexistingId = null;
+  emitterText = "1";
+  cavityText = "1";
+  hoppingText = "0";
+  factoryText = {};
+  modelTerms.splice(0, modelTerms.length);
+  placedSims.splice(0, placedSims.length);
+  placedThens.splice(0, placedThens.length);
+  savePath = DEFAULT_SAVE_PATH;
+  exportPath = DEFAULT_EXPORT_PATH;
+  measureSites = null;
+  countsExpression = "";
+  stateOpen = false;
+  measureOpen = false;
+  saveOpen = false;
+  exportOpen = false;
+  preexistingOpen = false;
+}
+
 function applyState(state) {
-  if (!plainObject(state) || !knownBlock("state", state.id)) return;
-  selection.state = state.id;
-  if (state.id === "basis" && typeof state.value === "string") basisBits = state.value;
-  else if (state.id === "gray" && typeof state.value === "string") grayBits = state.value;
-  else if (state.id === "angle") angleText = numberListText(state.value);
-  else if (state.id === "amplitude") amplitudeText = numberListText(state.value);
+  if (!plainObject(state)) return;
+  const id = knownBlock("state", state.id) ? state.id : null;
+  selection.state = id;
+  if (id === "basis" && typeof state.value === "string") basisBits = state.value;
+  else if (id === "gray" && typeof state.value === "string") grayBits = state.value;
+  else if (id === "angle") angleText = numberListText(state.value);
+  else if (id === "amplitude") amplitudeText = numberListText(state.value);
 }
 
 function applyModel(model) {
@@ -3660,10 +3493,10 @@ function applySims(entries) {
 }
 
 function applyMeasure(measure) {
-  if (!plainObject(measure) || !knownBlock("measure", measure.id)) return;
-  selection.measure = measure.id;
+  if (!plainObject(measure)) return;
+  selection.measure = knownBlock("measure", measure.id) ? measure.id : null;
   measureSites = Array.isArray(measure.sites) ? measure.sites.filter((site) => Number.isInteger(site)) : null;
-  if (measure.id === "counts" && typeof measure.expression === "string") countsExpression = measure.expression;
+  if (selection.measure === "counts" && typeof measure.expression === "string") countsExpression = measure.expression;
 }
 
 function applyActions(actions) {
@@ -3684,10 +3517,79 @@ function applyDocument(saved) {
   if (typeof saved.total === "string" || typeof saved.total === "number") settings.total = textNumber(saved.total);
   applyState(saved.state);
   applyModel(saved.model);
-  syncStateQubits();
   applySims(saved.simulators);
   applyMeasure(saved.measure);
   applyActions(saved.actions);
+}
+
+function forgetBoard() {
+  try {
+    localStorage.removeItem(BOARD_KEY);
+  } catch {
+    // Storage can be unavailable.
+  }
+}
+
+async function restoreBoard() {
+  let raw = null;
+  try {
+    raw = localStorage.getItem(BOARD_KEY);
+  } catch {
+    return;
+  }
+  if (!raw) return;
+  let saved = null;
+  try {
+    saved = JSON.parse(raw);
+  } catch {
+    forgetBoard();
+    return;
+  }
+  if (!plainObject(saved)) {
+    forgetBoard();
+    return;
+  }
+  let response = null;
+  let payload = {};
+  try {
+    response = await fetch("/runs/check", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: raw,
+    });
+    try {
+      payload = await response.json();
+    } catch {
+      payload = {};
+    }
+  } catch {
+    statusHold = "The selection could not be checked.";
+    return;
+  }
+  if (!response.ok || !Number.isInteger(payload.qubits) || payload.qubits < 1) {
+    statusHold = typeof payload.error === "string" && payload.error ? payload.error : "The selection was rejected.";
+    return;
+  }
+  applyDocument(saved);
+  acceptedQubits = payload.qubits;
+  applyAcceptedQubits();
+  checkError = null;
+  rejectedBody = null;
+  checkInFlight = false;
+  pendingBody = null;
+  if (documentBody() === raw) {
+    acceptedBody = raw;
+    releaseStatusHold();
+  } else acceptedBody = null;
+}
+
+function rememberBoard() {
+  if (!boardReady || !accepted()) return;
+  try {
+    localStorage.setItem(BOARD_KEY, acceptedBody);
+  } catch {
+    // Storage can be unavailable. The page still runs.
+  }
 }
 
 function holdImportStatus(message) {
@@ -3698,7 +3600,13 @@ function holdImportStatus(message) {
 
 async function importBoardText(raw) {
   if (running) return;
-  const saved = parsedSnapshot(raw);
+  let saved = null;
+  try {
+    saved = JSON.parse(raw);
+  } catch {
+    holdImportStatus("The selection was rejected.");
+    return;
+  }
   if (!plainObject(saved)) {
     holdImportStatus("The selection was rejected.");
     return;
@@ -3731,51 +3639,10 @@ async function importBoardText(raw) {
   if (board) draw(board);
 }
 
-function rememberBoard() {
-  if (!boardReady || !serverSession) return;
-  try {
-    localStorage.setItem(BOARD_KEY, JSON.stringify(boardSnapshot()));
-  } catch {
-    // Storage can be unavailable. The page still runs.
-  }
-}
-
-function resetBoard() {
-  selection.state = null;
-  selection.model = null;
-  selection.simulator = null;
-  selection.backend = null;
-  selection.measure = null;
-  selection.then = null;
-  settings.qubits = "";
-  settings.total = "";
-  basisBits = "";
-  grayBits = "";
-  angleText = "";
-  amplitudeText = "";
-  qubitsSource = null;
-  preexistingId = null;
-  emitterText = "1";
-  cavityText = "1";
-  hoppingText = "0";
-  factoryText = {};
-  modelTerms.splice(0, modelTerms.length);
-  placedSims.splice(0, placedSims.length);
-  placedThens.splice(0, placedThens.length);
-  savePath = DEFAULT_SAVE_PATH;
-  exportPath = DEFAULT_EXPORT_PATH;
-  measureSites = null;
-  countsExpression = "";
-  stateOpen = false;
-  measureOpen = false;
-  saveOpen = false;
-  exportOpen = false;
-  preexistingOpen = false;
-}
-
 function emptyBoard() {
   if (running) return;
   resetBoard();
+  forgetBoard();
   releaseStatusHold();
   const board = document.querySelector(".board");
   if (board) draw(board);
@@ -3816,22 +3683,6 @@ async function loadLimits() {
     return response.ok && applyLimits(payload);
   } catch {
     return false;
-  }
-}
-
-async function loadSession() {
-  try {
-    const response = await fetch("/session");
-    let payload = {};
-    try {
-      payload = await response.json();
-    } catch {
-      payload = {};
-    }
-    if (!response.ok || typeof payload.id !== "string" || !payload.id) return null;
-    return payload.id;
-  } catch {
-    return null;
   }
 }
 
@@ -3885,15 +3736,13 @@ if (builder) {
     loadLane("/models", "model", "models"),
     loadLane("/simulators", "simulator", "simulators"),
     loadLane("/backends", "backend", "backends"),
-    loadSession(),
     loadLimits(),
-  ]).then((results) => {
-    serverSession = results[3];
-    if (!results[4]) {
+  ]).then(async (results) => {
+    if (!results[3]) {
       builder.append(el("p", { className: "placeholder" }, "Could not load limits."));
       return;
     }
-    restoreBoard();
+    await restoreBoard();
     boardReady = true;
     mount(builder);
   });
