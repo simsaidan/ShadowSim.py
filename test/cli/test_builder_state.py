@@ -7,6 +7,8 @@ from typing import Any
 
 import pytest
 
+from shadowsim.cli.run import _page_limits
+
 _SITE = Path(__file__).resolve().parents[2] / "shadowsim" / "cli" / "site"
 CHECKS = _SITE / "checks.js"
 BUILDER = _SITE / "builder.js"
@@ -119,6 +121,7 @@ function plain(card) {
   return { editing: card.editing, done: card.done, field: card.field, detail: card.detail };
 }
 
+if (!applyLimits(JSON.parse(process.argv[3]))) throw new Error("missing limits");
 basisBits = "10";
 stateOpen = true;
 const holder = document.createElement("div");
@@ -185,7 +188,7 @@ def _card() -> dict[str, Any]:
     """Return the open, closed, and reopened basis-state card."""
     try:
         completed = subprocess.run(
-            ["node", "-e", _HARNESS, str(CHECKS), str(BUILDER)],
+            ["node", "-e", _HARNESS, str(CHECKS), str(BUILDER), json.dumps(_page_limits())],
             capture_output=True,
             text=True,
             encoding="utf-8",

@@ -43,10 +43,36 @@ _DEFAULT_SAVE_PATH = "results/run1"
 _DEFAULT_EXPORT_DIR = "results"
 _MAX_OPERATOR_QUBITS = 8
 _MAX_FACTORY_QUBITS = 15
+_MAX_EMITTERS = 13
 _MAX_TIME_STEPS = 500
 _MAX_NUM_STEPS = 100
 _MAX_TROTTER_DEPTH = 100
 _MAX_SHOTS = 100000
+# The builder will not type more amplitudes than this. A longer list is still accepted.
+_MAX_AMPLITUDES = 16
+
+
+def _page_limits() -> dict[str, object]:
+    """Return the builder page caps.
+
+    Basis, Gray, and angle lengths are ``_MAX_FACTORY_QUBITS``. The amplitude
+    count is the page typing cap and is not enforced on a posted list. Every
+    other field is a cap a validator in this module enforces.
+    """
+    return {
+        "states": {
+            "basis": _MAX_FACTORY_QUBITS,
+            "gray": _MAX_FACTORY_QUBITS,
+            "angle": _MAX_FACTORY_QUBITS,
+            "amplitude": _MAX_AMPLITUDES,
+        },
+        "emitters": _MAX_EMITTERS,
+        "operatorQubits": _MAX_OPERATOR_QUBITS,
+        "timeSteps": _MAX_TIME_STEPS,
+        "numSteps": _MAX_NUM_STEPS,
+        "trotterDepth": _MAX_TROTTER_DEPTH,
+        "shots": _MAX_SHOTS,
+    }
 
 
 @dataclass(frozen=True)
@@ -988,7 +1014,7 @@ def _added_model(terms: list[object], qubits: object) -> _AddedModel:
     """Build operators from posted Add cards. Validation happens before optional imports."""
     num_qubits = _integer(qubits)
     if num_qubits < 1 or num_qubits > _MAX_OPERATOR_QUBITS:
-        raise ValueError("qubits must be from 1 to 8")
+        raise ValueError(f"qubits must be from 1 to {_MAX_OPERATOR_QUBITS}")
     full: list[Hamiltonian] = []
     local: list[LocalHamiltonian] = []
     c_ops_full: list[Operator] = []
@@ -1031,15 +1057,16 @@ def _added_model(terms: list[object], qubits: object) -> _AddedModel:
 
 
 def _operator_matrix(value: object) -> np.ndarray:
-    """Return a square complex matrix of size 2, 4, ..., 256."""
+    """Return a square complex matrix whose width is a power of two up to ``2**_MAX_OPERATOR_QUBITS``."""
     if not isinstance(value, list) or not value or any(not isinstance(row, list) for row in value):
         raise ValueError("matrix must be a square 2D array")
     rows = [[_complex_entry(entry) for entry in row] for row in value]
     size = len(rows)
     if any(len(row) != size for row in rows):
         raise ValueError("matrix must be a square 2D array")
-    if size < 2 or size > 2**_MAX_OPERATOR_QUBITS or size & (size - 1) != 0:
-        raise ValueError("matrix size must be a power of two from 2 to 256")
+    maximum = 2**_MAX_OPERATOR_QUBITS
+    if size < 2 or size > maximum or size & (size - 1) != 0:
+        raise ValueError(f"matrix size must be a power of two from 2 to {maximum}")
     return np.array(rows, dtype=np.complex128)
 
 
@@ -1080,15 +1107,15 @@ def _acted_sites(value: object, num_qubits: int, dim: int) -> list[int]:
 
 
 def _emitter_count(value: object) -> int:
-    """Return an emitter count from 1 to 13. A missing value is 1."""
+    """Return an emitter count from 1 to ``_MAX_EMITTERS``. A missing value is 1."""
     if value is None:
         return 1
     try:
         count = _integer(value)
     except ValueError:
-        raise ValueError("emitters must be an integer from 1 to 13") from None
-    if count < 1 or count > 13:
-        raise ValueError("emitters must be an integer from 1 to 13")
+        raise ValueError(f"emitters must be an integer from 1 to {_MAX_EMITTERS}") from None
+    if count < 1 or count > _MAX_EMITTERS:
+        raise ValueError(f"emitters must be an integer from 1 to {_MAX_EMITTERS}")
     return count
 
 
@@ -1255,7 +1282,7 @@ def _factory_qubit_budget(
 
     ``n_qubits`` is capped where it is read. Both cavity and emitter counts use
     ``n_cavities * (2 + n_emitters)``. Cavities alone use ``3 * n_cavities``.
-    Emitters alone are already at most 13, and a factory with neither is 3 qubits.
+    Emitters alone are already at most ``_MAX_EMITTERS``, and a factory with neither is 3 qubits.
     """
     if "n_qubits" in parameters or n_cavities is None:
         return
@@ -1366,9 +1393,14 @@ def _observables(num_qubits: int, measure_id: str, sites: list[int]) -> list[Ope
 
 
 def _bit_string(value: object, label: str) -> list[int]:
-    """Return ``value`` as bits when it is a string of 0 and 1, at most 15 characters."""
-    if not isinstance(value, str) or not value or len(value) > 15 or any(bit not in "01" for bit in value):
-        raise ValueError(f"{label} must be a string of 0 and 1, at most 15 characters")
+    """Return ``value`` as bits when it is a string of 0 and 1, at most ``_MAX_FACTORY_QUBITS`` characters."""
+    if (
+        not isinstance(value, str)
+        or not value
+        or len(value) > _MAX_FACTORY_QUBITS
+        or any(bit not in "01" for bit in value)
+    ):
+        raise ValueError(f"{label} must be a string of 0 and 1, at most {_MAX_FACTORY_QUBITS} characters")
     return [int(bit) for bit in value]
 
 

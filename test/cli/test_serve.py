@@ -17,6 +17,16 @@ from typing import Any
 
 import pytest
 
+from shadowsim.cli.run import (
+    _MAX_AMPLITUDES,
+    _MAX_EMITTERS,
+    _MAX_FACTORY_QUBITS,
+    _MAX_NUM_STEPS,
+    _MAX_OPERATOR_QUBITS,
+    _MAX_SHOTS,
+    _MAX_TIME_STEPS,
+    _MAX_TROTTER_DEPTH,
+)
 from shadowsim.cli.serve import (
     _MAX_AUTH_BODY_BYTES,
     _Handler,
@@ -619,6 +629,29 @@ def _close_server(server: Any, thread: threading.Thread) -> None:
     thread.join(timeout=5)
 
 
+def test_limits_match_the_validator_caps() -> None:
+    server, thread = _open_server()
+    try:
+        status, _headers, body = _open(server.server_address[1], "/limits")
+        assert status == 200
+        assert json.loads(body) == {
+            "states": {
+                "basis": _MAX_FACTORY_QUBITS,
+                "gray": _MAX_FACTORY_QUBITS,
+                "angle": _MAX_FACTORY_QUBITS,
+                "amplitude": _MAX_AMPLITUDES,
+            },
+            "emitters": _MAX_EMITTERS,
+            "operatorQubits": _MAX_OPERATOR_QUBITS,
+            "timeSteps": _MAX_TIME_STEPS,
+            "numSteps": _MAX_NUM_STEPS,
+            "trotterDepth": _MAX_TROTTER_DEPTH,
+            "shots": _MAX_SHOTS,
+        }
+    finally:
+        _close_server(server, thread)
+
+
 def test_session_id_belongs_to_one_server() -> None:
     first, first_thread = _open_server()
     second, second_thread = _open_server()
@@ -825,7 +858,7 @@ def test_the_page_exchanges_a_query_token_for_a_cookie() -> None:
         assert status == 200
         assert b"ShadowSim.py Simulation Builder" in body
         unauthorized = b"Open the URL printed when the server started.\n"
-        for path in ("/session", "/models", "/simulators", "/backends", "/styles.css", "/builder.js"):
+        for path in ("/session", "/limits", "/models", "/simulators", "/backends", "/styles.css", "/builder.js"):
             status, headers, body = _open(port, path)
             assert status == 401
             assert body == unauthorized

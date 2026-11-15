@@ -7,6 +7,8 @@ from typing import Any
 
 import pytest
 
+from shadowsim.cli.run import _page_limits
+
 _SITE = Path(__file__).resolve().parents[2] / "shadowsim" / "cli" / "site"
 CHECKS = _SITE / "checks.js"
 BUILDER = _SITE / "builder.js"
@@ -407,6 +409,7 @@ function fillCircuit() {
 }
 
 const request = JSON.parse(process.argv[3]);
+if (!applyLimits(request.limits)) throw new Error("missing limits");
 const surface = { replaceChildren() {} };
 serverSession = "server-1";
 let result;
@@ -798,7 +801,14 @@ def _call(action: str) -> dict[str, Any]:
     """Return the builder probe result for one board action."""
     try:
         completed = subprocess.run(
-            ["node", "-e", _HARNESS, str(CHECKS), str(BUILDER), json.dumps({"action": action})],
+            [
+                "node",
+                "-e",
+                _HARNESS,
+                str(CHECKS),
+                str(BUILDER),
+                json.dumps({"action": action, "limits": _page_limits()}),
+            ],
             capture_output=True,
             text=True,
             encoding="utf-8",

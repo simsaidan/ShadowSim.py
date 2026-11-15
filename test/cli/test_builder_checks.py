@@ -7,6 +7,8 @@ from typing import Any
 
 import pytest
 
+from shadowsim.cli.run import _page_limits
+
 CHECKS = Path(__file__).resolve().parents[2] / "shadowsim" / "cli" / "site" / "checks.js"
 
 _QUTIP_SETUP = (
@@ -70,6 +72,22 @@ def _call(fn: str, page: dict[str, Any], *args: object) -> Any:
     return json.loads(completed.stdout)
 
 
+def _page_caps() -> dict[str, Any]:
+    """Return the limit fields the builder copies out of ``_page_limits``."""
+    payload = _page_limits()
+    states = payload["states"]
+    assert isinstance(states, dict)
+    return {
+        "stateLimits": states,
+        "maxEmitters": payload["emitters"],
+        "maxOperatorQubits": payload["operatorQubits"],
+        "maxTimeSteps": payload["timeSteps"],
+        "maxNumSteps": payload["numSteps"],
+        "maxTrotterDepth": payload["trotterDepth"],
+        "maxShots": payload["shots"],
+    }
+
+
 def _qutip_page() -> dict[str, Any]:
     """Return a complete QuTiP selection with no backend."""
     return {
@@ -119,13 +137,7 @@ def _qutip_page() -> dict[str, Any]:
         "measureSites": None,
         "shots": "256",
         "qubitsSource": None,
-        "stateLimits": {"basis": 15, "gray": 15, "angle": 15, "amplitude": 16},
-        "maxEmitters": 13,
-        "maxOperatorQubits": 8,
-        "maxTimeSteps": 500,
-        "maxNumSteps": 100,
-        "maxTrotterDepth": 100,
-        "maxShots": 100000,
+        **_page_caps(),
     }
 
 
@@ -240,14 +252,14 @@ def test_circuit_row_without_shots_is_not_ready() -> None:
 
 def test_page_workload_maxima_stay_ready() -> None:
     qutip = _qutip_page()
-    qutip["placedSims"][0]["params"]["timeSteps"] = "500"
+    qutip["placedSims"][0]["params"]["timeSteps"] = str(qutip["maxTimeSteps"])
     assert _call("runAllowed", qutip) is True
     assert _call("simParamProblem", qutip, False) is None
     circuit = _circuit_page()
-    circuit["placedSims"][0]["params"]["timeSteps"] = "500"
-    circuit["placedSims"][0]["params"]["numSteps"] = "100"
-    circuit["placedSims"][0]["params"]["trotterDepth"] = "100"
-    circuit["placedSims"][0]["shots"] = "100000"
+    circuit["placedSims"][0]["params"]["timeSteps"] = str(circuit["maxTimeSteps"])
+    circuit["placedSims"][0]["params"]["numSteps"] = str(circuit["maxNumSteps"])
+    circuit["placedSims"][0]["params"]["trotterDepth"] = str(circuit["maxTrotterDepth"])
+    circuit["placedSims"][0]["shots"] = str(circuit["maxShots"])
     assert _call("runAllowed", circuit) is True
     assert _call("simParamProblem", circuit, False) is None
     assert _call("shotsProblem", circuit, False) is None
@@ -255,24 +267,28 @@ def test_page_workload_maxima_stay_ready() -> None:
 
 def test_oversize_simulator_parameters_block_the_run() -> None:
     page = _qutip_page()
-    page["placedSims"][0]["params"]["timeSteps"] = "501"
+    time_steps = int(page["maxTimeSteps"])
+    page["placedSims"][0]["params"]["timeSteps"] = str(time_steps + 1)
     assert _call("runAllowed", page) is False
-    assert _call("simParamProblem", page, False) == "Time steps must be from 1 to 500."
-    assert _call("simParamProblem", page, True) == "Time steps must be from 1 to 500 to preview the script."
+    assert _call("simParamProblem", page, False) == f"Time steps must be from 1 to {time_steps}."
+    assert _call("simParamProblem", page, True) == f"Time steps must be from 1 to {time_steps} to preview the script."
     circuit = _circuit_page()
-    circuit["placedSims"][0]["params"]["numSteps"] = "101"
+    num_steps = int(circuit["maxNumSteps"])
+    circuit["placedSims"][0]["params"]["numSteps"] = str(num_steps + 1)
     assert _call("runAllowed", circuit) is False
-    assert _call("simParamProblem", circuit, False) == "Product steps must be from 1 to 100."
-    circuit["placedSims"][0]["params"]["numSteps"] = "100"
-    circuit["placedSims"][0]["params"]["trotterDepth"] = "101"
-    assert _call("simParamProblem", circuit, False) == "Trotter depth must be from 1 to 100."
+    assert _call("simParamProblem", circuit, False) == f"Product steps must be from 1 to {num_steps}."
+    circuit["placedSims"][0]["params"]["numSteps"] = str(num_steps)
+    depth = int(circuit["maxTrotterDepth"])
+    circuit["placedSims"][0]["params"]["trotterDepth"] = str(depth + 1)
+    assert _call("simParamProblem", circuit, False) == f"Trotter depth must be from 1 to {depth}."
     circuit["placedSims"][0]["params"]["trotterDepth"] = "1"
-    circuit["placedSims"][0]["shots"] = "100001"
+    shots = int(circuit["maxShots"])
+    circuit["placedSims"][0]["shots"] = str(shots + 1)
     assert _call("shotsReady", circuit) is False
-    assert _call("shotsProblem", circuit, False) == "Shots must be from 1 to 100000."
-    assert _call("shotsProblem", circuit, True) == "Shots must be from 1 to 100000 to preview the script."
+    assert _call("shotsProblem", circuit, False) == f"Shots must be from 1 to {shots}."
+    assert _call("shotsProblem", circuit, True) == f"Shots must be from 1 to {shots} to preview the script."
     circuit["placedSims"][0]["shots"] = "1" + "0" * 20
-    assert _call("shotsProblem", circuit, False) == "Shots must be from 1 to 100000."
+    assert _call("shotsProblem", circuit, False) == f"Shots must be from 1 to {shots}."
 
 
 def test_split_j_rejects_a_backend_without_shots() -> None:
@@ -678,6 +694,32 @@ def test_counts_preview_runs(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) ->
     assert result.metadata["measurements"][0]["expression"] == 'counts["00"] / shots'
     assert result.observables[0][0] == 1.0
     assert (tmp_path / "results" / "run1" / "counts.json").is_file()
+
+
+def test_matrix_size_uses_the_page_qubit_cap() -> None:
+    page = _qutip_page()
+    page["maxOperatorQubits"] = 1
+    identity = "[[1, 0], [0, 1]]"
+    assert _call("squareMatrix", page, identity)["qubits"] == 1
+    wider = "[[1, 0, 0, 0], [0, 1, 0, 0], [0, 0, 1, 0], [0, 0, 0, 1]]"
+    assert _call("squareMatrix", page, wider) == {"problem": "At most 1 qubit."}
+
+
+@pytest.mark.parametrize("model_id", ["tavis_cummings", "tavis_cummings_hubbard"])
+def test_emitter_count_uses_the_page_cap(model_id: str) -> None:
+    page = _qutip_page()
+    page["preexistingId"] = model_id
+    page["maxEmitters"] = 3
+    page["emitterText"] = "4"
+    page["cavityText"] = "1"
+    page["hoppingText"] = "0"
+    page["modelFactories"] = [{"id": model_id, "title": model_id, "qubits": False, "setup": f"model = {model_id}()"}]
+    assert _call("factoryAlert", page) == "Emitters must be from 1 to 3"
+    assert _call("emitterCount", page) is None
+    assert _call("emitterProblem", page) is True
+    page["emitterText"] = "3"
+    assert _call("emitterCount", page) == 3
+    assert _call("factoryAlert", page) is None
 
 
 def test_hamiltonian_problems_use_different_messages() -> None:
