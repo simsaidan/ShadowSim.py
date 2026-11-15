@@ -1820,6 +1820,56 @@ function summaryComponent() {
   );
 }
 
+function downloadBoard() {
+  if (running || !accepted()) return;
+  const blob = new Blob([acceptedBody], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+  const link = el("a", { href: url, download: "shadowsim-board.json" });
+  document.body.append(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
+}
+
+async function importBoardFile(file) {
+  if (running || !file || typeof file.text !== "function") return;
+  let raw = "";
+  try {
+    raw = await file.text();
+  } catch {
+    holdImportStatus("The selection was rejected.");
+    return;
+  }
+  await importBoardText(raw);
+}
+
+function importBoardButton() {
+  const file = el("input", {
+    className: "board-file-input",
+    type: "file",
+    accept: "application/json,.json",
+    hidden: true,
+    "aria-label": "Board file",
+    onchange: (event) => {
+      const input = event.target;
+      const chosen = input.files && input.files[0];
+      input.value = "";
+      if (chosen) void importBoardFile(chosen);
+    },
+  });
+  return el(
+    "span",
+    { className: "board-import" },
+    file,
+    el("button", {
+      className: "board-file import-board",
+      type: "button",
+      disabled: running,
+      onclick: () => file.click(),
+    }, "Import board"),
+  );
+}
+
 function settingsComponent() {
   const field = (key, label, inputMode) =>
     el(
@@ -1859,6 +1909,13 @@ function settingsComponent() {
     el(
       "div",
       { className: "settings-actions" },
+      el("button", {
+        className: "board-file export-board",
+        type: "button",
+        disabled: running || !accepted(),
+        onclick: () => downloadBoard(),
+      }, "Export board"),
+      importBoardButton(),
       el("button", {
         className: "clear",
         type: "button",
@@ -1941,32 +1998,40 @@ function applyAcceptedQubits() {
   qubitsSource = "model";
 }
 
+async function requestCheck(body) {
+  const response = await fetch("/runs/check", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body,
+  });
+  let payload = {};
+  try {
+    payload = await response.json();
+  } catch {
+    payload = {};
+  }
+  if (!response.ok || !Number.isInteger(payload.qubits) || payload.qubits < 1) {
+    const error = typeof payload.error === "string" && payload.error ? payload.error : "The selection was rejected.";
+    return { ok: false, error };
+  }
+  return { ok: true, qubits: payload.qubits };
+}
+
 async function postCheck(requested, serial) {
   if (serial !== checkSerial || requested !== documentBody()) return;
   checkInFlight = true;
   showCheckStatus();
   try {
-    const response = await fetch("/runs/check", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: requested,
-    });
-    let payload = {};
-    try {
-      payload = await response.json();
-    } catch {
-      payload = {};
-    }
+    const result = await requestCheck(requested);
     if (serial !== checkSerial || requested !== documentBody()) return;
-    if (!response.ok || !Number.isInteger(payload.qubits) || payload.qubits < 1) {
-      checkError =
-        typeof payload.error === "string" && payload.error ? payload.error : "The selection was rejected.";
+    if (!result.ok) {
+      checkError = result.error;
       rejectedBody = requested;
       acceptedBody = null;
       acceptedQubits = null;
       return;
     }
-    acceptedQubits = payload.qubits;
+    acceptedQubits = result.qubits;
     applyAcceptedQubits();
     if (documentBody() !== requested) {
       acceptedQubits = null;
@@ -2669,7 +2734,23 @@ function stopRunClock() {
   runTimer = null;
 }
 
+function setButtonDisabled(button, disabled) {
+  if (!button) return;
+  button.disabled = disabled;
+  if (disabled) {
+    button.setAttribute("disabled", "");
+    return;
+  }
+  if (typeof button.removeAttribute === "function") button.removeAttribute("disabled");
+}
+
+function syncBoardFileButtons() {
+  setButtonDisabled(document.querySelector(".export-board"), running || !accepted());
+  setButtonDisabled(document.querySelector(".import-board"), running);
+}
+
 function syncRunButton() {
+  syncBoardFileButtons();
   const button = document.querySelector(".run");
   if (!button || running) return;
   button.disabled = !runAllowed();
@@ -2682,6 +2763,7 @@ function setRunButton(label) {
   button.disabled = label !== "Cancel" && !runAllowed();
   const clear = document.querySelector(".clear");
   if (clear) clear.disabled = label === "Cancel";
+  syncBoardFileButtons();
 }
 
 async function cancelRun() {
@@ -3427,6 +3509,14 @@ function forgetBoard() {
   }
 }
 
+function parsedSnapshot(raw) {
+  try {
+    return JSON.parse(raw);
+  } catch {
+    return undefined;
+  }
+}
+
 function restoreBoard() {
   let raw = null;
   try {
@@ -3438,16 +3528,207 @@ function restoreBoard() {
     if (raw) forgetBoard();
     return;
   }
-  try {
-    const snapshot = JSON.parse(raw);
-    if (!snapshot || snapshot.server !== serverSession) {
-      forgetBoard();
-      return;
-    }
-    applyBoard(snapshot);
-  } catch {
+  const snapshot = parsedSnapshot(raw);
+  if (!snapshot || snapshot.server !== serverSession) {
     forgetBoard();
+    return;
   }
+  applyBoard(snapshot);
+}
+
+function plainObject(value) {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+function textNumber(value) {
+  if (typeof value === "string") return value;
+  if (typeof value !== "number" || !Number.isFinite(value)) return "";
+  return Object.is(value, -0) ? "0" : String(value);
+}
+
+function numberListText(value) {
+  if (!Array.isArray(value)) return "";
+  return value.map((item) => textNumber(item)).join(", ");
+}
+
+function complexText(entry) {
+  const re = Array.isArray(entry) ? Number(entry[0]) : Number(entry);
+  const im = Array.isArray(entry) ? Number(entry[1] ?? 0) : 0;
+  if (!Number.isFinite(re) || !Number.isFinite(im)) return "0";
+  if (!im) return textNumber(re);
+  const magnitude = Math.abs(im) === 1 ? "j" : `${textNumber(Math.abs(im))}j`;
+  if (!re) return im < 0 ? `-${magnitude}` : magnitude;
+  return `${textNumber(re)}${im < 0 ? "-" : "+"}${magnitude}`;
+}
+
+function matrixText(matrix) {
+  if (!Array.isArray(matrix)) return "";
+  const rows = matrix.map((row) => {
+    const cells = (Array.isArray(row) ? row : []).map((entry) => complexText(entry));
+    return `[${cells.join(", ")}]`;
+  });
+  return `[${rows.join(", ")}]`;
+}
+
+function applyState(state) {
+  if (!plainObject(state) || !knownBlock("state", state.id)) return;
+  selection.state = state.id;
+  if (state.id === "basis" && typeof state.value === "string") basisBits = state.value;
+  else if (state.id === "gray" && typeof state.value === "string") grayBits = state.value;
+  else if (state.id === "angle") angleText = numberListText(state.value);
+  else if (state.id === "amplitude") amplitudeText = numberListText(state.value);
+}
+
+function applyModel(model) {
+  if (!plainObject(model)) return;
+  const terms = Array.isArray(model.terms) ? model.terms : [];
+  if (terms.length) {
+    settings.qubits = textNumber(model.qubits);
+    qubitsSource = "user";
+    const next = [];
+    for (const term of terms) {
+      if (!plainObject(term) || !knownBlock("model", term.id) || !blockById("model", term.id)?.adds) continue;
+      next.push({
+        id: term.id,
+        matrix: matrixText(term.matrix),
+        sites: Array.isArray(term.sites) ? term.sites.filter((site) => Number.isInteger(site)) : [],
+      });
+    }
+    modelTerms.splice(0, modelTerms.length, ...next.map((term) => ({ ...term, key: ++modelTermKey })));
+    return;
+  }
+  const id = typeof model.id === "string" && modelFactories.some((item) => item.id === model.id) ? model.id : null;
+  if (!id) return;
+  selection.model = "preexisting";
+  preexistingId = id;
+  const args = plainObject(model.arguments) ? model.arguments : {};
+  if ("n_qubits" in args) {
+    settings.qubits = textNumber(args.n_qubits);
+    qubitsSource = "user";
+  }
+  if ("n_emitters" in args) emitterText = textNumber(args.n_emitters);
+  if ("n_cavities" in args) cavityText = textNumber(args.n_cavities);
+  if ("nu" in args) hoppingText = textNumber(args.nu);
+  const structural = new Set(["n_qubits", "n_emitters", "n_cavities", "nu"]);
+  for (const [key, value] of Object.entries(args)) {
+    if (structural.has(key)) continue;
+    if (typeof value === "string" || typeof value === "number") factoryText[key] = textNumber(value);
+  }
+}
+
+function simParams(args) {
+  const params = {};
+  if (!plainObject(args)) return params;
+  if ("time_steps" in args) params.timeSteps = textNumber(args.time_steps);
+  if ("num_steps" in args) params.numSteps = textNumber(args.num_steps);
+  if ("seed" in args) params.seed = textNumber(args.seed);
+  if ("trotter_depth" in args) params.trotterDepth = textNumber(args.trotter_depth);
+  if ("order" in args) params.order = textNumber(args.order);
+  return params;
+}
+
+function applySims(entries) {
+  const next = [];
+  for (const entry of Array.isArray(entries) ? entries : []) {
+    if (!plainObject(entry) || !knownBlock("simulator", entry.id)) continue;
+    const params = simParams(entry.arguments);
+    const row = {
+      id: entry.id,
+      params: Object.keys(params).length ? params : freshParams(entry.id),
+      open: false,
+      backend: null,
+      shots: DEFAULT_SHOTS,
+      shotsOpen: false,
+      backendOpen: false,
+    };
+    const backend = entry.backend;
+    if (plainObject(backend) && typeof backend.id === "string" && backendFits(row, backend.id)) {
+      row.backend = backend.id;
+      const args = plainObject(backend.arguments) ? backend.arguments : {};
+      if ("shots" in args) row.shots = textNumber(args.shots);
+      const fields = {};
+      for (const [key, value] of Object.entries(args)) {
+        if (key === "shots") continue;
+        if (typeof value === "string" || typeof value === "number") fields[key] = textNumber(value);
+      }
+      if (Object.keys(fields).length) row.backendFields = fields;
+    }
+    next.push(row);
+  }
+  placedSims.splice(0, placedSims.length, ...next.map((entry) => ({ ...entry, key: ++simKey })));
+  selection.simulator = placedSims[0]?.id ?? null;
+}
+
+function applyMeasure(measure) {
+  if (!plainObject(measure) || !knownBlock("measure", measure.id)) return;
+  selection.measure = measure.id;
+  measureSites = Array.isArray(measure.sites) ? measure.sites.filter((site) => Number.isInteger(site)) : null;
+  if (measure.id === "counts" && typeof measure.expression === "string") countsExpression = measure.expression;
+}
+
+function applyActions(actions) {
+  if (!plainObject(actions)) return;
+  const next = [];
+  for (const id of Array.isArray(actions.ids) ? actions.ids : []) {
+    if (knownBlock("then", id) && !next.includes(id)) next.push(id);
+  }
+  placedThens.splice(0, placedThens.length, ...next);
+  selection.then = next[0] ?? null;
+  if (typeof actions.save_path === "string") savePath = actions.save_path;
+  if (typeof actions.export_path === "string") exportPath = actions.export_path;
+}
+
+function applyDocument(saved) {
+  if (!plainObject(saved)) return;
+  resetBoard();
+  if (typeof saved.total === "string" || typeof saved.total === "number") settings.total = textNumber(saved.total);
+  applyState(saved.state);
+  applyModel(saved.model);
+  syncStateQubits();
+  applySims(saved.simulators);
+  applyMeasure(saved.measure);
+  applyActions(saved.actions);
+}
+
+function holdImportStatus(message) {
+  statusHold = message;
+  const status = document.querySelector(".status");
+  if (status) status.replaceWith(statusComponent());
+}
+
+async function importBoardText(raw) {
+  if (running) return;
+  const saved = parsedSnapshot(raw);
+  if (!plainObject(saved)) {
+    holdImportStatus("The selection was rejected.");
+    return;
+  }
+  let result = null;
+  try {
+    result = await requestCheck(raw);
+  } catch {
+    if (!running) holdImportStatus("The selection could not be checked.");
+    return;
+  }
+  if (running || !result.ok) {
+    if (!running) holdImportStatus(result && result.error ? result.error : "The selection was rejected.");
+    return;
+  }
+  cancelScheduledCheck();
+  checkSerial += 1;
+  applyDocument(saved);
+  acceptedQubits = result.qubits;
+  applyAcceptedQubits();
+  checkError = null;
+  rejectedBody = null;
+  checkInFlight = false;
+  pendingBody = null;
+  if (documentBody() === raw) {
+    acceptedBody = raw;
+    releaseStatusHold();
+  } else acceptedBody = null;
+  const board = document.querySelector(".board");
+  if (board) draw(board);
 }
 
 function rememberBoard() {
@@ -3459,8 +3740,7 @@ function rememberBoard() {
   }
 }
 
-function emptyBoard() {
-  if (running) return;
+function resetBoard() {
   selection.state = null;
   selection.model = null;
   selection.simulator = null;
@@ -3491,6 +3771,11 @@ function emptyBoard() {
   saveOpen = false;
   exportOpen = false;
   preexistingOpen = false;
+}
+
+function emptyBoard() {
+  if (running) return;
+  resetBoard();
   releaseStatusHold();
   const board = document.querySelector(".board");
   if (board) draw(board);
