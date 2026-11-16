@@ -438,7 +438,7 @@ function fillCircuit() {
   });
 }
 
-const request = JSON.parse(process.argv[3]);
+const request = JSON.parse(process.argv[4]);
 if (!applyLimits(request.limits)) throw new Error("missing limits");
 const surface = { replaceChildren() {} };
 let result;
@@ -976,23 +976,27 @@ Promise.resolve(result).then((value) => {
 });
 `;
 
-vm.runInContext(fs.readFileSync(process.argv[1], "utf8"), sandbox);
-vm.runInContext(`${fs.readFileSync(process.argv[2], "utf8")}\n${probe}`, sandbox);
+vm.runInContext(fs.readFileSync(process.argv[2], "utf8"), sandbox);
+vm.runInContext(`${fs.readFileSync(process.argv[3], "utf8")}\n${probe}`, sandbox);
 """
 
 
 def _call(action: str) -> dict[str, Any]:
-    """Return the builder probe result for one board action."""
+    """Return the builder probe result for one board action.
+
+    The probe is read from stdin. Passing it to ``node -e`` exceeds the
+    Windows command-line length.
+    """
     try:
         completed = subprocess.run(
             [
                 "node",
-                "-e",
-                _HARNESS,
+                "-",
                 str(CHECKS),
                 str(BUILDER),
                 json.dumps({"action": action, "limits": _page_limits()}),
             ],
+            input=_HARNESS,
             capture_output=True,
             text=True,
             encoding="utf-8",
