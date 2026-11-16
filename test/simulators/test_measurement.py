@@ -48,12 +48,46 @@ def test_measurement_accepts_a_list_of_qubits():
     assert Measurement([1, 0], 'counts["10"]').qubits == (1, 0)  # type: ignore[arg-type]
 
 
-def test_ready_made_measurements():
-    counts = {"00": 1, "01": 1, "10": 1, "11": 1}
-    assert Measurement.population(0).evaluate(counts) == pytest.approx(0.5)
-    assert Measurement.expectation(1).evaluate({"00": 3, "01": 1}) == pytest.approx(0.5)
-    assert Measurement.cavity_population(0, 1).evaluate(counts) == pytest.approx(1.5)
-    assert Measurement.population(2).label == "P(1) on 2"
+def test_measurement_has_no_shortcuts():
+    for name in ("population", "expectation", "cavity_population"):
+        assert not hasattr(Measurement, name)
+
+
+def test_an_expectation_result_reads_any_one_qubit_expression():
+    expectation = np.array([0.0, 0.5, 1.0, -1.0])
+    result = SimulationResult(
+        times=np.linspace(0.0, 1.0, 4),
+        observables=[expectation, np.zeros(4)],
+        metadata={"observable_kind": "qubit_expectations", "num_qubits": 2},
+    )
+    population = ((1.0 - expectation) / 2.0).tolist()
+    for expression in ('counts["1"] / shots', 'counts["1"]/shots', '1 - counts["0"] / shots'):
+        applied = apply_measurements(result, [Measurement((0,), expression)])
+        assert applied.observables[0].tolist() == pytest.approx(population)
+        assert "observable_kind" not in applied.metadata
+    pauli = apply_measurements(result, [Measurement((0,), '(counts["0"] - counts["1"]) / shots')])
+    assert pauli.observables[0].tolist() == pytest.approx(expectation.tolist())
+    with pytest.raises(ValueError, match="returns Pauli expectations, not shot counts"):
+        apply_measurements(result, [Measurement((0, 1), '(counts["00"] - counts["11"]) / shots')])
+
+
+@pytest.mark.parametrize(
+    ("expression", "message"),
+    [
+        ("0.0 ** -1", "divides by zero"),
+        ("10.0 ** 400", "too large"),
+        ("(-1) ** 0.5", "finite real"),
+        ('1 / (counts["0"] - counts["0"])', "finite real"),
+    ],
+)
+def test_an_expectation_result_rejects_a_bad_value(expression: str, message: str):
+    result = SimulationResult(
+        times=np.array([0.0]),
+        observables=[np.array([0.0])],
+        metadata={"observable_kind": "qubit_expectations"},
+    )
+    with pytest.raises(ValueError, match=message):
+        apply_measurements(result, [Measurement((0,), expression, "curve")])
 
 
 @pytest.mark.parametrize("qubits", [(), "01", 3, (0, 0), (-1,), (True,), (1.0,)])
@@ -112,7 +146,10 @@ def test_measurement_rejects_values_that_are_not_finite_reals(expression: str, c
 
 def test_apply_measurements_replaces_observables_with_one_curve_each():
     result = _result([{"000": 3, "110": 1}, {"110": 4}])
-    applied = apply_measurements(result, [Measurement.population(0), Measurement((0, 1), 'counts["11"]', "both")])
+    applied = apply_measurements(
+        result,
+        [Measurement((0,), 'counts["1"] / shots', "P(1) on 0"), Measurement((0, 1), 'counts["11"]', "both")],
+    )
     assert [curve.tolist() for curve in applied.observables] == [[0.25, 1.0], [1.0, 4.0]]
     assert applied.counts == result.counts
     assert applied.metadata["num_qubits"] == 3
@@ -125,7 +162,7 @@ def test_apply_measurements_replaces_observables_with_one_curve_each():
 
 def test_apply_measurements_requires_counts():
     with pytest.raises(ValueError, match="this result has no shot counts"):
-        apply_measurements(_result(None), [Measurement.population(0)])
+        apply_measurements(_result(None), [Measurement((0,), 'counts["1"] / shots')])
 
 
 def test_apply_measurements_names_an_expectation_backend():
@@ -135,7 +172,7 @@ def test_apply_measurements_names_an_expectation_backend():
         metadata={"circuit_backend": "pauli_propagation"},
     )
     with pytest.raises(ValueError, match="the pauli_propagation backend has no shot counts"):
-        apply_measurements(result, [Measurement.population(0)])
+        apply_measurements(result, [Measurement((0,), 'counts["1"] / shots')])
 
 
 def test_apply_measurements_requires_a_measurement():

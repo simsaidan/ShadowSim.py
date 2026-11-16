@@ -86,11 +86,21 @@ def test_two_cavities_without_hopping_are_disjoint_copies():
     assert len(model.full_hamiltonians) == 2 * len(block.full_hamiltonians)
     assert len(model.c_ops_local) == 2 * len(block.c_ops_local)
     assert model.measurements == [
-        Measurement.cavity_population(0, 1),
-        Measurement.population(2),
-        Measurement.cavity_population(3, 4),
-        Measurement.population(5),
+        Measurement(
+            (0, 1),
+            '(3 * counts["11"] + 2 * counts["10"] + counts["01"]) / shots',
+            "cavity population on 0, 1",
+        ),
+        Measurement((2,), 'counts["1"] / shots', "P(1) on 2"),
+        Measurement(
+            (3, 4),
+            '(3 * counts["11"] + 2 * counts["10"] + counts["01"]) / shots',
+            "cavity population on 3, 4",
+        ),
+        Measurement((5,), 'counts["1"] / shots', "P(1) on 5"),
     ]
+    assert model.measurements[0].evaluate({"00": 1, "01": 1, "10": 1, "11": 1}) == pytest.approx(1.5)
+    assert model.measurements[1].evaluate({"000": 1, "001": 1, "110": 1, "111": 1}) == pytest.approx(0.5)
     np.testing.assert_allclose(model.psi0.to_numpy(), tensor([block.psi0.to_numpy(), block.psi0.to_numpy()]))
 
     for cavity in range(2):

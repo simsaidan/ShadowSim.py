@@ -120,10 +120,16 @@ def _embed_on_emitter(op: np.ndarray, emitter_index: int, n_emitters: int) -> np
 
 def _block_measurements(offset: int, n_emitters: int) -> list[Measurement]:
     """Return cavity and emitter population measurements for the block at ``offset``."""
-    return [
-        Measurement.cavity_population(offset, offset + 1),
-        *(Measurement.population(offset + _emitter_site(i)) for i in range(n_emitters)),
-    ]
+    cavity = Measurement(
+        (offset, offset + 1),
+        '(3 * counts["11"] + 2 * counts["10"] + counts["01"]) / shots',
+        f"cavity population on {offset}, {offset + 1}",
+    )
+    emitters = []
+    for index in range(n_emitters):
+        qubit = offset + _emitter_site(index)
+        emitters.append(Measurement((qubit,), 'counts["1"] / shots', f"P(1) on {qubit}"))
+    return [cavity, *emitters]
 
 
 @dataclass(frozen=True)

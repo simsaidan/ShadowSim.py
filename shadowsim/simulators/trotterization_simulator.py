@@ -143,9 +143,12 @@ class TrotterizationSimulator(ProductFormulaSimulator):
     Read them with :meth:`measure`. A backend without a shot budget, such as
     PauliPropagation, returns the expectation of each qubit's ``basis`` letter
     from the same circuit with the measurement removed, and the result has no
-    counts. :meth:`measure` reads those with :meth:`Measurement.expectation`
-    and :meth:`Measurement.population`. The shot count is that backend's
-    ``shots`` attribute when it has one.
+    counts. :meth:`measure` reads a one-qubit measurement from that distribution:
+    ``counts["0"]`` is ``(1 + expectation) / 2``, ``counts["1"]`` is
+    ``(1 - expectation) / 2``, and ``shots`` is 1. Dividing by ``shots`` gives
+    the infinite-shot value, and an expression that uses raw counts without
+    ``shots`` reads those probabilities. Two or more qubits need a sampling backend.
+    The shot count is that backend's ``shots`` attribute when it has one.
     With ``workers`` greater than 1, that backend is pickled into each worker process.
 
     ``order=1`` (the default) applies each local term once per slice of width
