@@ -422,8 +422,22 @@ function fillCircuit() {
       ")",
     ].join(String.fromCharCode(10)),
     fields: [
-      { name: "time_steps", label: "Time steps", kind: "integer", default: "11", minimum: 1, maximum: limits.timeSteps },
-      { name: "num_steps", label: "Product steps", kind: "integer", default: "4", minimum: 1, maximum: limits.numSteps },
+      {
+        name: "time_steps",
+        label: "Time steps",
+        kind: "integer",
+        default: "11",
+        minimum: 1,
+        maximum: limits.timeSteps,
+      },
+      {
+        name: "num_steps",
+        label: "Product steps",
+        kind: "integer",
+        default: "4",
+        minimum: 1,
+        maximum: limits.numSteps,
+      },
       {
         name: "trotter_depth",
         label: "Trotter depth",
