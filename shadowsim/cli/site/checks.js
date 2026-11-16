@@ -50,8 +50,20 @@
     return Boolean(blockById("simulator", entry.id)?.observables);
   }
 
-  function usesTrotter(entry) {
-    return blockById("simulator", entry.id)?.trotter !== false;
+  function simulatorFields(entry) {
+    const fields = blockById("simulator", entry.id)?.fields;
+    return Array.isArray(fields) ? fields : [];
+  }
+
+  function fieldReady(field, text) {
+    const value = String(text ?? "");
+    if (field.kind === "choice") return (field.choices ?? []).includes(value);
+    if (Number.isInteger(field.maximum)) {
+      if (!positiveIntAtMost(value, field.maximum)) return false;
+      const minimum = Number.isInteger(field.minimum) ? field.minimum : 1;
+      return BigInt(value) >= BigInt(minimum);
+    }
+    return /^-?\d+$/.test(value);
   }
 
   function needsBackend() {
@@ -352,27 +364,21 @@
   }
 
   function entryParamsReady(entry) {
-    const params = entry.params;
-    if (!positiveIntAtMost(params.timeSteps, page.maxTimeSteps)) return false;
-    if (isReference(entry)) return true;
-    if (!positiveIntAtMost(params.numSteps, page.maxNumSteps)) return false;
-    if (usesTrotter(entry) && !positiveIntAtMost(params.trotterDepth, page.maxTrotterDepth)) return false;
-    if (!/^-?\d+$/.test(params.seed)) return false;
-    if (!usesTrotter(entry)) return true;
-    return params.order === "1" || params.order === "2";
+    return simulatorFields(entry).every((field) => fieldReady(field, entry.params?.[field.name]));
   }
 
   function simParamProblem(preview) {
     for (const entry of page.placedSims) {
-      const params = entry.params;
-      const timeSteps = oversizePositiveInt(params.timeSteps, "Time steps", page.maxTimeSteps, preview);
-      if (timeSteps) return timeSteps;
-      if (isReference(entry)) continue;
-      const numSteps = oversizePositiveInt(params.numSteps, "Product steps", page.maxNumSteps, preview);
-      if (numSteps) return numSteps;
-      if (!usesTrotter(entry)) continue;
-      const depth = oversizePositiveInt(params.trotterDepth, "Trotter depth", page.maxTrotterDepth, preview);
-      if (depth) return depth;
+      for (const field of simulatorFields(entry)) {
+        if (!Number.isInteger(field.maximum)) continue;
+        const problem = oversizePositiveInt(
+          String(entry.params?.[field.name] ?? ""),
+          field.label,
+          field.maximum,
+          preview,
+        );
+        if (problem) return problem;
+      }
     }
     return null;
   }
@@ -383,8 +389,8 @@
 
   function sameTimeGrid() {
     if (page.placedSims.length < 2) return true;
-    const steps = page.placedSims[0].params.timeSteps;
-    return page.placedSims.every((entry) => entry.params.timeSteps === steps);
+    const steps = page.placedSims[0].params?.time_steps;
+    return page.placedSims.every((entry) => entry.params?.time_steps === steps);
   }
 
   function hasThen(id) {
@@ -880,15 +886,10 @@
   }
 
   function entryBody(entry) {
-    const params = entry.params;
-    const fields = { time_steps: params.timeSteps };
-    if (!isReference(entry)) {
-      fields.num_steps = params.numSteps;
-      fields.seed = params.seed;
-      if (usesTrotter(entry)) {
-        fields.trotter_depth = params.trotterDepth;
-        fields.order = params.order;
-      }
+    const params = entry.params ?? {};
+    const fields = {};
+    for (const field of simulatorFields(entry)) {
+      fields[field.name] = String(params[field.name] ?? "");
     }
     return { id: entry.id, arguments: fields, backend: postedBackend(entry) };
   }
@@ -917,19 +918,18 @@
     }
     const sites = selectedSites(qubitCount());
     const basis = measureRecord()?.rotate ? `,\n    basis=${xBasis(sites)}` : "";
-    return block.setup
+    let setup = block.setup
       .replaceAll("{name}", name)
       .replaceAll("{hamiltonians}", hamiltonians)
       .replaceAll("{lindblads}", lindblads)
       .replaceAll("{qubits}", systemQubits())
       .replaceAll("{total}", total == null ? "" : pyFloat(total))
-      .replaceAll("{time_steps}", String(params.timeSteps ?? ""))
-      .replaceAll("{num_steps}", String(params.numSteps ?? ""))
-      .replaceAll("{trotter_depth}", String(params.trotterDepth ?? ""))
-      .replaceAll("{order}", String(params.order ?? ""))
-      .replaceAll("{seed}", String(params.seed ?? ""))
       .replaceAll("{basis}", basis)
       .replaceAll("{backend}", backendName);
+    for (const field of block.fields ?? []) {
+      setup = setup.replaceAll(`{${field.name}}`, String(params[field.name] ?? field.default ?? ""));
+    }
+    return setup;
   }
 
   function backendClass(backendId) {

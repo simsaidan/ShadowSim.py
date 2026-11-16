@@ -33,21 +33,21 @@ from shadowsim.core.state import State
 from shadowsim.models.catalog import ListedParam, listed_models
 from shadowsim.models.ising import IsingModel
 from shadowsim.models.tavis_cummings import TavisCummingsModel
+from shadowsim.simulators.catalog import ListedSimulatorField, _chip_default, _chip_maximum, _describe_simulator
 from shadowsim.simulators.reducers import Measurement
 from shadowsim.simulators.result import SimulationResult, _resource_record, save_resource_metrics
 from shadowsim.simulators.simulator import Simulator
 from shadowsim.utils.hermitian import hermitian
 
 # A page click cannot afford the class defaults of 101 points and 10_000 shots.
-_CIRCUIT_TIME_STEPS = 11
-_CIRCUIT_NUM_STEPS = 4
+# The chip defaults and bounds live on the simulator catalog.
+_OBSERVABLES_TIME_STEPS = int(_chip_default("time_steps", observables=True))
 _CIRCUIT_SHOTS = 256
-_CIRCUIT_SEED = 0
 _MAX_OPERATOR_QUBITS = 8
 _MAX_FACTORY_QUBITS = 15
-_MAX_TIME_STEPS = 500
-_MAX_NUM_STEPS = 100
-_MAX_TROTTER_DEPTH = 100
+_MAX_TIME_STEPS = _chip_maximum("time_steps")
+_MAX_NUM_STEPS = _chip_maximum("num_steps")
+_MAX_TROTTER_DEPTH = _chip_maximum("trotter_depth")
 _MAX_SHOTS = 100000
 
 
@@ -276,11 +276,14 @@ def build_simulator(selection: Mapping[str, object], *, simulator: int = 0) -> S
             a non-zero list of finite real numbers, and the padded vector must
             use the model's qubit count. ``measure.sites`` lists qubit indexes
             to measure. Missing ``sites`` measures every qubit.
-            ``time_steps`` in the simulator arguments must be from 1 to 500.
-            Missing ``time_steps`` uses 101 for an observables simulator and 11
-            for a circuit simulator. Shot-based simulators also read
-            ``num_steps`` (1 to 100), ``trotter_depth`` (1 to 100), ``order`` (1 or
-            2), and ``seed`` from those arguments. A backend with a shot budget
+            Simulator ``arguments`` are the catalog fields for that constructor.
+            ``time_steps`` is from 1 to 500. Missing it uses 101 when the
+            constructor records observables and 11 otherwise. ``num_steps`` is
+            from 1 to 100 and defaults to 4 when the constructor takes it.
+            ``trotter_depth`` is from 1 to 100 and ``order`` is 1 or 2; both
+            default to the constructor value. ``seed`` is an integer and
+            defaults to 0. A missing field uses that default. A posted name the
+            constructor does not take is ignored. A backend with a shot budget
             reads ``shots`` (1 to 100000) from the backend arguments. A posted
             ``time_steps`` value is checked before the simulator extra is
             imported. A posted ``shots`` value is checked then too when that
@@ -289,8 +292,8 @@ def build_simulator(selection: Mapping[str, object], *, simulator: int = 0) -> S
             comma-separated string or a sequence of names. A blank value keeps
             that backend's own basis. Any other backend field is a non-negative
             number, and a missing value keeps the catalog default. A simulator
-            with ``closed_system`` set rejects Lindblad operators. Missing
-            shot-based values use the page budget.
+            with ``closed_system`` set rejects Lindblad operators. A missing
+            shot count uses the page budget.
         simulator: Index of the ``simulators`` entry to build. Defaults to the first.
 
     Returns:
@@ -321,16 +324,26 @@ def _build_simulator(document: _RunDocument, index: int) -> Simulator:
     _measurements(document.measure, model.num_qubits)
     if class_name == "QutipSimulator":
         _reject_counts(measure_id, "QuTiP")
-        steps = _selection_positive_int(entry.arguments, "time_steps", 101, "time steps", maximum=_MAX_TIME_STEPS)
+        steps = _selection_positive_int(
+            entry.arguments, "time_steps", _OBSERVABLES_TIME_STEPS, "time steps", maximum=_MAX_TIME_STEPS
+        )
         return _qutip_simulator(model, state, measure_id, total_time, steps, sites)
     if "time_steps" in entry.arguments:
-        _selection_positive_int(entry.arguments, "time_steps", 101, "time steps", maximum=_MAX_TIME_STEPS)
+        _selection_positive_int(
+            entry.arguments, "time_steps", _OBSERVABLES_TIME_STEPS, "time steps", maximum=_MAX_TIME_STEPS
+        )
     if backend and "shots" in entry.backend_arguments and _backend_has_shot_budget(backend):
         _selection_positive_int(entry.backend_arguments, "shots", _CIRCUIT_SHOTS, "shots", maximum=_MAX_SHOTS)
     cls = _load_exported(module_name, extra, class_name, "unknown simulator")
     if "observables" in inspect.signature(cls).parameters:
         _reject_counts(measure_id, class_name.removesuffix("Simulator"))
-        steps = _selection_positive_int(entry.arguments, "time_steps", 101, "time steps", maximum=_MAX_TIME_STEPS)
+        posted = _simulator_arguments(cls, entry.arguments)
+        if "time_steps" in posted:
+            steps = posted["time_steps"]
+        else:
+            steps = _selection_positive_int(
+                entry.arguments, "time_steps", _OBSERVABLES_TIME_STEPS, "time steps", maximum=_MAX_TIME_STEPS
+            )
         return _qutip_simulator(model, state, measure_id, total_time, steps, sites, cls)
     if not backend:
         raise ValueError("unknown backend")
@@ -680,40 +693,85 @@ def _circuit_simulator(
     """Build a circuit simulator on the catalog backend ``record`` names.
 
     A measurement whose catalog record sets ``rotate`` reads those qubits in the
-    X basis before the measurement. The others measure every qubit in Z. The
-    simulator records counts, or Pauli
+    X basis before the measurement. The others measure every qubit in Z. Chip
+    values come from the catalog fields on ``cls``. A posted name that is not
+    one of those fields is ignored. The simulator records counts, or Pauli
     expectations when the backend has no shot budget, which
     :func:`_measured_result` reads.
     """
-    steps = _selection_positive_int(arguments, "time_steps", _CIRCUIT_TIME_STEPS, "time steps", maximum=_MAX_TIME_STEPS)
-    num_steps = _selection_positive_int(
-        arguments, "num_steps", _CIRCUIT_NUM_STEPS, "product steps", maximum=_MAX_NUM_STEPS
-    )
-    seed = _selection_integer(arguments, "seed", _CIRCUIT_SEED, "seed")
+    posted = _simulator_arguments(cls, arguments)
     if getattr(cls, "closed_system", False) and model.c_ops_local:
         raise ValueError(f"{cls.__name__.removesuffix('Simulator')} is closed-system only")
     circuit_backend = _make_backend(record, backend_arguments)
-    # Trotter depth and order are constructor arguments only for product-formula simulators.
-    extra: dict[str, Any] = {}
-    if "trotter_depth" in inspect.signature(cls).parameters:
-        extra["trotter_depth"] = _selection_positive_int(
-            arguments, "trotter_depth", 1, "Trotter depth", maximum=_MAX_TROTTER_DEPTH
-        )
-        extra["order"] = _selection_order(arguments)
     if measurement_record(measure_id).get("rotate"):
-        extra["basis"] = _x_basis(model.num_qubits, sites)
+        posted["basis"] = _x_basis(model.num_qubits, sites)
     return cls(
         model.local_hamiltonians,
         model.c_ops_local,
         state,
         num_qubits=model.num_qubits,
         total_time=total_time,
-        time_steps=steps,
-        num_steps=num_steps,
-        seed=seed,
         circuit_backend=circuit_backend,
-        **extra,
+        **posted,
     )
+
+
+def _simulator_arguments(cls: type, arguments: Mapping[str, object]) -> dict[str, Any]:
+    """Return the catalog chip values for ``cls``.
+
+    A missing key uses that field's default. A posted name that is not a chip
+    on this constructor is ignored.
+    """
+    values: dict[str, Any] = {}
+    for field in _describe_simulator(cls)["fields"]:
+        values[field["name"]] = _posted_field(arguments, field)
+    return values
+
+
+def _posted_field(arguments: Mapping[str, object], field: ListedSimulatorField) -> int:
+    """Return one posted chip value, or the field default when it was omitted."""
+    name = field["name"]
+    phrase = _field_phrase(field["label"])
+    default = int(field["default"])
+    if field["kind"] == "choice":
+        return _posted_choice(arguments, name, default, phrase, list(field.get("choices") or []))
+    maximum = field.get("maximum")
+    if isinstance(maximum, int):
+        return _selection_positive_int(arguments, name, default, phrase, maximum=maximum)
+    return _selection_integer(arguments, name, default, phrase)
+
+
+def _posted_choice(
+    arguments: Mapping[str, object],
+    name: str,
+    default: int,
+    phrase: str,
+    choices: list[str],
+) -> int:
+    """Return a posted choice, or ``default`` when ``name`` was omitted.
+
+    Raises:
+        ValueError: The posted value is not an integer, or it is not one of
+            ``choices``.
+    """
+    if name not in arguments:
+        return default
+    number = _named_integer(arguments[name], phrase)
+    allowed = [int(choice) for choice in choices]
+    if number not in allowed:
+        raise ValueError(f"{phrase} must be {' or '.join(choices)}")
+    return number
+
+
+def _field_phrase(label: str) -> str:
+    """Return the error phrase for a chip label.
+
+    A leading capital is lowercased, so ``Time steps`` stays the existing
+    ``time steps`` message. ``Trotter depth`` is already that phrase.
+    """
+    if label.startswith("Trotter"):
+        return label
+    return label[:1].lower() + label[1:]
 
 
 def _reject_counts(measure_id: str, label: str) -> None:
@@ -945,16 +1003,6 @@ def _selection_integer(selection: Mapping[str, object], key: str, default: int, 
     if key not in selection:
         return default
     return _named_integer(selection[key], name)
-
-
-def _selection_order(selection: Mapping[str, object]) -> int:
-    """Return Trotter order 1 or 2. Missing ``order`` means 1."""
-    if "order" not in selection:
-        return 1
-    number = _named_integer(selection["order"], "order")
-    if number not in (1, 2):
-        raise ValueError("order must be 1 or 2")
-    return number
 
 
 def _named_integer(value: object, name: str) -> int:

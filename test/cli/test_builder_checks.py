@@ -73,6 +73,39 @@ def _call(fn: str, page: dict[str, Any], *args: object) -> Any:
     return json.loads(completed.stdout)
 
 
+def _chip(
+    name: str,
+    label: str,
+    default: str,
+    maximum: str | None = None,
+    choices: list[str] | None = None,
+) -> dict[str, object]:
+    """Return one simulator chip field. ``maximum`` is a key of :func:`_page_limits`."""
+    if choices is not None:
+        return {"name": name, "label": label, "kind": "choice", "default": default, "choices": choices}
+    field: dict[str, object] = {"name": name, "label": label, "kind": "integer", "default": default}
+    if maximum is not None:
+        field["minimum"] = 1
+        field["maximum"] = _page_limits()[maximum]
+    return field
+
+
+def _qutip_fields() -> list[dict[str, object]]:
+    """Return the time-step field a QuTiP card edits."""
+    return [_chip("time_steps", "Time steps", "11", "timeSteps")]
+
+
+def _circuit_fields() -> list[dict[str, object]]:
+    """Return the product-formula fields a Trotter card edits."""
+    return [
+        *_qutip_fields(),
+        _chip("num_steps", "Product steps", "4", "numSteps"),
+        _chip("trotter_depth", "Trotter depth", "1", "trotterDepth"),
+        _chip("order", "Order", "1", choices=["1", "2"]),
+        _chip("seed", "Seed", "0"),
+    ]
+
+
 def _page_caps() -> dict[str, Any]:
     """Return the limit fields the builder copies out of ``_page_limits``."""
     payload = _page_limits()
@@ -95,7 +128,9 @@ def _qutip_page() -> dict[str, Any]:
         "blocks": {
             "state": listed_states(),
             "model": [],
-            "simulator": [{"id": "qutip", "title": "QuTiP", "observables": True, "setup": _QUTIP_SETUP}],
+            "simulator": [
+                {"id": "qutip", "title": "QuTiP", "observables": True, "setup": _QUTIP_SETUP, "fields": _qutip_fields()}
+            ],
             "backend": [
                 {
                     "id": "aer",
@@ -122,7 +157,7 @@ def _qutip_page() -> dict[str, Any]:
         ],
         "preexistingId": "ising",
         "stateText": {"basis": "00"},
-        "placedSims": [{"id": "qutip", "params": {"timeSteps": "11"}}],
+        "placedSims": [{"id": "qutip", "params": {"time_steps": "11"}}],
         "placedThens": ["plot"],
         "actionText": {"save": "results/run1", "export": "results"},
         "expressionText": {},
@@ -142,6 +177,7 @@ def _circuit_page() -> dict[str, Any]:
             "title": "Trotterization",
             "observables": False,
             "setup": _circuit_setup("TrotterizationSimulator"),
+            "fields": _circuit_fields(),
         }
     ]
     page["selection"]["simulator"] = "trotterization"
@@ -149,9 +185,9 @@ def _circuit_page() -> dict[str, Any]:
         {
             "id": "trotterization",
             "params": {
-                "timeSteps": "11",
-                "numSteps": "4",
-                "trotterDepth": "1",
+                "time_steps": "11",
+                "num_steps": "4",
+                "trotter_depth": "1",
                 "seed": "0",
                 "order": "1",
             },
@@ -217,8 +253,12 @@ def test_hybrid_wml_omits_trotter_controls() -> None:
     page = _circuit_page()
     block = page["blocks"]["simulator"][0]
     block["id"] = "hybridwml"
-    block["trotter"] = False
     block["samples"] = True
+    block["fields"] = [
+        _chip("time_steps", "Time steps", "11", "timeSteps"),
+        _chip("num_steps", "Product steps", "4", "numSteps"),
+        _chip("seed", "Seed", "0"),
+    ]
     block["setup"] = (
         "{name} = HybridWMLSimulator(\n"
         "    {hamiltonians},\n"
@@ -234,7 +274,7 @@ def test_hybrid_wml_omits_trotter_controls() -> None:
     )
     entry = page["placedSims"][0]
     entry["id"] = "hybridwml"
-    entry["params"]["trotterDepth"] = "0"
+    entry["params"]["trotter_depth"] = "0"
     entry["params"]["order"] = "9"
     page["selection"]["simulator"] = "hybridwml"
     assert _call("simParamProblem", page, False) is None
@@ -267,13 +307,13 @@ def test_circuit_row_without_shots_is_not_ready() -> None:
 
 def test_page_workload_maxima_stay_ready() -> None:
     qutip = _qutip_page()
-    qutip["placedSims"][0]["params"]["timeSteps"] = str(qutip["maxTimeSteps"])
+    qutip["placedSims"][0]["params"]["time_steps"] = str(qutip["maxTimeSteps"])
     assert _call("runAllowed", qutip) is True
     assert _call("simParamProblem", qutip, False) is None
     circuit = _circuit_page()
-    circuit["placedSims"][0]["params"]["timeSteps"] = str(circuit["maxTimeSteps"])
-    circuit["placedSims"][0]["params"]["numSteps"] = str(circuit["maxNumSteps"])
-    circuit["placedSims"][0]["params"]["trotterDepth"] = str(circuit["maxTrotterDepth"])
+    circuit["placedSims"][0]["params"]["time_steps"] = str(circuit["maxTimeSteps"])
+    circuit["placedSims"][0]["params"]["num_steps"] = str(circuit["maxNumSteps"])
+    circuit["placedSims"][0]["params"]["trotter_depth"] = str(circuit["maxTrotterDepth"])
     circuit["placedSims"][0]["shots"] = str(circuit["maxShots"])
     assert _call("runAllowed", circuit) is True
     assert _call("simParamProblem", circuit, False) is None
@@ -283,20 +323,20 @@ def test_page_workload_maxima_stay_ready() -> None:
 def test_oversize_simulator_parameters_block_the_run() -> None:
     page = _qutip_page()
     time_steps = int(page["maxTimeSteps"])
-    page["placedSims"][0]["params"]["timeSteps"] = str(time_steps + 1)
+    page["placedSims"][0]["params"]["time_steps"] = str(time_steps + 1)
     assert _call("runAllowed", page) is False
     assert _call("simParamProblem", page, False) == f"Time steps must be from 1 to {time_steps}."
     assert _call("simParamProblem", page, True) == f"Time steps must be from 1 to {time_steps} to preview the script."
     circuit = _circuit_page()
     num_steps = int(circuit["maxNumSteps"])
-    circuit["placedSims"][0]["params"]["numSteps"] = str(num_steps + 1)
+    circuit["placedSims"][0]["params"]["num_steps"] = str(num_steps + 1)
     assert _call("runAllowed", circuit) is False
     assert _call("simParamProblem", circuit, False) == f"Product steps must be from 1 to {num_steps}."
-    circuit["placedSims"][0]["params"]["numSteps"] = str(num_steps)
+    circuit["placedSims"][0]["params"]["num_steps"] = str(num_steps)
     depth = int(circuit["maxTrotterDepth"])
-    circuit["placedSims"][0]["params"]["trotterDepth"] = str(depth + 1)
+    circuit["placedSims"][0]["params"]["trotter_depth"] = str(depth + 1)
     assert _call("simParamProblem", circuit, False) == f"Trotter depth must be from 1 to {depth}."
-    circuit["placedSims"][0]["params"]["trotterDepth"] = "1"
+    circuit["placedSims"][0]["params"]["trotter_depth"] = "1"
     shots = int(circuit["maxShots"])
     circuit["placedSims"][0]["shots"] = str(shots + 1)
     assert _call("shotsReady", circuit) is False
@@ -338,6 +378,7 @@ def test_preview_names_a_backend_for_each_circuit_row() -> None:
             "observables": False,
             "samples": False,
             "setup": _circuit_setup("TrotterizationSimulator"),
+            "fields": _circuit_fields(),
         },
         {
             "id": "splitjmatrix",
@@ -345,6 +386,7 @@ def test_preview_names_a_backend_for_each_circuit_row() -> None:
             "observables": False,
             "samples": True,
             "setup": _circuit_setup("SplitJMatrixSimulator"),
+            "fields": _circuit_fields(),
         },
     ]
     page["blocks"]["backend"].append(
@@ -454,8 +496,10 @@ def test_unknown_aer_gates_block_the_run_and_the_preview() -> None:
 
 def test_preview_numbers_a_backend_with_its_row() -> None:
     page = _circuit_page()
-    page["blocks"]["simulator"].insert(0, {"id": "qutip", "title": "QuTiP", "observables": True, "setup": _QUTIP_SETUP})
-    page["placedSims"].insert(0, {"id": "qutip", "params": {"timeSteps": "11"}})
+    page["blocks"]["simulator"].insert(
+        0, {"id": "qutip", "title": "QuTiP", "observables": True, "setup": _QUTIP_SETUP, "fields": _qutip_fields()}
+    )
+    page["placedSims"].insert(0, {"id": "qutip", "params": {"time_steps": "11"}})
     page["selection"]["simulator"] = "qutip"
     text = _call("previewText", page)
     assert isinstance(text, str)
@@ -483,8 +527,8 @@ def test_benchmark_export_includes_save_error_metrics() -> None:
     page["placedThens"] = ["export"]
     page["actionText"]["export"] = "results/metrics.json"
     page["placedSims"] = [
-        {"id": "qutip", "params": {"timeSteps": "11"}},
-        {"id": "qutip", "params": {"timeSteps": "11"}},
+        {"id": "qutip", "params": {"time_steps": "11"}},
+        {"id": "qutip", "params": {"time_steps": "11"}},
     ]
     text = _call("previewText", page)
     assert isinstance(text, str)
@@ -599,6 +643,7 @@ def test_preview_uses_the_catalog_class() -> None:
             "title": "Custom",
             "observables": False,
             "setup": _circuit_setup("CustomSimulator"),
+            "fields": _circuit_fields(),
         }
     ]
     page["selection"]["simulator"] = "custom"
@@ -693,8 +738,10 @@ def test_counts_preview_names_the_qubits_and_expression() -> None:
 
 def test_benchmark_preview_measures_each_circuit_simulator() -> None:
     page = _circuit_page()
-    page["blocks"]["simulator"].append({"id": "qutip", "title": "QuTiP", "observables": True, "setup": _QUTIP_SETUP})
-    page["placedSims"].insert(0, {"id": "qutip", "params": {"timeSteps": "11"}})
+    page["blocks"]["simulator"].append(
+        {"id": "qutip", "title": "QuTiP", "observables": True, "setup": _QUTIP_SETUP, "fields": _qutip_fields()}
+    )
+    page["placedSims"].insert(0, {"id": "qutip", "params": {"time_steps": "11"}})
     text = _call("previewText", page)
     assert "benchmark.run()\nsim_2.measure(measurements)\nbenchmark.save_result_plot()" in text
     assert "sim_1.measure" not in text

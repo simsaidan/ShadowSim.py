@@ -225,9 +225,10 @@ function positiveIntText(value) {
   return check(checks.positiveIntText, value);
 }
 
-function freshParams(id) {
-  if (isReference({ id })) return { timeSteps: "101" };
-  return { timeSteps: "11", numSteps: "4", trotterDepth: "1", seed: "0", order: "1" };
+function freshParams(block) {
+  const params = {};
+  for (const field of block?.fields ?? []) params[field.name] = String(field.default ?? "");
+  return params;
 }
 
 function simParamProblem(preview) {
@@ -820,38 +821,35 @@ function simField(params, key, label, seed) {
   );
 }
 
+function simulatorControl(params, field) {
+  const value = String(params[field.name] ?? field.default ?? "");
+  if (field.kind === "choice") {
+    const choices = Array.isArray(field.choices) ? field.choices : [];
+    return el(
+      "label",
+      {},
+      field.label,
+      el(
+        "select",
+        {
+          "aria-label": field.label,
+          onchange: (event) => {
+            params[field.name] = event.target.value;
+            refreshSummaryAndPreview();
+          },
+        },
+        ...choices.map((choice) => el("option", { value: choice, selected: choice === value }, choice)),
+      ),
+    );
+  }
+  return simField(params, field.name, field.label, !Number.isInteger(field.minimum));
+}
+
 function simulatorChip(entry) {
   const block = blockById("simulator", entry.id);
   const params = entry.params;
   if (!block) return null;
-  const fields = [
-    simField(params, "timeSteps", "Time steps", false),
-  ];
-  if (!isReference(entry)) {
-    const trotter = block.trotter !== false;
-    fields.push(simField(params, "numSteps", "Product steps", false));
-    if (trotter) fields.push(simField(params, "trotterDepth", "Trotter depth", false));
-    fields.push(simField(params, "seed", "Seed", true));
-    if (trotter) fields.push(
-      el(
-        "label",
-        {},
-        "Order",
-        el(
-          "select",
-          {
-            "aria-label": "Order",
-            onchange: (event) => {
-              params.order = event.target.value;
-              refreshSummaryAndPreview();
-            },
-          },
-          el("option", { value: "1", selected: params.order === "1" }, "1"),
-          el("option", { value: "2", selected: params.order === "2" }, "2"),
-        ),
-      ),
-    );
-  }
+  const controls = (block.fields ?? []).map((field) => simulatorControl(params, field));
   return el(
     "div",
     { className: `chip tone-blue simulator${entry.open ? " is-editing" : ""}` },
@@ -903,7 +901,7 @@ function simulatorChip(entry) {
         ),
       ),
     ),
-    entry.open ? el("div", { className: "sim-fields" }, ...fields) : null,
+    entry.open ? el("div", { className: "sim-fields" }, ...controls) : null,
   );
 }
 
@@ -3014,7 +3012,7 @@ function place(laneId, blockId) {
     placedSims.push({
       id: blockId,
       key: ++simKey,
-      params: freshParams(blockId),
+      params: freshParams(block),
       open: true,
       backend: null,
       shots: DEFAULT_SHOTS,
@@ -3262,14 +3260,14 @@ function applyModel(model) {
   }
 }
 
-function simParams(args) {
-  const params = {};
+function simParams(block, args) {
+  const params = freshParams(block);
   if (!plainObject(args)) return params;
-  if ("time_steps" in args) params.timeSteps = textNumber(args.time_steps);
-  if ("num_steps" in args) params.numSteps = textNumber(args.num_steps);
-  if ("seed" in args) params.seed = textNumber(args.seed);
-  if ("trotter_depth" in args) params.trotterDepth = textNumber(args.trotter_depth);
-  if ("order" in args) params.order = textNumber(args.order);
+  for (const field of block?.fields ?? []) {
+    if (!(field.name in args)) continue;
+    const value = args[field.name];
+    if (typeof value === "string" || typeof value === "number") params[field.name] = textNumber(value);
+  }
   return params;
 }
 
@@ -3277,10 +3275,10 @@ function applySims(entries) {
   const next = [];
   for (const entry of Array.isArray(entries) ? entries : []) {
     if (!plainObject(entry) || !knownBlock("simulator", entry.id)) continue;
-    const params = simParams(entry.arguments);
+    const block = blockById("simulator", entry.id);
     const row = {
       id: entry.id,
-      params: Object.keys(params).length ? params : freshParams(entry.id),
+      params: simParams(block, entry.arguments),
       open: false,
       backend: null,
       shots: DEFAULT_SHOTS,
