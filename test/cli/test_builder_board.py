@@ -641,6 +641,42 @@ if (request.action === "roundtrip") {
     write: writes[0] ?? null,
     preview: previewText(),
   };
+} else if (request.action === "boardcopy") {
+  resetPage();
+  const board = document.createElement("section");
+  board.className = "board";
+  document.documentElement.append(board);
+  draw(board);
+  const panel = () => document.querySelector('.panel[aria-label="Code preview"]');
+  const scriptButton = () => walk(panel(), []).find((node) => node.className === "copy");
+  const boardButton = () => walk(panel(), []).find((node) => node.className === "copy-board");
+  const shown = () => {
+    const node = walk(panel(), []).find((item) => item.className === "board-json");
+    return node.textContent ?? nodeText(node);
+  };
+  click(scriptButton());
+  const emptyScriptWrites = writes.length;
+  click(boardButton());
+  const emptyWrite = writes[0] ?? null;
+  const emptyShown = shown();
+  const emptyDisabled = Object.hasOwn(scriptButton().attrs, "disabled");
+  const emptyLabel = boardButton().attrs["aria-label"];
+  fillIsing();
+  applyCheck(2);
+  const before = writes.length;
+  click(boardButton());
+  const acceptedWrite = writes[before] ?? null;
+  result = {
+    emptyDisabled,
+    emptyScriptWrites,
+    emptyWrite,
+    emptyShown,
+    emptyLabel,
+    acceptedScriptDisabled: Object.hasOwn(scriptButton().attrs, "disabled"),
+    acceptedWrite,
+    acceptedShown: shown(),
+    acceptedBody,
+  };
 } else if (request.action === "inplace") {
   fillCircuit();
   const board = document.createElement("section");
@@ -1164,6 +1200,23 @@ def test_copy_writes_the_script_only_when_one_is_shown() -> None:
     assert page["write"] == page["preview"]
     assert "from shadowsim.encoding import ComputationalBasisEncoding" in page["write"]
     assert "import *" not in page["write"]
+
+
+def test_copy_board_writes_the_document_while_the_script_is_empty() -> None:
+    page = _call("boardcopy")
+    assert page["emptyDisabled"] is True
+    assert page["emptyScriptWrites"] == 0
+    assert page["emptyLabel"] == "Copy board"
+    assert page["emptyWrite"] == page["emptyShown"]
+    empty = json.loads(page["emptyWrite"])
+    assert empty["version"] == 1
+    assert "server" not in empty
+    assert page["acceptedScriptDisabled"] is False
+    assert page["acceptedWrite"] == page["acceptedShown"]
+    assert page["acceptedWrite"] == page["acceptedBody"]
+    accepted = json.loads(page["acceptedWrite"])
+    assert "server" not in accepted
+    assert accepted["state"] == {"id": "basis", "value": "01"}
 
 
 def test_export_and_import_round_trip_the_board() -> None:
