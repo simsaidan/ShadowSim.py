@@ -7,6 +7,7 @@ from typing import Any
 
 import pytest
 
+from shadowsim.cli.catalog import listed_actions, listed_measurements, listed_states
 from shadowsim.cli.run import _page_limits
 
 _SITE = Path(__file__).resolve().parents[2] / "shadowsim" / "cli" / "site"
@@ -336,24 +337,22 @@ function resetPage() {
   selection.then = null;
   settings.qubits = "";
   settings.total = "";
-  basisBits = "";
-  grayBits = "";
-  angleText = "";
-  amplitudeText = "";
+  for (const key of Object.keys(stateText)) delete stateText[key];
   qubitsSource = null;
   preexistingId = null;
   factoryText = {};
   modelTerms.splice(0, modelTerms.length);
   placedSims.splice(0, placedSims.length);
   placedThens.splice(0, placedThens.length);
-  savePath = DEFAULT_SAVE_PATH;
-  exportPath = DEFAULT_EXPORT_PATH;
+  for (const key of Object.keys(actionText)) delete actionText[key];
+  for (const key of Object.keys(pathOpen)) delete pathOpen[key];
+  for (const block of BLOCKS.then) {
+    if (block.field && block.field.kind === "path") actionText[block.id] = block.field.default;
+  }
   measureSites = null;
-  countsExpression = "";
+  for (const key of Object.keys(expressionText)) delete expressionText[key];
   stateOpen = false;
   measureOpen = false;
-  saveOpen = false;
-  exportOpen = false;
   preexistingOpen = false;
   boardReady = false;
 }
@@ -383,11 +382,11 @@ function fillIsing() {
   selection.simulator = "qutip";
   selection.measure = "z";
   selection.then = "plot";
-  basisBits = "01";
+  stateText.basis = "01";
   settings.qubits = "2";
   settings.total = "1";
   qubitsSource = "state";
-  savePath = "results/kept";
+  actionText.save = "results/kept";
   measureSites = [0];
   placedSims.push({ id: "qutip", key: 3, open: true, params: { timeSteps: "11" } });
   placedThens.push("plot");
@@ -437,6 +436,9 @@ function fillCircuit() {
 
 const request = JSON.parse(process.argv[4]);
 if (!applyLimits(request.limits)) throw new Error("missing limits");
+BLOCKS.state = request.states;
+BLOCKS.measure = request.measures;
+BLOCKS.then = request.actions;
 const surface = { replaceChildren() {} };
 let result;
 if (request.action === "roundtrip") {
@@ -477,7 +479,7 @@ if (request.action === "roundtrip") {
       checks,
       restored: JSON.stringify(runRequest()) === stored,
       state: selection.state,
-      bits: basisBits,
+      bits: stateText.basis || "",
     };
   })();
 } else if (request.action === "broken") {
@@ -505,7 +507,7 @@ if (request.action === "roundtrip") {
       malformed,
       status: statusHold,
       state: selection.state,
-      bits: basisBits,
+      bits: stateText.basis || "",
       stored: localStorage.getItem("shadowsim.builder.board"),
       check: checks[0],
     };
@@ -529,7 +531,7 @@ if (request.action === "roundtrip") {
   })();
 } else if (request.action === "counts") {
   fillCircuit();
-  BLOCKS.measure = [{ id: "counts", title: "Counts", detail: "Expression on all qubits", phrase: "Counts" }];
+  BLOCKS.measure = request.measures.filter((block) => block.id === "counts");
   selection.measure = "counts";
   measureSites = null;
   const board = document.createElement("section");
@@ -555,7 +557,7 @@ if (request.action === "roundtrip") {
   const narrowPlaceholder = input.placeholder;
   const body = JSON.stringify(runRequest());
   emptyBoard();
-  const cleared = countsExpression;
+  const cleared = expressionText.counts ?? "";
   result = (async () => {
     fetch = async () => ({ ok: true, json: async () => ({ qubits: 2 }) });
     localStorage.setItem("shadowsim.builder.board", body);
@@ -573,7 +575,7 @@ if (request.action === "roundtrip") {
       narrowPlaceholder,
       stored: JSON.parse(body).measure.expression,
       cleared,
-      restored: countsExpression,
+      restored: expressionText.counts ?? "",
       matches: rebuilt === body,
       zRequest: Object.hasOwn(runRequest().measure, "expression"),
     };
@@ -592,7 +594,7 @@ if (request.action === "roundtrip") {
       saved,
       stored: localStorage.getItem("shadowsim.builder.board"),
       state: selection.state,
-      bits: basisBits,
+      bits: stateText.basis || "",
       matches: JSON.stringify(runRequest()) === saved,
     };
   })();
@@ -615,7 +617,7 @@ if (request.action === "roundtrip") {
     keptStored,
     state: selection.state,
     qubits: settings.qubits,
-    bits: basisBits,
+    bits: stateText.basis || "",
     sims: placedSims.length,
     terms: modelTerms.length,
     thens: placedThens.length,
@@ -872,7 +874,7 @@ if (request.action === "roundtrip") {
     { id: "lindblad", title: "Lindblad", adds: true, detail: "" },
   ];
   selection.state = "basis";
-  basisBits = "00";
+  stateText.basis = "00";
   settings.qubits = "2";
   qubitsSource = "state";
   const board = document.createElement("section");
@@ -885,11 +887,11 @@ if (request.action === "roundtrip") {
   const nonhermitian = operatorAlert(board.querySelector(".chip.hamiltonian"));
   typeInto(matrix, "[[1, 0], [0, -1]]");
   const wrongSize = operatorAlert(board.querySelector(".chip.hamiltonian"));
-  basisBits = "0";
+  stateText.basis = "0";
   syncStateQubits();
   typeInto(matrix, "[[1, 0], [0, -1]]");
   const validHamiltonian = operatorAlert(board.querySelector(".chip.hamiltonian"));
-  basisBits = "000";
+  stateText.basis = "000";
   syncStateQubits();
   place("model", "local_hamiltonian");
   place("model", "lindblad");
@@ -968,7 +970,7 @@ if (request.action === "roundtrip") {
       posted: posted === file,
       restored: JSON.stringify(runRequest()) === file,
       state: selection.state,
-      bits: basisBits,
+      bits: stateText.basis || "",
       malformed,
       rejected,
       keptState,
@@ -1005,7 +1007,15 @@ def _call(action: str) -> dict[str, Any]:
                 "-",
                 str(CHECKS),
                 str(BUILDER),
-                json.dumps({"action": action, "limits": _page_limits()}),
+                json.dumps(
+                    {
+                        "action": action,
+                        "limits": _page_limits(),
+                        "states": listed_states(),
+                        "measures": listed_measurements(),
+                        "actions": listed_actions(),
+                    }
+                ),
             ],
             input=_HARNESS,
             capture_output=True,

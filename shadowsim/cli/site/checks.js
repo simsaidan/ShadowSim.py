@@ -151,10 +151,33 @@
     return Math.log2(Math.max(2, padded));
   }
 
-  function stateValues() {
-    if (page.selection.state === "angle") return numberList(page.angleText, page.stateLimits.angle);
-    if (page.selection.state === "amplitude") return numberList(page.amplitudeText, page.stateLimits.amplitude);
-    return null;
+  function selectedState() {
+    return blockById("state", page.selection.state);
+  }
+
+  function stateField() {
+    return selectedState()?.field ?? null;
+  }
+
+  function stateTextValue() {
+    const stored = page.stateText?.[page.selection.state];
+    return typeof stored === "string" ? stored : "";
+  }
+
+  function actionTextValue(id) {
+    const stored = page.actionText?.[id];
+    if (typeof stored === "string") return stored;
+    const field = blockById("then", id)?.field;
+    return typeof field?.default === "string" ? field.default : "";
+  }
+
+  function expressionTextValue() {
+    const stored = page.expressionText?.[page.selection.measure];
+    return typeof stored === "string" ? stored : "";
+  }
+
+  function measureRecord() {
+    return blockById("measure", page.selection.measure);
   }
 
   function positiveIntText(value) {
@@ -288,14 +311,17 @@
   }
 
   function stateImpliedQubits() {
-    if (page.selection.state === "basis") return page.basisBits ? page.basisBits.length : null;
-    if (page.selection.state === "gray") return page.grayBits ? page.grayBits.length : null;
-    if (page.selection.state === "angle") return numberList(page.angleText, page.stateLimits.angle)?.length ?? null;
-    if (page.selection.state === "amplitude") {
-      const values = numberList(page.amplitudeText, page.stateLimits.amplitude);
-      if (values && values.some((value) => value !== 0)) return amplitudeQubits(values.length);
+    const field = stateField();
+    if (!field) return null;
+    const text = stateTextValue();
+    if (field.kind === "bits") return text ? text.length : null;
+    const values = numberList(text, field.cap);
+    if (!values) return null;
+    if (field.match === "padded") {
+      if (field.nonzero && !values.some((value) => value !== 0)) return null;
+      return amplitudeQubits(values.length);
     }
-    return null;
+    return values.length;
   }
 
   function stateSizeProblem() {
@@ -308,21 +334,20 @@
 
   function stateSizeStatus(preview) {
     const expected = stateSizeProblem();
+    const field = stateField();
     const tail = preview ? " to preview the script." : ".";
-    if (page.selection.state === "basis") return `Enter a ${expected}-bit basis string${tail}`;
-    if (page.selection.state === "gray") return `Enter a ${expected}-bit Gray code string${tail}`;
-    if (page.selection.state === "angle") return `Enter ${expected} angles${tail}`;
-    return `Enter amplitudes for ${expected} qubits${tail}`;
+    if (expected == null || !field) return "";
+    return `${String(field.size).replaceAll("{n}", String(expected))}${tail}`;
   }
 
   function stateInputProblem() {
-    if (page.selection.state === "basis") return page.basisBits === "" ? "basis" : null;
-    if (page.selection.state === "gray") return page.grayBits === "" ? "gray" : null;
-    if (page.selection.state === "angle") return numberList(page.angleText, page.stateLimits.angle) ? null : "angle";
-    if (page.selection.state === "amplitude") {
-      const values = numberList(page.amplitudeText, page.stateLimits.amplitude);
-      if (!values || values.every((value) => value === 0)) return "amplitude";
-    }
+    const field = stateField();
+    if (!field) return null;
+    if (stateSizeProblem() != null) return "size";
+    const text = stateTextValue();
+    if (field.kind === "bits") return text === "" ? "empty" : null;
+    const values = numberList(text, field.cap);
+    if (!values || (field.nonzero && values.every((value) => value === 0))) return "empty";
     return null;
   }
 
@@ -368,8 +393,10 @@
 
   function missingPaths() {
     const missing = [];
-    if (hasThen("save") && page.savePath.trim() === "") missing.push("save");
-    if (hasThen("export") && page.exportPath.trim() === "") missing.push("export");
+    for (const block of page.blocks.then ?? []) {
+      if (!hasThen(block.id) || block.field?.kind !== "path") continue;
+      if (actionTextValue(block.id).trim() === "") missing.push(block.id);
+    }
     return missing;
   }
 
@@ -571,7 +598,7 @@
   }
 
   function countsProblem() {
-    if (page.selection.measure !== "counts") return null;
+    if (measureRecord()?.field?.kind !== "expression") return null;
     const sampled = page.placedSims.every(
       (entry) => !isReference(entry) && (!entry.backend || blockById("backend", entry.backend)?.shots),
     );
@@ -580,7 +607,7 @@
     if (count == null) return null;
     const sites = selectedSites(count);
     if (!sites.length) return null;
-    return expressionProblem(page.countsExpression, sites.length);
+    return expressionProblem(expressionTextValue(), sites.length);
   }
 
   function countsStatus(preview) {
@@ -647,17 +674,16 @@
   }
 
   function stateLine() {
-    if (page.selection.state === "basis" || page.selection.state === "gray") {
-      const bits = page.selection.state === "basis" ? page.basisBits : page.grayBits;
-      const name = page.selection.state === "basis" ? "ComputationalBasisEncoding" : "GrayEncoding";
-      return `state = ${name}(${bits.length}).encode([${[...bits].join(", ")}])`;
+    const field = stateField();
+    if (!field?.encode) return "";
+    if (field.kind === "bits") {
+      const bits = stateTextValue();
+      if (!bits) return "";
+      return `state = ${field.encode}(${bits.length}).encode([${[...bits].join(", ")}])`;
     }
-    const values = stateValues();
+    const values = numberList(stateTextValue(), field.cap);
     if (!values) return "";
-    const rendered = values.map(pyFloat).join(", ");
-    if (page.selection.state === "angle") return `state = AngleEncoding().encode([${rendered}])`;
-    if (page.selection.state === "amplitude") return `state = AmplitudeEncoding().encode([${rendered}])`;
-    return "";
+    return `state = ${field.encode}().encode([${values.map(pyFloat).join(", ")}])`;
   }
 
   function fillSetup(block, name, shots = "", fields = {}) {
@@ -812,9 +838,9 @@
   function measurementSetup() {
     const count = qubitCount();
     const sites = selectedSites(count);
-    if (page.selection.measure === "counts") {
+    if (measureRecord()?.field?.kind === "expression") {
       const qubits = sites.length === 1 ? `(${sites[0]},)` : `(${sites.join(", ")})`;
-      return `measurements = [Measurement(${qubits}, ${pyQuoted(String(page.countsExpression ?? "").trim())})]`;
+      return `measurements = [Measurement(${qubits}, ${pyQuoted(expressionTextValue().trim())})]`;
     }
     if (count == null || sites.length === count) {
       return `measurements = [Measurement.expectation(i) for i in range(${systemQubits()})]`;
@@ -823,7 +849,7 @@
   }
 
   function observableSetup() {
-    const letter = page.selection.measure.toUpperCase();
+    const letter = measureRecord()?.letter ?? "";
     const count = qubitCount();
     const sites = selectedSites(count);
     if (count == null || sites.length === count) {
@@ -890,7 +916,7 @@
       lindblads = "lindblads";
     }
     const sites = selectedSites(qubitCount());
-    const basis = page.selection.measure === "x" ? `,\n    basis=${xBasis(sites)}` : "";
+    const basis = measureRecord()?.rotate ? `,\n    basis=${xBasis(sites)}` : "";
     return block.setup
       .replaceAll("{name}", name)
       .replaceAll("{hamiltonians}", hamiltonians)
@@ -918,7 +944,7 @@
   }
 
   function metricsTarget() {
-    const directory = page.exportPath.trim();
+    const directory = actionTextValue("export").trim();
     return directory.endsWith(".json") ? `path=${pyString(directory)}` : `output_dir=${pyString(directory)}`;
   }
 
@@ -938,7 +964,7 @@
     if (hasThen("plot")) lines.push("benchmark.save_result_plot()");
     if (hasThen("save")) {
       names.forEach((name) => {
-        lines.push(`${name}.last_result.save(${pyString(`${page.savePath.trim()}/${name}`)})`);
+        lines.push(`${name}.last_result.save(${pyString(`${actionTextValue("save").trim()}/${name}`)})`);
       });
     }
     if (hasThen("export")) lines.push(exportCall());
@@ -948,7 +974,7 @@
   function singleThenLines() {
     const exporting = hasThen("export");
     const metrics = resourceMetricsCall();
-    const saveLine = `result.save(${pyString(page.savePath.trim())})`;
+    const saveLine = `result.save(${pyString(actionTextValue("save").trim())})`;
     if (!isReference(page.placedSims[0])) {
       const lines = ["sim.simulate()", "result = sim.measure(measurements)"];
       if (hasThen("save")) lines.push(saveLine);
@@ -962,7 +988,7 @@
       return lines;
     }
     if (hasThen("save")) {
-      if (!exporting) return [`sim.simulate().save(${pyString(page.savePath.trim())})`];
+      if (!exporting) return [`sim.simulate().save(${pyString(actionTextValue("save").trim())})`];
       return ["result = sim.simulate()", saveLine, metrics];
     }
     if (hasThen("plot")) {
@@ -974,13 +1000,7 @@
   }
 
   function encodingImport() {
-    const names = {
-      basis: "ComputationalBasisEncoding",
-      gray: "GrayEncoding",
-      angle: "AngleEncoding",
-      amplitude: "AmplitudeEncoding",
-    };
-    const name = names[page.selection.state];
+    const name = stateField()?.encode;
     return name ? `from shadowsim.encoding import ${name}` : "";
   }
 

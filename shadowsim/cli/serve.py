@@ -24,6 +24,7 @@ from typing import Any
 from urllib.parse import parse_qs, urlsplit
 
 from shadowsim.backends import listed_backends
+from shadowsim.cli.catalog import listed_actions, listed_measurements, listed_states
 from shadowsim.cli.run import _page_limits, check_page, run_page
 from shadowsim.models.catalog import listed_model_terms, listed_models
 from shadowsim.simulators.catalog import listed_simulators
@@ -32,6 +33,9 @@ _CATALOGS = {
     "/models": "models",
     "/simulators": "simulators",
     "/backends": "backends",
+    "/states": "states",
+    "/measurements": "measurements",
+    "/actions": "actions",
 }
 
 _SITE_DIR = Path(__file__).resolve().parent / "site"
@@ -765,12 +769,20 @@ def _is_loopback_host(host: str) -> bool:
 def _load_catalog(key: str) -> Any:
     """Return the current catalog for ``key``.
 
-    The lookup stays in this function so tests can replace the loader.
+    ``key`` is ``models``, ``simulators``, ``backends``, ``states``,
+    ``measurements``, or ``actions``. The lookup stays in this function so
+    tests can replace the loader.
     """
     if key == "models":
         return [*listed_models(), *listed_model_terms()]
     if key == "simulators":
         return listed_simulators()
+    if key == "states":
+        return listed_states()
+    if key == "measurements":
+        return listed_measurements()
+    if key == "actions":
+        return listed_actions()
     return listed_backends()
 
 

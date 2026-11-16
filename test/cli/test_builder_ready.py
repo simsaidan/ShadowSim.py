@@ -7,6 +7,7 @@ from typing import Any
 
 import pytest
 
+from shadowsim.cli.catalog import listed_actions, listed_measurements, listed_states
 from shadowsim.cli.run import _page_limits
 
 _SITE = Path(__file__).resolve().parents[2] / "shadowsim" / "cli" / "site"
@@ -81,7 +82,7 @@ function resetPage() {
   selection.then = null;
   settings.qubits = "";
   settings.total = "";
-  basisBits = "";
+  for (const key of Object.keys(stateText)) delete stateText[key];
   preexistingId = null;
   modelFactories = [];
   modelTerms.splice(0, modelTerms.length);
@@ -105,7 +106,7 @@ function fillIsing(qubits, total) {
   selection.simulator = "qutip";
   selection.measure = "z";
   selection.then = "plot";
-  basisBits = "00";
+  stateText.basis = "00";
   settings.qubits = qubits;
   settings.total = total;
   placedSims.push({ id: "qutip", key: 1, params: { timeSteps: "11" } });
@@ -114,6 +115,9 @@ function fillIsing(qubits, total) {
 
 const request = JSON.parse(process.argv[3]);
 if (!applyLimits(request.limits)) throw new Error("missing limits");
+BLOCKS.state = request.states;
+BLOCKS.measure = request.measures;
+BLOCKS.then = request.actions;
 if (request.complete) fillIsing(request.qubits, request.total);
 else resetPage();
 if (request.accept) applyCheck();
@@ -137,7 +141,16 @@ vm.runInContext(`${fs.readFileSync(process.argv[2], "utf8")}\n${probe}`, sandbox
 
 def _page(*, complete: bool, qubits: str = "", total: str = "", accept: bool = False) -> dict[str, Any]:
     """Return the status and Run button state for one builder selection."""
-    scenario = {"complete": complete, "qubits": qubits, "total": total, "accept": accept, "limits": _page_limits()}
+    scenario = {
+        "complete": complete,
+        "qubits": qubits,
+        "total": total,
+        "accept": accept,
+        "limits": _page_limits(),
+        "states": listed_states(),
+        "measures": listed_measurements(),
+        "actions": listed_actions(),
+    }
     try:
         completed = subprocess.run(
             ["node", "-e", _HARNESS, str(CHECKS), str(BUILDER), json.dumps(scenario)],

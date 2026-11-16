@@ -7,6 +7,7 @@ from typing import Any
 
 import pytest
 
+from shadowsim.cli.catalog import listed_states
 from shadowsim.cli.run import _page_limits
 
 _SITE = Path(__file__).resolve().parents[2] / "shadowsim" / "cli" / "site"
@@ -122,10 +123,11 @@ function plain(card) {
 }
 
 if (!applyLimits(JSON.parse(process.argv[3]))) throw new Error("missing limits");
-basisBits = "10";
+BLOCKS.state = JSON.parse(process.argv[4]);
+stateText.basis = "10";
 stateOpen = true;
 const holder = document.createElement("div");
-holder.append(basisChip());
+holder.append(stateFieldChip(BLOCKS.state.find((block) => block.id === "basis")));
 const open = describe(holder.children[0]);
 let redraws = 0;
 draw = () => { redraws += 1; };
@@ -143,26 +145,7 @@ const cleared = selection.state === null && stateOpen === false;
 stateOpen = true;
 const siblings = ["gray", "angle", "amplitude"].map((id) => {
   selection.state = id;
-  let card = grayChip();
-  if (id === "angle") {
-    card = numberChip("angle", "Angle", "Radians", "Angles", "Enter angles", () => angleText, (value) => {
-      angleText = value;
-    });
-  }
-  if (id === "amplitude") {
-    card = numberChip(
-      "amplitude",
-      "Amplitude",
-      "Amplitudes",
-      "Amplitudes",
-      "Enter amplitudes",
-      () => amplitudeText,
-      (value) => {
-        amplitudeText = value;
-      },
-    );
-  }
-  return describe(card).done;
+  return describe(stateFieldChip(BLOCKS.state.find((block) => block.id === id))).done;
 });
 
 process.stdout.write(JSON.stringify({
@@ -188,7 +171,15 @@ def _card() -> dict[str, Any]:
     """Return the open, closed, and reopened basis-state card."""
     try:
         completed = subprocess.run(
-            ["node", "-e", _HARNESS, str(CHECKS), str(BUILDER), json.dumps(_page_limits())],
+            [
+                "node",
+                "-e",
+                _HARNESS,
+                str(CHECKS),
+                str(BUILDER),
+                json.dumps(_page_limits()),
+                json.dumps(listed_states()),
+            ],
             capture_output=True,
             text=True,
             encoding="utf-8",

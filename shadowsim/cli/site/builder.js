@@ -39,35 +39,12 @@ const LANES = [
 ];
 
 const BLOCKS = {
-  state: [
-    { id: "basis", title: "Basis state", detail: "Bit string of 0 and 1", phrase: "Basis state" },
-    { id: "gray", title: "Gray code", detail: "Gray-coded bit string", phrase: "Gray code" },
-    { id: "angle", title: "Angle", detail: "Rotation angles per qubit", phrase: "Angle" },
-    { id: "amplitude", title: "Amplitude", detail: "Custom amplitudes, auto-padded", phrase: "Amplitude" },
-  ],
+  state: [],
   model: [],
   simulator: [],
   backend: [],
-  measure: [
-    { id: "z", title: "Z expectation", detail: "On each qubit", phrase: "Z expectation on each qubit" },
-    { id: "x", title: "X expectation", detail: "On each qubit", phrase: "X expectation on each qubit" },
-    { id: "counts", title: "Counts", detail: "Expression on all qubits", phrase: "Counts on all qubits" },
-  ],
-  then: [
-    { id: "plot", title: "Plot results", detail: "Curves for each observable", phrase: "plot results" },
-    {
-      id: "save",
-      title: "Save results",
-      detail: "Write arrays and metadata to disk",
-      phrase: "save results",
-    },
-    {
-      id: "export",
-      title: "Export metrics",
-      detail: "Runtime and shot budget as JSON",
-      phrase: "export metrics",
-    },
-  ],
+  measure: [],
+  then: [],
 };
 
 let limits = null;
@@ -89,24 +66,17 @@ let preexistingOpen = false;
 let factoryText = {};
 
 const settings = { qubits: "", total: "" };
-let basisBits = "";
-let grayBits = "";
-let angleText = "";
-let amplitudeText = "";
+const stateText = {};
 let qubitsSource = null;
 const placedSims = [];
 let simKey = 0;
 const placedThens = [];
-const DEFAULT_SAVE_PATH = "results/run1";
-let savePath = DEFAULT_SAVE_PATH;
-let saveOpen = false;
-const DEFAULT_EXPORT_PATH = "results";
-let exportPath = DEFAULT_EXPORT_PATH;
-let exportOpen = false;
+const actionText = {};
+const pathOpen = {};
 let stateOpen = false;
 let measureOpen = false;
 let measureSites = null;
-let countsExpression = "";
+const expressionText = {};
 const DEFAULT_SHOTS = "256";
 
 let dragging = null;
@@ -158,16 +128,12 @@ function currentPage() {
     modelFactories,
     preexistingId,
     factoryText,
-    basisBits,
-    grayBits,
-    angleText,
-    amplitudeText,
+    stateText,
     placedSims,
     placedThens,
-    savePath,
-    exportPath,
+    actionText,
     measureSites,
-    countsExpression,
+    expressionText,
     qubitsSource,
     stateLimits: limits.states,
     maxOperatorQubits: limits.operatorQubits,
@@ -635,26 +601,42 @@ function grayPrepared(bits) {
   return (index ^ (index >>> 1)).toString(2).padStart(bits.length, "0");
 }
 
+function stateField(id) {
+  return blockById("state", id)?.field ?? null;
+}
+
+function stateTextOf(id) {
+  return stateText[id] ?? "";
+}
+
+function blankDetail(field) {
+  return String(field.blank ?? "").replaceAll("{cap}", String(field.cap ?? ""));
+}
+
 function stateDetail(id) {
-  if (id === "basis") return basisBits ? `Start in |${basisBits}>` : `0s and 1s, up to ${limits.states.basis}`;
-  if (id === "gray") return grayBits ? `Start in |${grayPrepared(grayBits)}>` : `0s and 1s, up to ${limits.states.gray}`;
-  if (id === "angle") {
-    const values = numberList(angleText, limits.states.angle);
-    if (!values) return "Radians, one per qubit";
-    return values.length === 1 ? "1 angle" : `${values.length} angles`;
+  const field = stateField(id);
+  if (!field) return "";
+  const text = stateTextOf(id);
+  if (field.kind === "bits") {
+    if (!text) return blankDetail(field);
+    const shown = field.display === "gray" ? grayPrepared(text) : text;
+    return `Start in |${shown}>`;
   }
-  const values = numberList(amplitudeText, limits.states.amplitude);
-  if (!values || values.every((value) => value === 0)) return `Up to ${limits.states.amplitude} numbers`;
-  const qubits = amplitudeQubits(values.length);
-  return qubits === 1 ? "1 qubit" : `${qubits} qubits`;
+  const values = numberList(text, field.cap);
+  if (!values || (field.nonzero && values.every((value) => value === 0))) return blankDetail(field);
+  const count = field.match === "padded" ? amplitudeQubits(values.length) : values.length;
+  const unit = field.unit || "value";
+  return count === 1 ? `1 ${unit}` : `${count} ${unit}s`;
 }
 
 function stateReady(id) {
-  if (id === "basis") return basisBits !== "";
-  if (id === "gray") return grayBits !== "";
-  if (id === "angle") return numberList(angleText, limits.states.angle) != null;
-  const values = numberList(amplitudeText, limits.states.amplitude);
-  return Boolean(values && values.some((value) => value !== 0));
+  const field = stateField(id);
+  if (!field) return false;
+  const text = stateTextOf(id);
+  if (field.kind === "bits") return text !== "";
+  const values = numberList(text, field.cap);
+  if (!values) return false;
+  return !field.nonzero || values.some((value) => value !== 0);
 }
 
 function writeQubitField() {
@@ -693,15 +675,11 @@ function syncModelQubits() {
 }
 
 function stateAlertLabel(id) {
+  const field = stateField(id);
+  if (!field) return "";
   const expected = stateSizeProblem();
-  if (expected != null) {
-    if (id === "basis" || id === "gray") return `Must be ${expected} bits.`;
-    if (id === "angle") return `Must be ${expected} angles.`;
-    return `Must prepare ${expected} qubits.`;
-  }
-  if (id === "angle") return "Enter one angle per qubit";
-  if (id === "amplitude") return "Enter a non-zero amplitude list";
-  return "Enter a bit string";
+  if (expected != null) return String(field.mismatch ?? "").replaceAll("{n}", String(expected));
+  return field.empty ?? "";
 }
 
 function refreshStateChip(id) {
@@ -725,7 +703,7 @@ function stateChip(options) {
   const input = el("input", {
     type: "text",
     inputmode: options.bits ? "numeric" : "decimal",
-    ...(options.bits ? { maxlength: String(limits.states[options.id]) } : {}),
+    ...(options.bits ? { maxlength: String(options.cap) } : {}),
     "aria-label": options.aria,
     value: options.value,
     spellcheck: "false",
@@ -734,7 +712,7 @@ function stateChip(options) {
   });
   return el(
     "div",
-    { className: `chip tone-gold ${options.id}${open ? " is-editing" : ""}` },
+    { className: `chip tone-gold state ${options.id}${open ? " is-editing" : ""}` },
     el(
       "div",
       { className: "basis-head" },
@@ -798,55 +776,23 @@ function stateChip(options) {
   );
 }
 
-function basisChip() {
+function stateFieldChip(block) {
+  const field = block.field ?? {};
+  const bits = field.kind === "bits";
   return stateChip({
-    id: "basis",
-    title: "Basis state",
-    field: "Bits",
-    aria: "Basis bits",
-    alertLabel: "Enter a bit string",
-    bits: true,
-    value: basisBits,
+    id: block.id,
+    title: block.title,
+    field: field.label,
+    aria: field.aria,
+    bits,
+    cap: field.cap,
+    value: stateTextOf(block.id),
     oninput: (event) => {
-      const next = event.target.value.replace(/[^01]/g, "").slice(0, limits.states.basis);
+      const raw = event.target.value;
+      const next = bits ? raw.replace(/[^01]/g, "").slice(0, field.cap) : raw.replace(/[^\d.,\s-]/g, "");
       if (event.target.value !== next) event.target.value = next;
-      basisBits = next;
-      refreshStateChip("basis");
-    },
-  });
-}
-
-function grayChip() {
-  return stateChip({
-    id: "gray",
-    title: "Gray code",
-    field: "Bits",
-    aria: "Gray bits",
-    alertLabel: "Enter a bit string",
-    bits: true,
-    value: grayBits,
-    oninput: (event) => {
-      const next = event.target.value.replace(/[^01]/g, "").slice(0, limits.states.gray);
-      if (event.target.value !== next) event.target.value = next;
-      grayBits = next;
-      refreshStateChip("gray");
-    },
-  });
-}
-
-function numberChip(id, title, field, aria, alertLabel, read, write) {
-  return stateChip({
-    id,
-    title,
-    field,
-    aria,
-    alertLabel,
-    value: read(),
-    oninput: (event) => {
-      const next = event.target.value.replace(/[^\d.,\s-]/g, "");
-      if (event.target.value !== next) event.target.value = next;
-      write(next);
-      refreshStateChip(id);
+      stateText[block.id] = next;
+      refreshStateChip(block.id);
     },
   });
 }
@@ -961,25 +907,30 @@ function simulatorChip(entry) {
   );
 }
 
-function pathChip(block, options) {
-  const shown = options.path.trim();
-  const refresh = (event) => {
-    const next = options.kind === "save" ? saveChip(block) : exportChip(block);
-    replaceChip(event.currentTarget, next);
-  };
+function pathValue(id) {
+  if (Object.hasOwn(actionText, id)) return actionText[id];
+  return blockById("then", id)?.field?.default ?? "";
+}
+
+function pathChip(block) {
+  const field = block.field ?? {};
+  const open = Boolean(pathOpen[block.id]);
+  const path = pathValue(block.id);
+  const shown = path.trim();
+  const refresh = (event) => replaceChip(event.currentTarget, pathChip(block));
   return el(
     "div",
-    { className: `chip tone-rose ${options.kind}${options.open ? " is-editing" : ""}` },
+    { className: `chip tone-rose path ${block.id}${open ? " is-editing" : ""}` },
     el(
       "div",
-      { className: `${options.kind}-head` },
+      { className: "path-head" },
       el(
         "button",
         {
           type: "button",
           onclick: (event) => {
-            if (options.open) return;
-            options.setOpen(true);
+            if (open) return;
+            pathOpen[block.id] = true;
             refresh(event);
           },
         },
@@ -988,15 +939,15 @@ function pathChip(block, options) {
       ),
       el(
         "div",
-        { className: `${options.kind}-actions` },
-        options.open
+        { className: "path-actions" },
+        open
           ? el(
               "button",
               {
                 className: "done",
                 type: "button",
                 onclick: (event) => {
-                  options.setOpen(false);
+                  pathOpen[block.id] = false;
                   refresh(event);
                 },
               },
@@ -1011,25 +962,25 @@ function pathChip(block, options) {
             "aria-label": `Remove ${block.title}`,
             onclick: (event) => {
               event.stopPropagation();
-              options.onRemove();
+              removeThen(block.id);
             },
           },
           "×",
         ),
       ),
     ),
-    options.open
+    open
       ? el(
           "label",
-          { className: `${options.kind}-field` },
-          "Path",
+          { className: "path-field" },
+          field.label || "Path",
           el("input", {
             type: "text",
-            "aria-label": options.aria,
-            value: options.path,
+            "aria-label": field.aria || "Path",
+            value: path,
             spellcheck: "false",
             oninput: (event) => {
-              options.setPath(event.target.value);
+              actionText[block.id] = event.target.value;
               const detail = event.target.closest(".chip")?.querySelector("span");
               if (detail) detail.textContent = event.target.value.trim() || block.detail;
               refreshSummaryAndPreview();
@@ -1038,38 +989,6 @@ function pathChip(block, options) {
         )
       : null,
   );
-}
-
-function saveChip(block) {
-  return pathChip(block, {
-    kind: "save",
-    open: saveOpen,
-    path: savePath,
-    aria: "Save path",
-    setOpen: (open) => {
-      saveOpen = open;
-    },
-    setPath: (value) => {
-      savePath = value;
-    },
-    onRemove: () => removeThen("save"),
-  });
-}
-
-function exportChip(block) {
-  return pathChip(block, {
-    kind: "export",
-    open: exportOpen,
-    path: exportPath,
-    aria: "Export path",
-    setOpen: (open) => {
-      exportOpen = open;
-    },
-    setPath: (value) => {
-      exportPath = value;
-    },
-    onRemove: () => removeThen("export"),
-  });
 }
 
 function backendFieldNumber(field, text) {
@@ -1510,31 +1429,7 @@ function slotChips(lane) {
   const chosen = blockById(lane.id, selection[lane.id]);
   if (chosen && !chosen.adds && lane.id !== "then") {
     if (chosen.id === "preexisting") chips.push(preexistingChip());
-    else if (chosen.id === "basis") chips.push(basisChip());
-    else if (chosen.id === "gray") chips.push(grayChip());
-    else if (chosen.id === "angle") {
-      chips.push(
-        numberChip("angle", "Angle", "Radians", "Angles", "Enter angles", () => angleText, (value) => {
-          angleText = value;
-        }),
-      );
-    } else if (chosen.id === "amplitude") {
-      chips.push(
-        numberChip(
-          "amplitude",
-          "Amplitude",
-          "Amplitudes",
-          "Amplitudes",
-          "Enter amplitudes",
-          () => amplitudeText,
-          (value) => {
-            amplitudeText = value;
-          },
-        ),
-      );
-    }
-    else if (chosen.id === "save") chips.push(saveChip(chosen));
-    else if (chosen.id === "export") chips.push(exportChip(chosen));
+    else if (lane.id === "state") chips.push(stateFieldChip(chosen));
     else if (lane.id === "measure") chips.push(measureChip(chosen));
     else if (lane.id !== "simulator") {
       chips.push(blockCard(lane, chosen, { inSlot: true, onRemove: () => clearLane(lane.id) }));
@@ -1544,8 +1439,7 @@ function slotChips(lane) {
     for (const id of placedThens) {
       const block = blockById("then", id);
       if (!block) continue;
-      if (id === "save") chips.push(saveChip(block));
-      else if (id === "export") chips.push(exportChip(block));
+      if (block.field?.kind === "path") chips.push(pathChip(block));
       else chips.push(blockCard(lane, block, { inSlot: true, onRemove: () => removeThen(id) }));
     }
     return chips;
@@ -1992,15 +1886,18 @@ function refreshSummaryAndPreview() {
   clearStaleResults();
 }
 
+function stateEntryMessage(preview) {
+  const field = stateField(selection.state);
+  const ending = preview ? " and total time to preview the script." : " and total time.";
+  return `${field?.empty || "Enter an initial state"}${ending}`;
+}
+
 function statusMessage() {
   if (statusHold) return statusHold;
   if (!isComplete()) return operatorStatus(false) ?? socketStatus(false) ?? "Place a block in each slot.";
   if (factoryAlert()) return `${factoryAlert()}.`;
   if (stateInputProblem() === "size") return stateSizeStatus(false);
-  if (stateInputProblem() === "basis") return "Enter a basis bit string and total time.";
-  if (stateInputProblem() === "gray") return "Enter a Gray code bit string and total time.";
-  if (stateInputProblem() === "angle") return "Enter one angle per qubit and total time.";
-  if (stateInputProblem() === "amplitude") return "Enter a non-zero amplitude list and total time.";
+  if (stateInputProblem() === "empty") return stateEntryMessage(false);
   const numbers = numberProblem(false);
   if (numbers) return numbers;
   if (simParamProblem(false)) return simParamProblem(false);
@@ -2124,12 +2021,7 @@ function codeBody() {
     const numbers = numberProblem(true);
     if (factoryAlert()) message = `${factoryAlert()} to preview the script.`;
     else if (stateInputProblem() === "size") message = stateSizeStatus(true);
-    else if (stateInputProblem() === "basis") message = "Enter a basis bit string and total time to preview the script.";
-    else if (stateInputProblem() === "gray") message = "Enter a Gray code bit string and total time to preview the script.";
-    else if (stateInputProblem() === "angle") message = "Enter one angle per qubit and total time to preview the script.";
-    else if (stateInputProblem() === "amplitude") {
-      message = "Enter a non-zero amplitude list and total time to preview the script.";
-    }
+    else if (stateInputProblem() === "empty") message = stateEntryMessage(true);
     else if (numbers) message = numbers;
     else if (simParamProblem(true)) message = simParamProblem(true);
     else if (!simParamsReady()) message = "Enter simulator parameters to preview the script.";
@@ -2254,7 +2146,7 @@ function errorAxisTitle(payload) {
 function yAxisTitle(curves) {
   const letters = new Set();
   for (const curve of curves) {
-    const match = String(curve.label).match(/⟨([ZX])⟩/);
+    const match = String(curve.label).match(/⟨([A-Z])⟩/);
     if (match) letters.add(match[1]);
   }
   if (letters.size === 1) return `⟨${[...letters][0]}⟩`;
@@ -2697,17 +2589,27 @@ async function cancelRun() {
 }
 
 function stateValue() {
-  if (selection.state === "basis") return basisBits;
-  if (selection.state === "gray") return grayBits;
-  if (selection.state === "angle") return numberList(angleText, limits.states.angle);
-  if (selection.state === "amplitude") return numberList(amplitudeText, limits.states.amplitude);
-  return null;
+  const field = stateField(selection.state);
+  const text = stateTextOf(selection.state);
+  if (!field) return null;
+  if (field.kind === "bits") return text;
+  return numberList(text, field.cap);
 }
 
 function postedMeasure() {
   const measure = { id: selection.measure, sites: explicitSites() };
-  if (selection.measure === "counts") measure.expression = countsExpression.trim();
+  const field = blockById("measure", selection.measure)?.field;
+  if (field?.kind === "expression") measure.expression = (expressionText[selection.measure] ?? "").trim();
   return measure;
+}
+
+function postedActions() {
+  const actions = { ids: [...placedThens] };
+  for (const block of BLOCKS.then) {
+    if (block.field?.kind !== "path") continue;
+    actions[block.field.key] = pathValue(block.id).trim();
+  }
+  return actions;
 }
 
 function modelArguments() {
@@ -2734,11 +2636,7 @@ function runRequest() {
     model: postedModel(),
     simulators: placedSims.map(entryBody),
     measure: postedMeasure(),
-    actions: {
-      ids: [...placedThens],
-      save_path: savePath.trim(),
-      export_path: exportPath.trim(),
-    },
+    actions: postedActions(),
   };
 }
 
@@ -2947,11 +2845,11 @@ function countsField() {
     el("input", {
       type: "text",
       "aria-label": "Counts expression",
-      value: countsExpression,
+      value: expressionText[selection.measure] ?? "",
       placeholder: countsPlaceholder(),
       spellcheck: "false",
       oninput: (event) => {
-        countsExpression = event.target.value;
+        expressionText[selection.measure] = event.target.value;
         refreshSummaryAndPreview();
       },
     }),
@@ -2978,7 +2876,7 @@ function syncMeasureChip() {
   const next = measureFields();
   if (fields) fields.replaceWith(next);
   else chip.append(next);
-  if (selection.measure !== "counts") return;
+  if (blockById("measure", selection.measure)?.field?.kind !== "expression") return;
   const hint = chip.querySelector(".counts-hint");
   if (hint) hint.textContent = countsHint();
   else chip.append(countsField());
@@ -3039,16 +2937,17 @@ function measureChip(block) {
       ),
     ),
     open ? measureFields() : null,
-    open && block.id === "counts" ? countsField() : null,
+    open && block.field?.kind === "expression" ? countsField() : null,
   );
 }
 
 function pathMessage(preview) {
   const missing = missingPaths();
   const tail = preview ? " to preview the script." : ".";
-  if (missing.length === 2) return `Enter a save path and an export path${tail}`;
-  if (missing[0] === "export") return `Enter an export path${tail}`;
-  return `Enter a save path${tail}`;
+  const names = missing.map((id) => String(blockById("then", id)?.field?.aria || "path").toLowerCase());
+  const article = (name) => (/^[aeiou]/i.test(name) ? "an" : "a");
+  if (!names.length) return `Enter a path${tail}`;
+  return `Enter ${names.map((name) => `${article(name)} ${name}`).join(" and ")}${tail}`;
 }
 
 function thenSummary() {
@@ -3138,8 +3037,7 @@ function place(laneId, blockId) {
   } else if (laneId === "then") {
     if (!placedThens.includes(blockId)) placedThens.push(blockId);
     selection.then = placedThens[0] ?? null;
-    if (blockId === "save") saveOpen = true;
-    if (blockId === "export") exportOpen = true;
+    if (block?.field?.kind === "path") pathOpen[blockId] = true;
   } else selection[laneId] = blockId;
   syncModelQubits();
   syncStateQubits();
@@ -3302,24 +3200,22 @@ function resetBoard() {
   selection.then = null;
   settings.qubits = "";
   settings.total = "";
-  basisBits = "";
-  grayBits = "";
-  angleText = "";
-  amplitudeText = "";
+  for (const key of Object.keys(stateText)) delete stateText[key];
   qubitsSource = null;
   preexistingId = null;
   factoryText = {};
   modelTerms.splice(0, modelTerms.length);
   placedSims.splice(0, placedSims.length);
   placedThens.splice(0, placedThens.length);
-  savePath = DEFAULT_SAVE_PATH;
-  exportPath = DEFAULT_EXPORT_PATH;
+  for (const key of Object.keys(actionText)) delete actionText[key];
+  for (const key of Object.keys(pathOpen)) delete pathOpen[key];
+  for (const block of BLOCKS.then) {
+    if (block.field?.kind === "path") actionText[block.id] = block.field.default ?? "";
+  }
   measureSites = null;
-  countsExpression = "";
+  for (const key of Object.keys(expressionText)) delete expressionText[key];
   stateOpen = false;
   measureOpen = false;
-  saveOpen = false;
-  exportOpen = false;
   preexistingOpen = false;
 }
 
@@ -3327,10 +3223,10 @@ function applyState(state) {
   if (!plainObject(state)) return;
   const id = knownBlock("state", state.id) ? state.id : null;
   selection.state = id;
-  if (id === "basis" && typeof state.value === "string") basisBits = state.value;
-  else if (id === "gray" && typeof state.value === "string") grayBits = state.value;
-  else if (id === "angle") angleText = numberListText(state.value);
-  else if (id === "amplitude") amplitudeText = numberListText(state.value);
+  if (!id) return;
+  const field = stateField(id);
+  if (field?.kind === "bits" && typeof state.value === "string") stateText[id] = state.value;
+  else if (field?.kind === "numbers") stateText[id] = numberListText(state.value);
 }
 
 function applyModel(model) {
@@ -3413,7 +3309,10 @@ function applyMeasure(measure) {
   if (!plainObject(measure)) return;
   selection.measure = knownBlock("measure", measure.id) ? measure.id : null;
   measureSites = Array.isArray(measure.sites) ? measure.sites.filter((site) => Number.isInteger(site)) : null;
-  if (selection.measure === "counts" && typeof measure.expression === "string") countsExpression = measure.expression;
+  const field = blockById("measure", selection.measure)?.field;
+  if (field?.kind === "expression" && typeof measure.expression === "string") {
+    expressionText[selection.measure] = measure.expression;
+  }
 }
 
 function applyActions(actions) {
@@ -3424,8 +3323,10 @@ function applyActions(actions) {
   }
   placedThens.splice(0, placedThens.length, ...next);
   selection.then = next[0] ?? null;
-  if (typeof actions.save_path === "string") savePath = actions.save_path;
-  if (typeof actions.export_path === "string") exportPath = actions.export_path;
+  for (const block of BLOCKS.then) {
+    const field = block.field;
+    if (field?.kind === "path" && typeof actions[field.key] === "string") actionText[block.id] = actions[field.key];
+  }
 }
 
 function applyDocument(saved) {
@@ -3637,6 +3538,13 @@ async function loadLane(path, lane, key) {
       ];
       if (preexistingId && !modelFactories.some((item) => item.id === preexistingId)) preexistingId = null;
     } else BLOCKS[lane] = items;
+    if (lane === "then") {
+      for (const item of items) {
+        if (item.field?.kind === "path" && !Object.hasOwn(actionText, item.id)) {
+          actionText[item.id] = item.field.default ?? "";
+        }
+      }
+    }
     laneNotes[lane] = "";
     if (selection[lane] != null && !blockById(lane, selection[lane])) selection[lane] = null;
   } catch {
@@ -3652,9 +3560,12 @@ if (builder) {
     loadLane("/models", "model", "models"),
     loadLane("/simulators", "simulator", "simulators"),
     loadLane("/backends", "backend", "backends"),
+    loadLane("/states", "state", "states"),
+    loadLane("/measurements", "measure", "measurements"),
+    loadLane("/actions", "then", "actions"),
     loadLimits(),
   ]).then(async (results) => {
-    if (!results[3]) {
+    if (!results[6]) {
       builder.append(el("p", { className: "placeholder" }, "Could not load limits."));
       return;
     }

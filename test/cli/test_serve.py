@@ -17,9 +17,8 @@ from typing import Any
 
 import pytest
 
+from shadowsim.cli.catalog import listed_states
 from shadowsim.cli.run import (
-    _MAX_AMPLITUDES,
-    _MAX_FACTORY_QUBITS,
     _MAX_NUM_STEPS,
     _MAX_OPERATOR_QUBITS,
     _MAX_SHOTS,
@@ -634,12 +633,7 @@ def test_limits_match_the_validator_caps() -> None:
         status, _headers, body = _open(server.server_address[1], "/limits")
         assert status == 200
         assert json.loads(body) == {
-            "states": {
-                "basis": _MAX_FACTORY_QUBITS,
-                "gray": _MAX_FACTORY_QUBITS,
-                "angle": _MAX_FACTORY_QUBITS,
-                "amplitude": _MAX_AMPLITUDES,
-            },
+            "states": {item["id"]: item["field"]["cap"] for item in listed_states()},
             "operatorQubits": _MAX_OPERATOR_QUBITS,
             "timeSteps": _MAX_TIME_STEPS,
             "numSteps": _MAX_NUM_STEPS,
@@ -835,7 +829,17 @@ def test_the_page_exchanges_a_query_token_for_a_cookie() -> None:
         assert status == 200
         assert b"ShadowSim.py Simulation Builder" in body
         unauthorized = b"Open the URL printed when the server started.\n"
-        for path in ("/limits", "/models", "/simulators", "/backends", "/styles.css", "/builder.js"):
+        for path in (
+            "/limits",
+            "/models",
+            "/simulators",
+            "/backends",
+            "/states",
+            "/measurements",
+            "/actions",
+            "/styles.css",
+            "/builder.js",
+        ):
             status, headers, body = _open(port, path)
             assert status == 401
             assert body == unauthorized
