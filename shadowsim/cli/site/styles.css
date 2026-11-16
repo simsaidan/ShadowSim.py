@@ -682,7 +682,14 @@ body {
   gap: 12px;
 }
 
-.copy {
+.panel-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.copy,
+.copy-board {
   appearance: none;
   border: 1px solid var(--line);
   background: #fff;
@@ -699,7 +706,8 @@ body {
   cursor: default;
 }
 
-.copy:focus-visible {
+.copy:focus-visible,
+.copy-board:focus-visible {
   outline: 2px solid var(--blue-ink);
   outline-offset: 2px;
 }

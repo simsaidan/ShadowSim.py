@@ -117,6 +117,8 @@ let running = false;
 const BOARD_KEY = "shadowsim.builder.board";
 let boardReady = false;
 let copyTimer = 0;
+let copiedButton = null;
+let copiedLabel = "Copy";
 let statusHold = null;
 let runStartedAt = 0;
 let runTimer = null;
@@ -2072,8 +2074,9 @@ function showCheckStatus() {
   const status = document.querySelector(".status");
   if (status) status.replaceWith(statusComponent());
   const panel = document.querySelector('.panel[aria-label="Code preview"]');
-  const body = panel?.querySelector("pre, .placeholder");
+  const body = panel?.querySelector("pre.script, p.placeholder");
   if (body) body.replaceWith(codeBody());
+  syncBoardJson(panel);
   syncCopyButton();
   syncRunButton();
 }
@@ -2091,8 +2094,9 @@ function refreshSummaryAndPreview() {
     if (status) status.replaceWith(statusComponent());
   }
   const panel = document.querySelector('.panel[aria-label="Code preview"]');
-  const body = panel?.querySelector("pre, .placeholder");
+  const body = panel?.querySelector("pre.script, p.placeholder");
   if (body) body.replaceWith(codeBody());
+  syncBoardJson(panel);
   syncCopyButton();
   syncRunButton();
   rememberBoard();
@@ -2146,13 +2150,19 @@ function syncCopyButton() {
   copy.textContent = "Copy";
 }
 
-function showCopied(button) {
+function showCopied(button, label = "Copy") {
+  if (copiedButton && copiedButton !== button && copiedButton.isConnected !== false) {
+    copiedButton.textContent = copiedLabel;
+  }
+  copiedButton = button;
+  copiedLabel = label;
   button.textContent = "Copied";
   if (copyTimer) clearTimeout(copyTimer);
   copyTimer = setTimeout(() => {
     copyTimer = 0;
     if (button.isConnected === false) return;
-    button.textContent = "Copy";
+    button.textContent = label;
+    if (copiedButton === button) copiedButton = null;
   }, 1500);
 }
 
@@ -2180,9 +2190,46 @@ function copyButton() {
   );
 }
 
+function boardFileText() {
+  if (accepted()) return acceptedBody;
+  const file = runRequest();
+  delete file.server;
+  return JSON.stringify(file);
+}
+
+function copyBoard(event) {
+  const pending = navigator.clipboard?.writeText?.(boardFileText());
+  if (!pending || typeof pending.then !== "function") return;
+  const button = event?.currentTarget;
+  pending.then(() => {
+    if (button) showCopied(button, "Copy board");
+  }, () => {});
+}
+
+function copyBoardButton() {
+  return el(
+    "button",
+    {
+      className: "copy-board",
+      type: "button",
+      "aria-label": "Copy board",
+      onclick: (event) => copyBoard(event),
+    },
+    "Copy board",
+  );
+}
+
+function syncBoardJson(panel) {
+  const node = panel?.querySelector("pre.board-json");
+  if (!node) return;
+  const text = boardFileText();
+  node.textContent = text;
+  node.replaceChildren(document.createTextNode(text));
+}
+
 function codeBody() {
   const code = previewText();
-  if (code) return el("pre", {}, code);
+  if (code) return el("pre", { className: "script" }, code);
   let message = operatorStatus(true) ?? socketStatus(true) ?? "Place a block in each slot to preview the script.";
   if (isComplete()) {
     const numbers = numberProblem(true);
@@ -2885,8 +2932,14 @@ function panelsComponent() {
     el(
       "section",
       { className: "panel", "aria-label": "Code preview" },
-      el("div", { className: "panel-head" }, el("h2", {}, "Code preview"), copyButton()),
+      el(
+        "div",
+        { className: "panel-head" },
+        el("h2", {}, "Code preview"),
+        el("div", { className: "panel-actions" }, copyButton(), copyBoardButton()),
+      ),
       codeBody(),
+      el("pre", { className: "board-json" }, boardFileText()),
     ),
     el(
       "section",

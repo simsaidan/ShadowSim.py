@@ -438,7 +438,7 @@ function fillCircuit() {
   });
 }
 
-const request = JSON.parse(process.argv[3]);
+const request = JSON.parse(process.argv[4]);
 if (!applyLimits(request.limits)) throw new Error("missing limits");
 const surface = { replaceChildren() {} };
 let result;
@@ -640,6 +640,42 @@ if (request.action === "roundtrip") {
     fullDisabled: Object.hasOwn(full.attrs, "disabled"),
     write: writes[0] ?? null,
     preview: previewText(),
+  };
+} else if (request.action === "boardcopy") {
+  resetPage();
+  const board = document.createElement("section");
+  board.className = "board";
+  document.documentElement.append(board);
+  draw(board);
+  const panel = () => document.querySelector('.panel[aria-label="Code preview"]');
+  const scriptButton = () => walk(panel(), []).find((node) => node.className === "copy");
+  const boardButton = () => walk(panel(), []).find((node) => node.className === "copy-board");
+  const shown = () => {
+    const node = walk(panel(), []).find((item) => item.className === "board-json");
+    return node.textContent ?? nodeText(node);
+  };
+  click(scriptButton());
+  const emptyScriptWrites = writes.length;
+  click(boardButton());
+  const emptyWrite = writes[0] ?? null;
+  const emptyShown = shown();
+  const emptyDisabled = Object.hasOwn(scriptButton().attrs, "disabled");
+  const emptyLabel = boardButton().attrs["aria-label"];
+  fillIsing();
+  applyCheck(2);
+  const before = writes.length;
+  click(boardButton());
+  const acceptedWrite = writes[before] ?? null;
+  result = {
+    emptyDisabled,
+    emptyScriptWrites,
+    emptyWrite,
+    emptyShown,
+    emptyLabel,
+    acceptedScriptDisabled: Object.hasOwn(scriptButton().attrs, "disabled"),
+    acceptedWrite,
+    acceptedShown: shown(),
+    acceptedBody,
   };
 } else if (request.action === "inplace") {
   fillCircuit();
@@ -940,23 +976,27 @@ Promise.resolve(result).then((value) => {
 });
 `;
 
-vm.runInContext(fs.readFileSync(process.argv[1], "utf8"), sandbox);
-vm.runInContext(`${fs.readFileSync(process.argv[2], "utf8")}\n${probe}`, sandbox);
+vm.runInContext(fs.readFileSync(process.argv[2], "utf8"), sandbox);
+vm.runInContext(`${fs.readFileSync(process.argv[3], "utf8")}\n${probe}`, sandbox);
 """
 
 
 def _call(action: str) -> dict[str, Any]:
-    """Return the builder probe result for one board action."""
+    """Return the builder probe result for one board action.
+
+    The probe is read from stdin. Passing it to ``node -e`` exceeds the
+    Windows command-line length.
+    """
     try:
         completed = subprocess.run(
             [
                 "node",
-                "-e",
-                _HARNESS,
+                "-",
                 str(CHECKS),
                 str(BUILDER),
                 json.dumps({"action": action, "limits": _page_limits()}),
             ],
+            input=_HARNESS,
             capture_output=True,
             text=True,
             encoding="utf-8",
@@ -1164,6 +1204,23 @@ def test_copy_writes_the_script_only_when_one_is_shown() -> None:
     assert page["write"] == page["preview"]
     assert "from shadowsim.encoding import ComputationalBasisEncoding" in page["write"]
     assert "import *" not in page["write"]
+
+
+def test_copy_board_writes_the_document_while_the_script_is_empty() -> None:
+    page = _call("boardcopy")
+    assert page["emptyDisabled"] is True
+    assert page["emptyScriptWrites"] == 0
+    assert page["emptyLabel"] == "Copy board"
+    assert page["emptyWrite"] == page["emptyShown"]
+    empty = json.loads(page["emptyWrite"])
+    assert empty["version"] == 1
+    assert "server" not in empty
+    assert page["acceptedScriptDisabled"] is False
+    assert page["acceptedWrite"] == page["acceptedShown"]
+    assert page["acceptedWrite"] == page["acceptedBody"]
+    accepted = json.loads(page["acceptedWrite"])
+    assert "server" not in accepted
+    assert accepted["state"] == {"id": "basis", "value": "01"}
 
 
 def test_export_and_import_round_trip_the_board() -> None:
