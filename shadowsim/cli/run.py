@@ -567,21 +567,16 @@ def _write_results(directory: Path | None, results: list[SimulationResult]) -> l
     return [str(result.save(directory / f"sim_{index + 1}")) for index, result in enumerate(results)]
 
 
-def _series_name(report_id: str) -> str:
-    """Return a chart name, with ``_simulator`` removed before any ``#n`` suffix."""
-    base, separator, number = report_id.partition("#")
-    short = base.removesuffix("_simulator")
-    if separator:
-        return f"{short}#{number}"
-    return short
-
-
 def _run_benchmark(
     selection: Mapping[str, object],
     prepared: _PreparedRun,
     benchmark: Benchmark,
 ) -> dict[str, object]:
-    """Run the prepared benchmark and return curves, names, and resources."""
+    """Run the prepared benchmark and return curves, names, and resources.
+
+    Each series name is that simulator's resource ``title``, so the legend
+    labels use the same display string.
+    """
     simulators = prepared.simulators
     benchmark.run()
     recorded = [_measured_result(simulator, selection) for simulator in simulators]
@@ -589,7 +584,7 @@ def _run_benchmark(
     labels = _observable_labels(prepared.document.measure, simulators[0].num_qubits)
     series: list[dict[str, object]] = []
     for result, resource in zip(recorded, resources, strict=True):
-        name = _series_name(str(resource["simulator_id"]))
+        name = str(resource["title"])
         series.append(
             {
                 "name": name,

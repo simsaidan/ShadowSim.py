@@ -761,9 +761,23 @@ if (request.action === "roundtrip") {
       { name: "J", label: "J", kind: "number", default: "1" },
       { name: "h", label: "h", kind: "number", default: "0" },
       { name: "field", label: "field", kind: "choice", default: "transverse", choices: ["classical", "transverse"] },
-      { name: "topology", label: "topology", kind: "choice", default: "chain", choices: ["chain"] },
-      { name: "boundary", label: "boundary", kind: "choice", default: "open", choices: ["open", "periodic"] },
-      { name: "edges", label: "edges", kind: "edges", default: "" },
+      {
+        name: "topology",
+        label: "topology",
+        kind: "choice",
+        default: "chain",
+        choices: ["chain"],
+        disables: ["edges"],
+      },
+      {
+        name: "boundary",
+        label: "boundary",
+        kind: "choice",
+        default: "open",
+        choices: ["open", "periodic"],
+        disables: ["edges"],
+      },
+      { name: "edges", label: "edges", kind: "edges", default: "", disables: ["topology", "boundary"] },
     ],
   }];
   const board = document.createElement("section");

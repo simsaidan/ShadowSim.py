@@ -47,9 +47,7 @@
   }
 
   function isReference(entry) {
-    const block = blockById("simulator", entry.id);
-    if (!block) return entry.id === "qutip";
-    return Boolean(block.observables);
+    return Boolean(blockById("simulator", entry.id)?.observables);
   }
 
   function usesTrotter(entry) {
@@ -730,7 +728,7 @@
     const count = qubitCount();
     const seen = {};
     const lines = [];
-    const qutip = [];
+    const full = [];
     const circuit = [];
     const lindblads = [];
     page.modelTerms.forEach((term) => {
@@ -742,12 +740,12 @@
       const matrix = matrixLiteral(term);
       if (term.id === "hamiltonian") {
         lines.push(`${name} = Hamiltonian(${matrix})`);
-        qutip.push(name);
+        full.push(name);
         circuit.push(`${name}.to_local_hamiltonian()`);
       } else if (term.id === "local_hamiltonian") {
         const sites = localSites(term, count).join(", ");
         lines.push(`${name} = LocalHamiltonian(${matrix}, [${sites}])`);
-        qutip.push(name);
+        full.push(name);
         circuit.push(name);
       } else if (term.id === "lindblad") {
         const sites = localSites(term, count).join(", ");
@@ -755,7 +753,7 @@
         lindblads.push(name);
       }
     });
-    lines.push(`qutip_hamiltonians = [${qutip.join(", ")}]`);
+    lines.push(`full_hamiltonians = [${full.join(", ")}]`);
     lines.push(`circuit_hamiltonians = [${circuit.join(", ")}]`);
     lines.push(`lindblads = [${lindblads.join(", ")}]`);
     lines.push(`lindblads_full = [op.to_full_operator(${count}) for op in lindblads]`);
@@ -885,7 +883,7 @@
     let hamiltonians = "model.local_hamiltonians";
     let lindblads = "model.c_ops_local";
     if (block.observables) {
-      hamiltonians = added ? "qutip_hamiltonians" : "model.full_hamiltonians";
+      hamiltonians = added ? "full_hamiltonians" : "model.full_hamiltonians";
       lindblads = added ? "lindblads_full" : "model.c_ops_full";
     } else if (added) {
       hamiltonians = "circuit_hamiltonians";

@@ -27,13 +27,21 @@ _PARAM_LABELS: dict[str, str] = {
     "nu": "Hopping",
 }
 
+# A parameter moved off its default disables these other chip fields.
+_PARAM_DISABLES: dict[str, tuple[str, ...]] = {
+    "edges": ("topology", "boundary"),
+    "topology": ("edges",),
+    "boundary": ("edges",),
+}
+
 
 class ListedParam(TypedDict):
     """One factory argument the builder page can edit.
 
     ``choices`` is present when ``kind`` is ``choice``. ``minimum`` is present
     when ``kind`` is ``integer``. ``default`` is the text that fills the chip.
-    An empty ``edges`` default means the chain preset.
+    An empty ``edges`` default means the chain preset. ``disables`` names the
+    other fields this one locks once its text leaves that default.
     """
 
     name: str
@@ -42,6 +50,7 @@ class ListedParam(TypedDict):
     default: str
     choices: NotRequired[list[str]]
     minimum: NotRequired[int]
+    disables: NotRequired[list[str]]
 
 
 class ListedModel(TypedDict):
@@ -167,40 +176,47 @@ def _listed_params(factory: types.FunctionType) -> list[ListedParam]:
 def _listed_param(parameter: inspect.Parameter) -> ListedParam:
     """Describe one editable parameter."""
     label = _PARAM_LABELS.get(parameter.name, parameter.name)
+    listed: ListedParam
     if parameter.name == "edges":
-        return {
+        listed = {
             "name": parameter.name,
             "label": label,
             "kind": "edges",
             "default": "" if parameter.default is None else _default_text(parameter.default),
         }
-    choices = _literal_choices(parameter.annotation)
-    if choices is not None:
-        hidden = _HIDDEN_CHOICES.get(parameter.name, frozenset())
-        return {
-            "name": parameter.name,
-            "label": label,
-            "kind": "choice",
-            "default": _default_text(parameter.default),
-            "choices": [choice for choice in choices if choice not in hidden],
-        }
-    if parameter.annotation is int:
-        return {
-            "name": parameter.name,
-            "label": label,
-            "kind": "integer",
-            "default": _default_text(parameter.default),
-            "minimum": 1,
-        }
-    kind: Literal["number", "number_or_list"] = (
-        "number_or_list" if _accepts_sequence(parameter.annotation) else "number"
-    )
-    return {
-        "name": parameter.name,
-        "label": label,
-        "kind": kind,
-        "default": _default_text(parameter.default),
-    }
+    else:
+        choices = _literal_choices(parameter.annotation)
+        if choices is not None:
+            hidden = _HIDDEN_CHOICES.get(parameter.name, frozenset())
+            listed = {
+                "name": parameter.name,
+                "label": label,
+                "kind": "choice",
+                "default": _default_text(parameter.default),
+                "choices": [choice for choice in choices if choice not in hidden],
+            }
+        elif parameter.annotation is int:
+            listed = {
+                "name": parameter.name,
+                "label": label,
+                "kind": "integer",
+                "default": _default_text(parameter.default),
+                "minimum": 1,
+            }
+        else:
+            kind: Literal["number", "number_or_list"] = (
+                "number_or_list" if _accepts_sequence(parameter.annotation) else "number"
+            )
+            listed = {
+                "name": parameter.name,
+                "label": label,
+                "kind": kind,
+                "default": _default_text(parameter.default),
+            }
+    disables = _PARAM_DISABLES.get(parameter.name)
+    if disables:
+        listed["disables"] = list(disables)
+    return listed
 
 
 def _literal_choices(annotation: object) -> list[str] | None:

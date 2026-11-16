@@ -5,6 +5,7 @@ import numpy as np
 import pytest
 
 from shadowsim.benchmarking import Benchmark
+from shadowsim.benchmarking.benchmark import _chart_title
 from shadowsim.core import Hamiltonian, State
 from shadowsim.simulators.simulator import Simulator
 
@@ -295,6 +296,49 @@ def test_error_metrics_rejects_mismatched_observable_counts():
 
     with pytest.raises(ValueError, match="Mismatched observable counts"):
         benchmark.error_metrics()
+
+
+def test_chart_title_uses_the_class_title_and_keeps_the_suffix():
+    class SplitLike(StubSimulator):
+        title = "Split J"
+
+    class Blank(StubSimulator):
+        title = ""
+
+    split = SplitLike(id="split_jmatrix_simulator")
+    assert _chart_title(split, "split_jmatrix_simulator") == "Split J"
+    assert _chart_title(split, "split_jmatrix_simulator#2") == "Split J#2"
+    plain = StubSimulator(id="qutip_simulator")
+    assert _chart_title(plain, "qutip_simulator") == "qutip"
+    assert _chart_title(plain, "qutip_simulator#2") == "qutip#2"
+    assert _chart_title(Blank(id="qutip_simulator"), "qutip_simulator#1") == "qutip#1"
+
+
+def test_resource_row_uses_the_display_title(monkeypatch):
+    clock = iter((1.0, 1.1, 1.1, 1.2, 1.2, 1.4, 1.4, 1.5))
+    monkeypatch.setattr("shadowsim.benchmarking.benchmark.time.perf_counter", lambda: next(clock))
+
+    class QuTiPLike(StubSimulator):
+        title = "QuTiP"
+
+    class SplitLike(StubSimulator):
+        title = "Split J"
+
+    benchmark = Benchmark(
+        QuTiPLike(id="qutip_simulator", curves=[np.zeros(3)]),
+        QuTiPLike(id="qutip_simulator", curves=[np.ones(3)]),
+        SplitLike(id="split_jmatrix_simulator", curves=[np.zeros(3)]),
+        SplitLike(id="split_jmatrix_simulator", curves=[np.ones(3)]),
+    )
+    benchmark.run()
+    resources = benchmark.resource_metrics()
+    assert [row["simulator_id"] for row in resources] == [
+        "qutip_simulator#1",
+        "qutip_simulator#2",
+        "split_jmatrix_simulator#1",
+        "split_jmatrix_simulator#2",
+    ]
+    assert [row["title"] for row in resources] == ["QuTiP#1", "QuTiP#2", "Split J#1", "Split J#2"]
 
 
 def test_shared_simulator_id_keeps_each_wall_time(monkeypatch):

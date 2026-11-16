@@ -38,7 +38,6 @@ from shadowsim.cli.run import (
     _observable_labels,
     _page_limits,
     _selection_positive_int,
-    _series_name,
     build_simulator,
     check_page,
     run_page,
@@ -1591,11 +1590,6 @@ def test_circuit_parameters_come_from_the_selection(simulator_id: str) -> None:
     assert simulator.order == 2
 
 
-def test_series_name_drops_the_simulator_suffix() -> None:
-    assert _series_name("qutip_simulator") == "qutip"
-    assert _series_name("split_jmatrix_simulator#2") == "split_jmatrix#2"
-
-
 def test_observable_labels_name_each_measured_qubit() -> None:
     assert _observable_labels({"id": "z", "sites": [0, 1]}, 2) == ["⟨Z⟩ on 0", "⟨Z⟩ on 1"]
     assert _observable_labels({"id": "x", "sites": [1]}, 2) == ["⟨X⟩ on 1"]
@@ -1636,15 +1630,16 @@ def test_two_simulators_form_a_benchmark() -> None:
     assert payload["algorithm"] == "benchmark"
     series = payload["series"]
     assert isinstance(series, list)
-    assert [item["name"] for item in series] == ["qutip#1", "qutip#2"]
+    assert [item["name"] for item in series] == ["QuTiP#1", "QuTiP#2"]
     assert [item["labels"] for item in series] == [
-        ["qutip#1 · ⟨Z⟩ on 0", "qutip#1 · ⟨Z⟩ on 1"],
-        ["qutip#2 · ⟨Z⟩ on 0", "qutip#2 · ⟨Z⟩ on 1"],
+        ["QuTiP#1 · ⟨Z⟩ on 0", "QuTiP#1 · ⟨Z⟩ on 1"],
+        ["QuTiP#2 · ⟨Z⟩ on 0", "QuTiP#2 · ⟨Z⟩ on 1"],
     ]
     assert payload["labels"] == ["⟨Z⟩ on 0", "⟨Z⟩ on 1"]
     resources = payload["resources"]
     assert isinstance(resources, list)
     assert [item["simulator_id"] for item in resources] == ["qutip_simulator#1", "qutip_simulator#2"]
+    assert [item["title"] for item in resources] == ["QuTiP#1", "QuTiP#2"]
     assert payload["runtime"] == pytest.approx(sum(item["wall_time_s"] for item in resources))
     errors = payload["errors"]
     assert isinstance(errors, list)
@@ -1676,7 +1671,7 @@ def test_benchmark_runs_trotter_on_aer_and_pauli_propagation() -> None:
     assert payload["algorithm"] == "benchmark"
     series = payload["series"]
     assert isinstance(series, list)
-    assert [item["name"] for item in series] == ["trotterization#1", "trotterization#2"]
+    assert [item["name"] for item in series] == ["Trotter#1", "Trotter#2"]
     for item in series:
         observables = item["observables"]
         assert isinstance(observables, list)
@@ -1688,6 +1683,7 @@ def test_benchmark_runs_trotter_on_aer_and_pauli_propagation() -> None:
         "trotterization_simulator#1",
         "trotterization_simulator#2",
     ]
+    assert [item["title"] for item in resources] == ["Trotter#1", "Trotter#2"]
     assert resources[0]["shots_per_job"] == 4
     assert resources[0]["num_jobs"] == 2
     assert resources[0]["total_shots"] == 8
@@ -2132,15 +2128,29 @@ def test_listed_models_reads_the_package_factories() -> None:
             "default": "transverse",
             "choices": ["classical", "transverse"],
         },
-        {"name": "topology", "label": "topology", "kind": "choice", "default": "chain", "choices": ["chain"]},
+        {
+            "name": "topology",
+            "label": "topology",
+            "kind": "choice",
+            "default": "chain",
+            "choices": ["chain"],
+            "disables": ["edges"],
+        },
         {
             "name": "boundary",
             "label": "boundary",
             "kind": "choice",
             "default": "open",
             "choices": ["open", "periodic"],
+            "disables": ["edges"],
         },
-        {"name": "edges", "label": "edges", "kind": "edges", "default": ""},
+        {
+            "name": "edges",
+            "label": "edges",
+            "kind": "edges",
+            "default": "",
+            "disables": ["topology", "boundary"],
+        },
     ]
     scalars = _cavity_params(sequence=False)
     sequences = _cavity_params(sequence=True)
@@ -2277,6 +2287,9 @@ def test_describe_simulator_uses_the_title_without_a_docstring(monkeypatch: pyte
 
     monkeypatch.setattr("shadowsim.simulators.catalog.inspect.getdoc", lambda cls: None)
     described = _describe_simulator(BareSimulator)
+    assert described["id"] == "bare"
+    assert described["title"] == "Bare"
+    assert described["phrase"] == "Bare"
     assert described["detail"] == "Bare"
     assert described["observables"] is False
     assert described["samples"] is False
@@ -2290,6 +2303,26 @@ def test_describe_simulator_uses_the_title_without_a_docstring(monkeypatch: pyte
             return None
 
     assert _describe_simulator(ClosedSimulator)["closed_system"] is True
+
+    class NamedSimulator:
+        title = "Pretty Name"
+
+        def __init__(self) -> None:
+            return None
+
+    named = _describe_simulator(NamedSimulator)
+    assert named["id"] == "named"
+    assert named["title"] == "Pretty Name"
+    assert named["phrase"] == "Pretty Name"
+    assert named["detail"] == "Named"
+
+    class BlankSimulator:
+        title = ""
+
+        def __init__(self) -> None:
+            return None
+
+    assert _describe_simulator(BlankSimulator)["title"] == "Blank"
 
 
 def test_listed_simulators_fail_when_none_import(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -2313,6 +2346,8 @@ def test_listed_simulators_reads_the_package_classes() -> None:
     pytest.importorskip("qiskit_aer")
     listed = listed_simulators()
     assert [item["id"] for item in listed] == ["hybridwml", "qutip", "splitjmatrix", "trotterization"]
+    assert [item["title"] for item in listed] == ["Hybrid WML", "QuTiP", "Split J", "Trotter"]
+    assert [item["phrase"] for item in listed] == ["Hybrid WML", "QuTiP", "Split J", "Trotter"]
     assert listed[0]["observables"] is False
     assert listed[0]["samples"] is True
     assert listed[0]["closed_system"] is False

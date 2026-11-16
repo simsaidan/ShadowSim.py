@@ -14,6 +14,20 @@ from shadowsim.simulators.result import _circuit_metric_fields
 from shadowsim.simulators.simulator import Simulator, _Trace, _Traces
 
 
+def _chart_title(simulator: Simulator, report_id: str) -> str:
+    """Return the display title for ``report_id``, keeping a ``#n`` suffix.
+
+    The class ``title`` is that string. A simulator without one uses its id
+    with ``_simulator`` removed.
+    """
+    base, separator, number = report_id.partition("#")
+    title = getattr(type(simulator), "title", None)
+    shown = title if isinstance(title, str) and title else base.removesuffix("_simulator")
+    if separator:
+        return f"{shown}#{number}"
+    return shown
+
+
 def _report_ids(simulators: list[Simulator]) -> list[str]:
     """Return one id per simulator, suffixing duplicates in list order.
 
@@ -116,7 +130,9 @@ class Benchmark:
 
         ``simulator_id`` is that simulator's id. When the same id appears more
         than once, it is reported as ``id#1``, ``id#2``, and so on, in benchmark
-        order. Each row keeps the wall time of that run.
+        order. ``title`` is the class display title with that same suffix, or
+        the id with ``_simulator`` removed when the class sets no title. Each
+        row keeps the wall time of that run.
         """
         if len(self._wall_times) != len(self.simulators):
             raise ValueError("Results are not available. Call run() (or simulate all) before save().")
@@ -137,6 +153,7 @@ class Benchmark:
             metrics.append(
                 {
                     "simulator_id": label,
+                    "title": _chart_title(simulator, label),
                     "wall_time_s": wall_time,
                     "shots_per_job": shots_per_job,
                     "num_jobs": num_jobs,

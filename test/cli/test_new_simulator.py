@@ -401,6 +401,7 @@ def test_export_without_extra_uses_plain_import(monkeypatch):
 
 def test_render_stub_contains_todo():
     text = render_stub(derive_names("Demo"))
+    assert 'title = "Demo"' in text
     assert "# TODO: implement your simulator here" in text
     assert 'raise NotImplementedError("TODO: implement your simulator here")' in text
     assert "SimulationResult" in text
