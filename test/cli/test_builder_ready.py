@@ -93,7 +93,18 @@ function resetPage() {
 
 function fillIsing(qubits, total) {
   resetPage();
-  BLOCKS.simulator = [{ id: "qutip", observables: true }];
+  BLOCKS.simulator = [{
+    id: "qutip",
+    observables: true,
+    fields: [{
+      name: "time_steps",
+      label: "Time steps",
+      kind: "integer",
+      default: "11",
+      minimum: 1,
+      maximum: limits.timeSteps,
+    }],
+  }];
   modelFactories = [{
     id: "ising",
     title: "Ising",
@@ -109,7 +120,7 @@ function fillIsing(qubits, total) {
   stateText.basis = "00";
   settings.qubits = qubits;
   settings.total = total;
-  placedSims.push({ id: "qutip", key: 1, params: { timeSteps: "11" } });
+  placedSims.push({ id: "qutip", key: 1, params: { time_steps: "11" } });
   placedThens.push("plot");
 }
 

@@ -37,6 +37,7 @@ from shadowsim.cli.run import (
     _observable_labels,
     _page_limits,
     _selection_positive_int,
+    _simulator_arguments,
     build_simulator,
     check_page,
     run_page,
@@ -50,7 +51,7 @@ from shadowsim.models import (
     tavis_cummings_hubbard,
 )
 from shadowsim.models.catalog import _describe_models, listed_model_terms, listed_models
-from shadowsim.simulators.catalog import _describe_simulator, listed_simulators
+from shadowsim.simulators.catalog import _chip_default, _chip_maximum, _describe_simulator, listed_simulators
 from shadowsim.simulators.result import _resource_record
 
 _SIMULATOR_FIELDS = ("time_steps", "num_steps", "seed", "trotter_depth", "order")
@@ -376,6 +377,34 @@ def test_an_exported_observables_simulator_uses_its_class(monkeypatch: pytest.Mo
                 expression='counts["1"] / shots',
             )
         )
+
+
+def test_an_exported_observables_simulator_uses_posted_time_steps(monkeypatch: pytest.MonkeyPatch) -> None:
+    class GridSimulator:
+        """An observables simulator that names its time grid."""
+
+        def __init__(
+            self,
+            hamiltonians: object,
+            lindblads: object,
+            state: object,
+            observables: object,
+            time_steps: int,
+            **kwargs: object,
+        ) -> None:
+            del hamiltonians, lindblads, state, kwargs
+            self.observables = observables
+            self.time_steps = time_steps
+
+    module = types.ModuleType("custom.grid")
+    module.GridSimulator = GridSimulator  # type: ignore[attr-defined]
+    from shadowsim import simulators
+
+    monkeypatch.setitem(simulators._EXPORTS, "GridSimulator", ("custom.grid", None))
+    monkeypatch.setitem(sys.modules, "custom.grid", module)
+    simulator = build_simulator(_selection(simulator="grid", time_steps=7))
+    assert isinstance(simulator, GridSimulator)
+    assert simulator.time_steps == 7
 
 
 def test_an_export_that_is_not_a_class_is_rejected(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -2253,30 +2282,16 @@ def test_listed_simulators_skips_imports_that_fail(monkeypatch: pytest.MonkeyPat
     assert listed[0]["observables"] is False
     assert listed[0]["samples"] is False
     assert listed[0]["closed_system"] is False
-    assert listed[0]["trotter"] is False
-    assert listed[0]["setup"] == (
-        "{name} = BareSimulator(\n"
-        "    {hamiltonians},\n"
-        "    {lindblads},\n"
-        "    state,\n"
-        "    num_qubits={qubits},\n"
-        "    total_time={total},\n"
-        "    time_steps={time_steps},\n"
-        "    num_steps={num_steps},\n"
-        "    seed={seed}{basis},\n"
-        "    circuit_backend={backend},\n"
-        ")"
-    )
+    assert listed[0]["fields"] == []
+    assert "trotter" not in listed[0]
+    assert listed[0]["setup"] == "{name} = BareSimulator(\n    {hamiltonians},\n)"
     assert listed[1]["detail"] == "Simulate with a note."
     assert listed[1]["observables"] is True
     assert listed[1]["samples"] is False
     assert listed[1]["closed_system"] is False
-    assert listed[1]["trotter"] is False
-    assert listed[1]["setup"] == (
-        "{name} = NoteSimulator({hamiltonians}, {lindblads}, state,\n"
-        "                    e_ops, num_qubits={qubits},\n"
-        "                    total_time={total}, time_steps={time_steps})"
-    )
+    assert listed[1]["fields"] == []
+    assert "trotter" not in listed[1]
+    assert listed[1]["setup"] == "{name} = NoteSimulator(\n    e_ops,\n)"
 
 
 def test_describe_simulator_uses_the_title_without_a_docstring(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -2293,7 +2308,9 @@ def test_describe_simulator_uses_the_title_without_a_docstring(monkeypatch: pyte
     assert described["observables"] is False
     assert described["samples"] is False
     assert described["closed_system"] is False
-    assert described["trotter"] is False
+    assert described["fields"] == []
+    assert described["setup"] == "{name} = BareSimulator()"
+    assert "trotter" not in described
 
     class ClosedSimulator:
         closed_system = True
@@ -2324,6 +2341,134 @@ def test_describe_simulator_uses_the_title_without_a_docstring(monkeypatch: pyte
     assert _describe_simulator(BlankSimulator)["title"] == "Blank"
 
 
+def test_describe_simulator_reads_constructor_fields() -> None:
+    class DepthSimulator:
+        def __init__(
+            self,
+            hamiltonians: object,
+            *,
+            time_steps: int,
+            num_steps: int,
+            trotter_depth: int = 3,
+            order: Literal[1, 2] = 2,
+            verbose: bool = False,
+            seed: int | None = None,
+            workers: int = 1,
+            circuit_backend: object = None,
+            basis: str | None = None,
+        ) -> None:
+            del (
+                hamiltonians,
+                time_steps,
+                num_steps,
+                trotter_depth,
+                order,
+                verbose,
+                seed,
+                workers,
+                circuit_backend,
+                basis,
+            )
+
+    described = _describe_simulator(DepthSimulator)
+    assert [field["name"] for field in described["fields"]] == [
+        "time_steps",
+        "num_steps",
+        "trotter_depth",
+        "order",
+        "seed",
+    ]
+    assert described["fields"][0]["default"] == "11"
+    assert described["fields"][2]["default"] == "3"
+    assert described["fields"][3] == {
+        "name": "order",
+        "label": "Order",
+        "kind": "choice",
+        "default": "2",
+        "choices": ["1", "2"],
+    }
+    assert described["setup"] == (
+        "{name} = DepthSimulator(\n"
+        "    {hamiltonians},\n"
+        "    time_steps={time_steps},\n"
+        "    num_steps={num_steps},\n"
+        "    trotter_depth={trotter_depth},\n"
+        "    order={order},\n"
+        "    seed={seed},\n"
+        "    circuit_backend={backend}{basis},\n"
+        ")"
+    )
+    assert "verbose" not in described["setup"]
+    assert "workers" not in described["setup"]
+
+    class ReferenceSimulator:
+        def __init__(self, observables: object, *, time_steps: int, matrix: object) -> None:
+            del observables, time_steps, matrix
+
+    reference = _describe_simulator(ReferenceSimulator)
+    assert reference["observables"] is True
+    assert reference["fields"] == [
+        {
+            "name": "time_steps",
+            "label": "Time steps",
+            "kind": "integer",
+            "default": "101",
+            "minimum": 1,
+            "maximum": _MAX_TIME_STEPS,
+        }
+    ]
+    assert reference["setup"] == (
+        "{name} = ReferenceSimulator(\n    e_ops,\n    time_steps={time_steps},\n    matrix,\n)"
+    )
+
+    class PlainOrder:
+        def __init__(self, *, order: int = 1) -> None:
+            del order
+
+    assert _describe_simulator(PlainOrder)["fields"][0]["choices"] == []
+
+    class FlagOrder:
+        def __init__(self, *, order: Literal[True] = True) -> None:
+            del order
+
+    assert _describe_simulator(FlagOrder)["fields"][0]["choices"] == []
+
+    class BasisFirst:
+        def __init__(self, basis: str | None = None) -> None:
+            del basis
+
+    assert _describe_simulator(BasisFirst)["setup"] == "{name} = BasisFirst(\n    {basis},\n)"
+
+
+def test_chip_helpers_cover_the_page_default_and_an_unbounded_name() -> None:
+    assert _chip_default("seed") == "0"
+    with pytest.raises(KeyError, match="seed"):
+        _chip_maximum("seed")
+
+
+def test_simulator_arguments_follow_the_constructor_fields() -> None:
+    class Plain:
+        def __init__(self, *, time_steps: int, seed: int | None = None) -> None:
+            del time_steps, seed
+
+    assert _simulator_arguments(Plain, {"trotter_depth": 0, "order": 9, "num_steps": 3}) == {
+        "time_steps": 11,
+        "seed": 0,
+    }
+    with pytest.raises(ValueError, match=f"time steps must be from 1 to {_MAX_TIME_STEPS}"):
+        _simulator_arguments(Plain, {"time_steps": _MAX_TIME_STEPS + 1})
+
+    class Depth:
+        def __init__(self, *, trotter_depth: int = 3, order: Literal[1, 2] = 2) -> None:
+            del trotter_depth, order
+
+    assert _simulator_arguments(Depth, {}) == {"trotter_depth": 3, "order": 2}
+    with pytest.raises(ValueError, match="order must be 1 or 2"):
+        _simulator_arguments(Depth, {"order": 4})
+    with pytest.raises(ValueError, match=f"Trotter depth must be from 1 to {_MAX_TROTTER_DEPTH}"):
+        _simulator_arguments(Depth, {"trotter_depth": _MAX_TROTTER_DEPTH + 1})
+
+
 def test_listed_simulators_fail_when_none_import(monkeypatch: pytest.MonkeyPatch) -> None:
     from shadowsim import simulators
 
@@ -2350,29 +2495,80 @@ def test_listed_simulators_reads_the_package_classes() -> None:
     assert listed[0]["observables"] is False
     assert listed[0]["samples"] is True
     assert listed[0]["closed_system"] is False
-    assert listed[0]["trotter"] is False
-    assert listed[0]["setup"].startswith("{name} = HybridWMLSimulator(\n")
-    assert "trotter_depth" not in listed[0]["setup"]
-    assert "order=" not in listed[0]["setup"]
+    assert [field["name"] for field in listed[0]["fields"]] == ["time_steps", "num_steps", "seed"]
+    assert "trotter" not in listed[0]
+    assert listed[0]["setup"] == (
+        "{name} = HybridWMLSimulator(\n"
+        "    {hamiltonians},\n"
+        "    {lindblads},\n"
+        "    state,\n"
+        "    num_qubits={qubits},\n"
+        "    total_time={total},\n"
+        "    time_steps={time_steps},\n"
+        "    num_steps={num_steps},\n"
+        "    seed={seed},\n"
+        "    circuit_backend={backend}{basis},\n"
+        ")"
+    )
     assert listed[1]["observables"] is True
     assert listed[1]["samples"] is False
     assert listed[1]["closed_system"] is False
-    assert listed[1]["trotter"] is False
+    assert listed[1]["fields"] == [
+        {
+            "name": "time_steps",
+            "label": "Time steps",
+            "kind": "integer",
+            "default": "101",
+            "minimum": 1,
+            "maximum": _MAX_TIME_STEPS,
+        }
+    ]
     assert listed[1]["setup"] == (
-        "{name} = QutipSimulator({hamiltonians}, {lindblads}, state,\n"
-        "                    e_ops, num_qubits={qubits},\n"
-        "                    total_time={total}, time_steps={time_steps})"
+        "{name} = QutipSimulator(\n"
+        "    {hamiltonians},\n"
+        "    {lindblads},\n"
+        "    state,\n"
+        "    e_ops,\n"
+        "    num_qubits={qubits},\n"
+        "    total_time={total},\n"
+        "    time_steps={time_steps},\n"
+        ")"
     )
     assert listed[2]["observables"] is False
     assert listed[2]["samples"] is True
     assert listed[2]["closed_system"] is False
-    assert listed[2]["trotter"] is True
-    assert "trotter_depth={trotter_depth}" in listed[2]["setup"]
+    assert [field["name"] for field in listed[2]["fields"]] == [
+        "time_steps",
+        "num_steps",
+        "trotter_depth",
+        "order",
+        "seed",
+    ]
     assert listed[2]["setup"].startswith("{name} = SplitJMatrixSimulator(\n")
-    assert "{backend}" in listed[2]["setup"]
+    assert "trotter_depth={trotter_depth}" in listed[2]["setup"]
+    assert "{backend}{basis}" in listed[2]["setup"]
     assert listed[3]["samples"] is False
     assert listed[3]["closed_system"] is True
-    assert listed[3]["trotter"] is True
+    assert [field["name"] for field in listed[3]["fields"]] == [
+        "time_steps",
+        "num_steps",
+        "trotter_depth",
+        "order",
+        "seed",
+    ]
+    order = next(field for field in listed[3]["fields"] if field["name"] == "order")
+    assert order["kind"] == "choice"
+    assert order["choices"] == ["1", "2"]
+    assert order["default"] == "1"
+    depth = next(field for field in listed[3]["fields"] if field["name"] == "trotter_depth")
+    assert depth["default"] == "1"
+    assert depth["minimum"] == 1
+    assert depth["maximum"] == _MAX_TROTTER_DEPTH
+    steps = next(field for field in listed[3]["fields"] if field["name"] == "num_steps")
+    assert steps["default"] == "4"
+    assert steps["maximum"] == _MAX_NUM_STEPS
+    seed = next(field for field in listed[3]["fields"] if field["name"] == "seed")
+    assert seed == {"name": "seed", "label": "Seed", "kind": "integer", "default": "0"}
     assert listed[3]["setup"].startswith("{name} = TrotterizationSimulator(\n")
     assert "QuTiP" in listed[1]["detail"]
 

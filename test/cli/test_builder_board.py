@@ -368,6 +368,14 @@ function fillIsing() {
       "                    e_ops, num_qubits={qubits},",
       "                    total_time={total}, time_steps={time_steps})",
     ].join(String.fromCharCode(10)),
+    fields: [{
+      name: "time_steps",
+      label: "Time steps",
+      kind: "integer",
+      default: "11",
+      minimum: 1,
+      maximum: limits.timeSteps,
+    }],
   }];
   BLOCKS.model = [{ id: "preexisting", title: "Preexisting model", detail: "Choose a built-in model" }];
   modelFactories = [{
@@ -388,7 +396,7 @@ function fillIsing() {
   qubitsSource = "state";
   actionText.save = "results/kept";
   measureSites = [0];
-  placedSims.push({ id: "qutip", key: 3, open: true, params: { timeSteps: "11" } });
+  placedSims.push({ id: "qutip", key: 3, open: true, params: { time_steps: "11" } });
   placedThens.push("plot");
 }
 function fillCircuit() {
@@ -413,6 +421,34 @@ function fillCircuit() {
       "    circuit_backend={backend},",
       ")",
     ].join(String.fromCharCode(10)),
+    fields: [
+      {
+        name: "time_steps",
+        label: "Time steps",
+        kind: "integer",
+        default: "11",
+        minimum: 1,
+        maximum: limits.timeSteps,
+      },
+      {
+        name: "num_steps",
+        label: "Product steps",
+        kind: "integer",
+        default: "4",
+        minimum: 1,
+        maximum: limits.numSteps,
+      },
+      {
+        name: "trotter_depth",
+        label: "Trotter depth",
+        kind: "integer",
+        default: "1",
+        minimum: 1,
+        maximum: limits.trotterDepth,
+      },
+      { name: "order", label: "Order", kind: "choice", default: "1", choices: ["1", "2"] },
+      { name: "seed", label: "Seed", kind: "integer", default: "0" },
+    ],
   }];
   BLOCKS.backend = [{
     id: "aer",
@@ -428,7 +464,7 @@ function fillCircuit() {
   placedSims.splice(0, placedSims.length, {
     id: "trotterization",
     key: 1,
-    params: { timeSteps: "11", numSteps: "4", trotterDepth: "1", seed: "0", order: "1" },
+    params: { time_steps: "11", num_steps: "4", trotter_depth: "1", seed: "0", order: "1" },
     backend: "aer",
     shots: "256",
   });
