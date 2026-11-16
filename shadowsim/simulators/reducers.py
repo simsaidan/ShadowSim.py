@@ -8,7 +8,7 @@ time point of a :class:`~shadowsim.simulators.result.SimulationResult`.
 import ast
 import math
 import operator
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field, replace
 from typing import cast
 
@@ -20,8 +20,6 @@ QUBIT_EXPECTATIONS = "qubit_expectations"
 """``observable_kind`` metadata of a result with one Pauli expectation per qubit."""
 
 _MAX_EXPRESSION_LENGTH = 1000
-_POPULATION = 'counts["1"] / shots'
-_EXPECTATION = '(counts["0"] - counts["1"]) / shots'
 _BINARY: dict[type[ast.operator], Callable[[float, float], float]] = {
     ast.Add: operator.add,
     ast.Sub: operator.sub,
@@ -78,18 +76,28 @@ def _check(node: ast.expr, width: int) -> None:
     raise ValueError(f"expression cannot use {ast.unparse(node)!r}")
 
 
-def _value(node: ast.expr, counts: dict[str, int], shots: int) -> float:
-    """Evaluate a tree that :func:`_check` accepted."""
+def _value(node: ast.expr, counts: Mapping[str, object], shots: int) -> object:
+    """Evaluate a tree that :func:`_check` accepted.
+
+    A ``counts`` value may be a shot total or an array of probabilities. An array
+    is kept as an array, so one evaluation covers a time series.
+    """
     if isinstance(node, ast.BinOp):
-        return _BINARY[type(node.op)](_value(node.left, counts, shots), _value(node.right, counts, shots))
+        return _BINARY[type(node.op)](
+            cast(float, _value(node.left, counts, shots)),
+            cast(float, _value(node.right, counts, shots)),
+        )
     if isinstance(node, ast.UnaryOp):
-        return _UNARY[type(node.op)](_value(node.operand, counts, shots))
+        return _UNARY[type(node.op)](cast(float, _value(node.operand, counts, shots)))
     if isinstance(node, ast.Constant):
         return float(cast(float, node.value))
     if isinstance(node, ast.Name):
         return float(shots)
     key = cast(ast.Constant, cast(ast.Subscript, node).slice)
-    return float(counts.get(cast(str, key.value), 0))
+    found = counts.get(cast(str, key.value), 0)
+    if isinstance(found, np.ndarray):
+        return found
+    return float(cast(int, found))
 
 
 @dataclass(frozen=True)
@@ -106,6 +114,12 @@ class Measurement:
 
     The counts must come from a run in the basis this expression assumes. A
     Measurement does not change or check that basis.
+
+    An expectation backend has no counts. :func:`apply_measurements` then reads
+    a one-qubit expression from that qubit's distribution: ``counts["0"]`` is
+    ``(1 + expectation) / 2``, ``counts["1"]`` is ``(1 - expectation) / 2``, and
+    ``shots`` is 1. Dividing by ``shots`` gives the infinite-shot value. An
+    expression that uses raw counts without ``shots`` reads those probabilities.
 
     Attributes:
         qubits: System qubit indexes, in the order a ``counts`` key lists them.
@@ -150,32 +164,6 @@ class Measurement:
         if not self.label:
             object.__setattr__(self, "label", self.expression.strip())
 
-    @classmethod
-    def population(cls, qubit: int) -> "Measurement":
-        """Return the fraction of shots where ``qubit`` read 1."""
-        return cls((qubit,), _POPULATION, f"P(1) on {qubit}")
-
-    @classmethod
-    def expectation(cls, qubit: int) -> "Measurement":
-        """Return the Pauli expectation of ``qubit`` in the basis it was measured in.
-
-        A read of 0 counts as ``+1`` and a read of 1 as ``-1``.
-        """
-        return cls((qubit,), _EXPECTATION, f"expectation on {qubit}")
-
-    @classmethod
-    def cavity_population(cls, first: int, second: int) -> "Measurement":
-        """Return the mean photon number of a cavity stored on two qubits.
-
-        Uses the notebook convention ``(3*N("11") + 2*N("10") + N("01")) / shots``,
-        where the first bit of each key is ``first``.
-        """
-        return cls(
-            (first, second),
-            '(3 * counts["11"] + 2 * counts["10"] + counts["01"]) / shots',
-            f"cavity population on {first}, {second}",
-        )
-
     def evaluate(self, counts: dict[str, int]) -> float:
         """Return this measurement on one time point's counts.
 
@@ -212,8 +200,12 @@ def apply_measurements(result: SimulationResult, measurements: Sequence[Measurem
 
     Only a sampling backend, such as Aer, records counts. An expectation backend,
     such as PauliPropagation, returns one Pauli expectation per qubit instead
-    (``observable_kind`` is ``"qubit_expectations"``). Its result can only be read
-    with :meth:`Measurement.expectation` and :meth:`Measurement.population`.
+    (``observable_kind`` is ``"qubit_expectations"``). A one-qubit measurement is
+    evaluated on that distribution: ``counts["0"]`` is ``(1 + expectation) / 2``,
+    ``counts["1"]`` is ``(1 - expectation) / 2``, and ``shots`` is 1. Dividing by
+    ``shots`` gives the infinite-shot value. An expression that uses raw counts
+    without ``shots`` reads those probabilities. Two or more qubits need a
+    sampling backend, because the result has no correlations between qubits.
 
     Raises:
         ValueError: ``measurements`` is empty, or a measurement cannot be
@@ -235,7 +227,12 @@ def apply_measurements(result: SimulationResult, measurements: Sequence[Measurem
 
 
 def _from_expectations(result: SimulationResult, item: Measurement) -> np.ndarray:
-    """Return ``item`` read from a result with one Pauli expectation per qubit."""
+    """Return ``item`` read from a result with one Pauli expectation per qubit.
+
+    A one-qubit expression is evaluated on that qubit's exact distribution.
+    ``counts["0"]`` is ``(1 + expectation) / 2``, ``counts["1"]`` is
+    ``(1 - expectation) / 2``, and ``shots`` is 1.
+    """
     backend = result.metadata.get("circuit_backend")
     source = f"the {backend} backend" if backend else "this result"
     if result.metadata.get("observable_kind") != QUBIT_EXPECTATIONS:
@@ -243,15 +240,26 @@ def _from_expectations(result: SimulationResult, item: Measurement) -> np.ndarra
             f"{source} has no shot counts, so a counts measurement cannot run on it; "
             "use a sampling backend such as Aer, or read Pauli expectations instead"
         )
-    if len(item.qubits) != 1 or item.expression not in (_EXPECTATION, _POPULATION):
+    if len(item.qubits) != 1:
         raise ValueError(
-            f"{source} returns Pauli expectations, not shot counts, so it can only read "
-            f"Measurement.expectation and Measurement.population; {item.label} needs a sampling backend such as Aer"
+            f"{source} returns Pauli expectations, not shot counts, so "
+            f"{item.label} needs a sampling backend such as Aer"
         )
     qubit = item.qubits[0]
     if qubit >= len(result.observables):
         raise ValueError(f"the result has {len(result.observables)} qubits, but this measurement reads qubit {qubit}")
     expectation = np.asarray(result.observables[qubit], dtype=np.float64)
-    if item.expression == _POPULATION:
-        return (1.0 - expectation) / 2.0
-    return expectation.copy()
+    counts = {"0": (1.0 + expectation) / 2.0, "1": (1.0 - expectation) / 2.0}
+    try:
+        with np.errstate(divide="ignore", invalid="ignore", over="ignore"):
+            value = _value(item._tree, counts, 1)
+    except ZeroDivisionError:
+        raise ValueError(f"{item.label} divides by zero") from None
+    except OverflowError:
+        raise ValueError(f"{item.label} is too large") from None
+    if isinstance(value, complex):
+        raise ValueError(f"{item.label} must be a finite real number")
+    curve = np.array(np.broadcast_to(np.asarray(value), expectation.shape), dtype=np.float64, copy=True)
+    if not np.all(np.isfinite(curve)):
+        raise ValueError(f"{item.label} must be a finite real number")
+    return curve

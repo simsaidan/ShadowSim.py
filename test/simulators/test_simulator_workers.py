@@ -75,7 +75,7 @@ def _counts_for_time(args: tuple[object, ...], time_index: int, *, later: float)
 
 
 def _population(sim: SplitJMatrixSimulator | TrotterizationSimulator) -> np.ndarray:
-    return sim.measure([Measurement.population(0)]).observables[0]
+    return sim.measure([Measurement((0,), 'counts["1"] / shots')]).observables[0]
 
 
 class _LastFinishesFirst:

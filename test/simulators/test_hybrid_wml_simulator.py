@@ -521,7 +521,7 @@ def test_closed_one_qubit_agrees_with_qutip() -> None:
     )
     benchmark = Benchmark(qutip, hybrid)
     benchmark.run()
-    hybrid.measure([Measurement.population(0)])
+    hybrid.measure([Measurement((0,), 'counts["1"] / shots')])
 
     metrics = benchmark.error_metrics()
     assert metrics[0]["observables"][0]["linf"] < _CLOSED_TOLERANCE
@@ -559,7 +559,7 @@ def test_amplitude_damping_agrees_with_qutip() -> None:
     )
     benchmark = Benchmark(qutip, hybrid)
     benchmark.run()
-    hybrid.measure([Measurement.population(0)])
+    hybrid.measure([Measurement((0,), 'counts["1"] / shots')])
 
     metrics = benchmark.error_metrics()
     assert metrics[0]["observables"][0]["linf"] < _DAMPING_TOLERANCE

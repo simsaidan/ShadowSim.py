@@ -47,7 +47,10 @@ def test_open_chain_metadata_and_terms():
     assert model.h == 0.5
     assert model.c_ops_full == []
     assert model.c_ops_local == []
-    assert model.measurements == [Measurement.expectation(0), Measurement.expectation(1), Measurement.expectation(2)]
+    assert model.measurements == [
+        Measurement((site,), '(counts["0"] - counts["1"]) / shots', f"expectation on {site}") for site in range(3)
+    ]
+    assert model.measurements[1].evaluate({"00": 3, "01": 1}) == pytest.approx(0.5)
 
     terms = model.pauli_sum.terms
     assert terms["ZZI"] == pytest.approx(1.0)

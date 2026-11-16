@@ -236,7 +236,10 @@ def ising(
 
     psi0 = State(psi0_vec, n_qubits)
     e_ops = [Operator(_pauli_label(n_qubits, {site: "Z"})) for site in range(n_qubits)]
-    measurements = [Measurement.expectation(site) for site in range(n_qubits)]
+    measurements = [
+        Measurement((site,), '(counts["0"] - counts["1"]) / shots', f"expectation on {site}")
+        for site in range(n_qubits)
+    ]
 
     return IsingModel(
         full_hamiltonians=full_hamiltonians,

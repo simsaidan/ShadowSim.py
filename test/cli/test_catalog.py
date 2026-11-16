@@ -161,10 +161,14 @@ def test_prepare_state_rejects_an_unknown_id() -> None:
 
 
 def test_measurements_for_reads_each_selected_qubit() -> None:
-    assert measurements_for({"id": "z"}, 2) == [Measurement.expectation(0), Measurement.expectation(1)]
+    expectation = '(counts["0"] - counts["1"]) / shots'
+    assert measurements_for({"id": "z"}, 2) == [
+        Measurement((0,), expectation, "expectation on 0"),
+        Measurement((1,), expectation, "expectation on 1"),
+    ]
     assert measurements_for({"id": "x", "sites": [1, 1, 0]}, 2) == [
-        Measurement.expectation(1),
-        Measurement.expectation(0),
+        Measurement((1,), expectation, "expectation on 1"),
+        Measurement((0,), expectation, "expectation on 0"),
     ]
     counts = measurements_for({"id": "counts", "sites": [0], "expression": 'counts["0"] / shots'}, 1)
     assert counts == [Measurement((0,), 'counts["0"] / shots')]

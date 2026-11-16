@@ -97,7 +97,7 @@ def test_one_fake_backend_drives_both_simulators(monkeypatch):
     for cls in _SIMULATORS:
         simulator = cls(**_settings(circuit_backend=backend))
         assert simulator.simulate().metadata["circuit_backend"] == "recording"
-        result = simulator.measure([Measurement.population(0)])
+        result = simulator.measure([Measurement((0,), 'counts["1"] / shots')])
         np.testing.assert_allclose(result.observables[0], [1.0])
 
     assert backend.calls == [(4, 7), (4, 7)]

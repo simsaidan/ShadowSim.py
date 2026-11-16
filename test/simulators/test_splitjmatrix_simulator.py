@@ -318,7 +318,7 @@ def test_splitjmatrix_simulator_keeps_counts_without_the_ancilla(monkeypatch):
     assert result.counts == [{"10": 5, "01": 5}, {"00": 4}]
     assert result.observables == []
     assert result.metadata["basis"] == "ZX"
-    assert simulator.measure([Measurement.population(0)]).observables[0].tolist() == [0.5, 0.0]
+    assert simulator.measure([Measurement((0,), 'counts["1"] / shots')]).observables[0].tolist() == [0.5, 0.0]
 
 
 @pytest.mark.circuits

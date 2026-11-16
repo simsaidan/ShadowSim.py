@@ -161,8 +161,9 @@ def test_trotterization_simulator_reads_pauli_expectations():
     assert backend.measured is False
     assert expectations.counts is None
     assert "shots=" not in str(simulator)
-    with pytest.raises(ValueError, match="the expectations backend returns Pauli expectations"):
-        apply_measurements(expectations, [Measurement((0,), 'counts["0"] / shots')])
+    read = apply_measurements(expectations, [Measurement((0,), 'counts["0"] / shots')])
+    assert read.observables[0].tolist() == [0.75, 0.75]
+    assert "observable_kind" not in read.metadata
 
 
 @pytest.mark.circuits
@@ -193,25 +194,30 @@ def test_expectation_backend_reads_every_qubit_without_groups():
     assert backend.qubits == [[0, 1], [0, 1]]
     assert simulated.metadata["observable_kind"] == "qubit_expectations"
     assert [curve.tolist() for curve in simulated.observables] == [[0.5, 0.5], [-0.25, -0.25]]
-    measured = simulator.measure([Measurement.population(1), Measurement.expectation(0)])
+    measured = simulator.measure(
+        [
+            Measurement((1,), 'counts["1"] / shots'),
+            Measurement((0,), '(counts["0"] - counts["1"]) / shots'),
+        ]
+    )
     assert [curve.tolist() for curve in measured.observables] == [[0.625, 0.625], [0.5, 0.5]]
     assert "observable_kind" not in measured.metadata
     assert simulator.last_result is measured
     assert [curve.tolist() for curve in simulator.get_results()] == [[0.625, 0.625], [0.5, 0.5]]
-    again = simulator.measure([Measurement.expectation(1)])
+    again = simulator.measure([Measurement((1,), '(counts["0"] - counts["1"]) / shots')])
     assert again.observables[0].tolist() == [-0.25, -0.25]
-    with pytest.raises(ValueError, match="returns Pauli expectations, not shot counts"):
-        simulator.measure([Measurement((0,), 'counts["0"] / shots')])
+    probability = simulator.measure([Measurement((0,), 'counts["0"] / shots')])
+    assert probability.observables[0].tolist() == [0.75, 0.75]
     with pytest.raises(ValueError, match="returns Pauli expectations, not shot counts"):
         simulator.measure([Measurement((0, 1), '(counts["00"] - counts["11"]) / shots')])
     with pytest.raises(ValueError, match="the result has 2 qubits, but this measurement reads qubit 2"):
-        simulator.measure([Measurement.expectation(2)])
+        simulator.measure([Measurement((2,), '(counts["0"] - counts["1"]) / shots')])
 
 
 @pytest.mark.qiskit
 def test_measure_needs_a_simulation_first():
     with pytest.raises(ValueError, match="run the simulation first"):
-        _tiny().measure([Measurement.population(0)])
+        _tiny().measure([Measurement((0,), 'counts["1"] / shots')])
 
 
 @pytest.mark.circuits
@@ -471,7 +477,7 @@ def test_trotterization_simulator_rejects_a_bad_basis() -> None:
 def test_trotterization_simulator_reads_the_chosen_basis(basis: str, expected: float) -> None:
     simulator = _tiny(basis=basis, time_steps=1, total_time=0.0, shots=4000)
     assert simulator.simulate().metadata["basis"] == basis
-    result = simulator.measure([Measurement.expectation(0)])
+    result = simulator.measure([Measurement((0,), '(counts["0"] - counts["1"]) / shots')])
     assert result.observables[0][0] == pytest.approx(expected, abs=0.08)
 
 
@@ -490,7 +496,9 @@ def test_trotterization_simulator_keeps_counts_per_time_point(monkeypatch):
 
     assert result.counts == [{"01": 3, "00": 1}, {"10": 4}]
     assert result.observables == []
-    measured = simulator.measure([Measurement.population(1), Measurement((0, 1), 'counts["00"] / shots')])
+    measured = simulator.measure(
+        [Measurement((1,), 'counts["1"] / shots'), Measurement((0, 1), 'counts["00"] / shots')]
+    )
     assert [curve.tolist() for curve in measured.observables] == [[0.75, 0.0], [0.25, 0.0]]
 
 
@@ -501,7 +509,7 @@ def test_trotterization_simulator_simulate_smoke():
     assert results.observables == []
     assert results.counts is not None
     assert len(results.counts) == 3
-    populations = sim.measure([Measurement.population(0)]).observables
+    populations = sim.measure([Measurement((0,), 'counts["1"] / shots')]).observables
     assert len(populations) == 1
     assert all(0.0 <= x <= 1.0 for x in populations[0])
 
@@ -790,7 +798,7 @@ def test_trotterization_qutip_closed_agreement():
 
     benchmark = Benchmark(qutip_simulator, trotter_simulator)
     benchmark.run()
-    trotter_simulator.measure([Measurement.population(0)])
+    trotter_simulator.measure([Measurement((0,), 'counts["1"] / shots')])
 
     metrics = benchmark.error_metrics()
     assert len(metrics) == 1

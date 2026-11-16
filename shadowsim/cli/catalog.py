@@ -497,7 +497,7 @@ def measurements_for(measure: Mapping[str, object], num_qubits: int) -> list[Mea
     entry = _measurement(_measure_id(measure))
     sites = _sites(measure, num_qubits)
     if entry.kind == "pauli":
-        return [Measurement.expectation(site) for site in sites]
+        return [Measurement((site,), '(counts["0"] - counts["1"]) / shots', f"expectation on {site}") for site in sites]
     expression = measure.get("expression")
     if not isinstance(expression, str):
         raise ValueError("a counts measurement needs an expression")

@@ -619,7 +619,11 @@ def test_preview_imports_are_explicit() -> None:
     circuit = _call("previewText", _circuit_page())
     assert isinstance(circuit, str)
     assert "from shadowsim.simulators import Measurement, TrotterizationSimulator" in circuit
-    assert "measurements = [Measurement.expectation(i) for i in range(model.num_qubits)]" in circuit
+    assert "Measurement.expectation" not in circuit
+    assert (
+        'measurements = [Measurement((i,), \'(counts["0"] - counts["1"]) / shots\', '
+        'f"expectation on {i}") for i in range(model.num_qubits)]'
+    ) in circuit
     assert "measurement_groups" not in circuit
     assert "reducers" not in circuit
     assert "import *" not in circuit
@@ -631,7 +635,8 @@ def test_preview_imports_are_explicit() -> None:
     text = _call("previewText", measured)
     assert isinstance(text, str)
     assert 'basis="ZX"' in text
-    assert "measurements = [Measurement.expectation(1)]" in text
+    assert "Measurement.expectation" not in text
+    assert 'measurements = [Measurement((1,), \'(counts["0"] - counts["1"]) / shots\', "expectation on 1")]' in text
     assert text.endswith("sim.simulate()\nresult = sim.measure(measurements)\nsim.plot_results()")
 
 
@@ -761,6 +766,38 @@ def test_counts_preview_runs(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) ->
     assert result.metadata["measurements"][0]["expression"] == 'counts["00"] / shots'
     assert result.observables[0][0] == 1.0
     assert (tmp_path / "results" / "run1" / "counts.json").is_file()
+
+
+@pytest.mark.qiskit
+def test_expectation_preview_runs(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    pytest.importorskip("qiskit_aer")
+    page = _circuit_page()
+    page["settings"]["total"] = "0.1"
+    page["placedSims"][0]["params"]["time_steps"] = "2"
+    page["placedSims"][0]["params"]["num_steps"] = "1"
+    page["placedSims"][0]["shots"] = "32"
+    page["placedThens"] = ["save"]
+    page["selection"]["then"] = "save"
+    text = _call("previewText", page)
+    assert isinstance(text, str)
+    assert "Measurement.expectation" not in text
+    monkeypatch.chdir(tmp_path)
+    namespace: dict[str, Any] = {}
+    exec(compile(text, "preview", "exec"), namespace)
+    result = namespace["result"]
+    assert result.metadata["measurements"] == [
+        {
+            "qubits": [0],
+            "expression": '(counts["0"] - counts["1"]) / shots',
+            "label": "expectation on 0",
+        },
+        {
+            "qubits": [1],
+            "expression": '(counts["0"] - counts["1"]) / shots',
+            "label": "expectation on 1",
+        },
+    ]
+    assert len(result.observables) == 2
 
 
 def test_matrix_size_uses_the_page_qubit_cap() -> None:

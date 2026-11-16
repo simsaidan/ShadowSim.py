@@ -848,10 +848,12 @@
       const qubits = sites.length === 1 ? `(${sites[0]},)` : `(${sites.join(", ")})`;
       return `measurements = [Measurement(${qubits}, ${pyQuoted(expressionTextValue().trim())})]`;
     }
+    const expectation = (site) =>
+      `Measurement((${site},), '(counts["0"] - counts["1"]) / shots', "expectation on ${site}")`;
     if (count == null || sites.length === count) {
-      return `measurements = [Measurement.expectation(i) for i in range(${systemQubits()})]`;
+      return `measurements = [Measurement((i,), '(counts["0"] - counts["1"]) / shots', f"expectation on {i}") for i in range(${systemQubits()})]`;
     }
-    return `measurements = [${sites.map((site) => `Measurement.expectation(${site})`).join(", ")}]`;
+    return `measurements = [${sites.map((site) => expectation(site)).join(", ")}]`;
   }
 
   function observableSetup() {

@@ -148,9 +148,12 @@ S†, stored as a 2×2 unitary, then a Hadamard). What comes back depends on the
   `NumpyCircuitBackend`, `QulacsCircuitBackend`, and `CirqCircuitBackend` have
   no shot budget.
   Trotterization fills `observables` with each qubit's ⟨P⟩ for its `basis`
-  letter and leaves
-  `counts` empty, so only `Measurement.expectation` and
-  `Measurement.population` can read them.
+  letter and leaves `counts` empty. A one-qubit measurement is read from that
+  distribution: `counts["0"]` is `(1 + ⟨P⟩) / 2`, `counts["1"]` is
+  `(1 - ⟨P⟩) / 2`, and `shots` is 1. Dividing by `shots` gives the infinite-shot
+  value. An expression that uses raw counts without `shots` reads those
+  probabilities. Two or more qubits need a sampling backend, because the result
+  has no correlations between qubits.
 
 In every counts key, bit `i` is system qubit `i` (Qiskit's order is reversed
 before the counts are stored). Split JMatrix drops its ancilla bit, so its keys
@@ -184,15 +187,16 @@ simulator = TrotterizationSimulator(
 simulator.simulate()
 result = simulator.measure(
     [
-        Measurement.expectation(2),  # ⟨X⟩ on qubit 2
+        Measurement((2,), '(counts["0"] - counts["1"]) / shots', "expectation on 2"),  # ⟨X⟩ on qubit 2
         Measurement((0, 1), '(counts["00"] + counts["11"]) / shots', "qubits 0 and 1 agree"),
     ]
 )
 ```
 
-`Measurement.population(q)` is the fraction of shots where qubit `q` read 1, and
-`Measurement.cavity_population(a, b)` is the mean photon number of a cavity stored
-on two qubits.
+`counts["1"] / shots` is the fraction of shots where that qubit read 1. A
+Tavis–Cummings cavity stored on two qubits uses
+`(3 * counts["11"] + 2 * counts["10"] + counts["01"]) / shots`
+for its mean photon number.
 
 `start()` runs that same `simulate()` call on a worker thread and returns a `SimulationJob`
 immediately. Poll `status` (`pending`, `running`, `succeeded`, or `failed`). `result()` waits

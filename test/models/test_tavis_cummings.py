@@ -59,7 +59,17 @@ def test_defaults_match_example2():
     assert model.n_emitters == 1
     assert model.num_qubits == 3
     assert tavis_cummings.qubit_count() == model.num_qubits
-    assert model.measurements == [Measurement.cavity_population(0, 1), Measurement.population(2)]
+    assert model.measurements == [
+        Measurement(
+            (0, 1),
+            '(3 * counts["11"] + 2 * counts["10"] + counts["01"]) / shots',
+            "cavity population on 0, 1",
+        ),
+        Measurement((2,), 'counts["1"] / shots', "P(1) on 2"),
+    ]
+    four = {"00": 1, "01": 1, "10": 1, "11": 1}
+    assert model.measurements[0].evaluate(four) == pytest.approx(1.5)
+    assert model.measurements[1].evaluate({"000": 1, "001": 1, "110": 1, "111": 1}) == pytest.approx(0.5)
 
     assert [h.sites for h in model.local_hamiltonians] == ref["local_sites"]
     for got, expected in zip(model.local_hamiltonians, ref["local_mats"], strict=True):
@@ -114,9 +124,13 @@ def test_two_emitters_layout_and_observables():
     assert model.num_qubits == 4
     assert tavis_cummings.qubit_count(n_emitters=2) == model.num_qubits
     assert model.measurements == [
-        Measurement.cavity_population(0, 1),
-        Measurement.population(2),
-        Measurement.population(3),
+        Measurement(
+            (0, 1),
+            '(3 * counts["11"] + 2 * counts["10"] + counts["01"]) / shots',
+            "cavity population on 0, 1",
+        ),
+        Measurement((2,), 'counts["1"] / shots', "P(1) on 2"),
+        Measurement((3,), 'counts["1"] / shots', "P(1) on 3"),
     ]
     assert len(model.e_ops) == 3
     assert len(model.c_ops_local) == 3
