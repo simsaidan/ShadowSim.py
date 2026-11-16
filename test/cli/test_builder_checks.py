@@ -7,6 +7,7 @@ from typing import Any
 
 import pytest
 
+from shadowsim.cli.catalog import listed_actions, listed_measurements, listed_states
 from shadowsim.cli.run import _page_limits
 
 CHECKS = Path(__file__).resolve().parents[2] / "shadowsim" / "cli" / "site" / "checks.js"
@@ -92,7 +93,7 @@ def _qutip_page() -> dict[str, Any]:
     return {
         "lanes": _LANES,
         "blocks": {
-            "state": [{"id": "basis", "title": "Basis state", "phrase": "Basis state"}],
+            "state": listed_states(),
             "model": [],
             "simulator": [{"id": "qutip", "title": "QuTiP", "observables": True, "setup": _QUTIP_SETUP}],
             "backend": [
@@ -103,12 +104,8 @@ def _qutip_page() -> dict[str, Any]:
                     "setup": "circuit_backend = AerCircuitBackend(shots={shots})",
                 }
             ],
-            "measure": [{"id": "z", "title": "Z expectation", "phrase": "Z expectation on each qubit"}],
-            "then": [
-                {"id": "plot", "title": "Plot results", "phrase": "plot results"},
-                {"id": "save", "title": "Save results", "phrase": "save results"},
-                {"id": "export", "title": "Export metrics", "phrase": "export metrics"},
-            ],
+            "measure": listed_measurements(),
+            "then": listed_actions(),
         },
         "selection": {
             "state": "basis",
@@ -124,14 +121,11 @@ def _qutip_page() -> dict[str, Any]:
             {"id": "ising", "title": "Ising", "qubits": True, "setup": "model = ising(n_qubits={qubits})"}
         ],
         "preexistingId": "ising",
-        "basisBits": "00",
-        "grayBits": "",
-        "angleText": "",
-        "amplitudeText": "",
+        "stateText": {"basis": "00"},
         "placedSims": [{"id": "qutip", "params": {"timeSteps": "11"}}],
         "placedThens": ["plot"],
-        "savePath": "results/run1",
-        "exportPath": "results",
+        "actionText": {"save": "results/run1", "export": "results"},
+        "expressionText": {},
         "measureSites": None,
         "shots": "256",
         "qubitsSource": None,
@@ -200,7 +194,7 @@ def test_a_missing_simulator_is_not_a_reference() -> None:
 def test_added_operators_preview_uses_full_hamiltonians() -> None:
     page = _qutip_page()
     page["settings"]["qubits"] = "1"
-    page["basisBits"] = "0"
+    page["stateText"]["basis"] = "0"
     page["selection"]["model"] = "hamiltonian"
     page["blocks"]["model"] = [
         {"id": "hamiltonian", "stem": "added_hamiltonian", "symbol": "Hamiltonian", "adds": True}
@@ -476,7 +470,7 @@ def test_single_export_includes_the_metrics_call() -> None:
     page = _qutip_page()
     page["selection"]["then"] = "export"
     page["placedThens"] = ["export"]
-    page["exportPath"] = "results"
+    page["actionText"]["export"] = "results"
     text = _call("previewText", page)
     assert isinstance(text, str)
     assert "save_resource_metrics(sim, result.runtime, output_dir=" in text
@@ -487,7 +481,7 @@ def test_benchmark_export_includes_save_error_metrics() -> None:
     page = _qutip_page()
     page["selection"]["then"] = "export"
     page["placedThens"] = ["export"]
-    page["exportPath"] = "results/metrics.json"
+    page["actionText"]["export"] = "results/metrics.json"
     page["placedSims"] = [
         {"id": "qutip", "params": {"timeSteps": "11"}},
         {"id": "qutip", "params": {"timeSteps": "11"}},
@@ -511,7 +505,7 @@ def test_tavis_cummings_hubbard_preview_uses_cavities_and_hopping() -> None:
     page = _qutip_page()
     page["preexistingId"] = "tavis_cummings_hubbard"
     page["factoryText"] = {"n_emitters": "1", "n_cavities": "2", "nu": "1.5"}
-    page["basisBits"] = "000000"
+    page["stateText"]["basis"] = "000000"
     page["modelFactories"] = [
         {
             "id": "tavis_cummings_hubbard",
@@ -541,7 +535,7 @@ def test_jaynes_cummings_hubbard_preview_uses_cavities_and_hopping() -> None:
     page = _qutip_page()
     page["preexistingId"] = "jaynes_cummings_hubbard"
     page["factoryText"] = {"n_cavities": "2", "nu": "1.5"}
-    page["basisBits"] = "000000"
+    page["stateText"]["basis"] = "000000"
     page["modelFactories"] = [
         {
             "id": "jaynes_cummings_hubbard",
@@ -623,7 +617,7 @@ def _counts_page(expression: str = 'counts["01"] / shots') -> dict[str, Any]:
     page = _circuit_page()
     page["blocks"]["measure"].append({"id": "counts", "title": "Counts", "phrase": "Counts on all qubits"})
     page["selection"]["measure"] = "counts"
-    page["countsExpression"] = expression
+    page["expressionText"] = {"counts": expression}
     return page
 
 
@@ -660,7 +654,7 @@ def test_counts_needs_aer_and_a_valid_expression() -> None:
     assert _call("countsProblem", page) is None
     assert _call("runAllowed", page) is True
 
-    page["countsExpression"] = 'counts["1"] / shots'
+    page["expressionText"] = {"counts": 'counts["1"] / shots'}
     assert _call("countsProblem", page) == "Counts keys must be 2 characters of 0 and 1."
     assert _call("countsStatus", page, True) == "Counts keys must be 2 characters of 0 and 1 to preview the script."
     assert _call("runAllowed", page) is False
@@ -676,7 +670,7 @@ def test_counts_needs_aer_and_a_valid_expression() -> None:
     qutip = _qutip_page()
     qutip["blocks"]["measure"].append({"id": "counts", "title": "Counts", "phrase": "Counts on all qubits"})
     qutip["selection"]["measure"] = "counts"
-    qutip["countsExpression"] = 'counts["01"] / shots'
+    qutip["expressionText"] = {"counts": 'counts["01"] / shots'}
     assert _call("countsProblem", qutip) == "Counts needs a backend with a shot budget."
 
     pauli = _counts_page()
@@ -804,7 +798,7 @@ def test_ising_preview_includes_factory_arguments() -> None:
     assert "edges=" not in text
 
     page["settings"]["qubits"] = "4"
-    page["basisBits"] = "0000"
+    page["stateText"]["basis"] = "0000"
     page["factoryText"] = {"J": "0.5", "edges": "0-1, 1-2"}
     edited = _call("previewText", page)
     assert isinstance(edited, str)
@@ -825,13 +819,13 @@ def test_bad_ising_arguments_block_the_run() -> None:
     assert _call("runAllowed", page) is False
 
     page["settings"]["qubits"] = "4"
-    page["basisBits"] = "0000"
+    page["stateText"]["basis"] = "0000"
     page["factoryText"] = {"boundary": "periodic", "edges": "0-1"}
     assert _call("factoryAlert", page) is None
     assert _call("runAllowed", page) is True
 
     page["settings"]["qubits"] = "2"
-    page["basisBits"] = "00"
+    page["stateText"]["basis"] = "00"
     page["factoryText"] = {"boundary": "periodic"}
     assert _call("factoryAlert", page) is None
     assert _call("runAllowed", page) is True
@@ -840,7 +834,7 @@ def test_bad_ising_arguments_block_the_run() -> None:
 def test_per_emitter_list_must_match_the_emitter_count() -> None:
     page = _qutip_page()
     page["preexistingId"] = "tavis_cummings"
-    page["basisBits"] = "0000"
+    page["stateText"]["basis"] = "0000"
     page["modelFactories"] = [
         {
             "id": "tavis_cummings",
@@ -878,7 +872,7 @@ def test_per_emitter_list_must_match_the_emitter_count() -> None:
 def test_hubbard_preview_keeps_structure_and_factory_arguments() -> None:
     page = _qutip_page()
     page["preexistingId"] = "tavis_cummings_hubbard"
-    page["basisBits"] = "000000"
+    page["stateText"]["basis"] = "000000"
     page["factoryText"] = {"omega_c": "10", "n_emitters": "1", "n_cavities": "2", "nu": "1.5"}
     page["modelFactories"] = [
         {

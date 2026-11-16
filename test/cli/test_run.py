@@ -19,9 +19,8 @@ import numpy as np
 import pytest
 
 from shadowsim.backends import listed_backends
+from shadowsim.cli.catalog import listed_states
 from shadowsim.cli.run import (
-    _MAX_AMPLITUDES,
-    _MAX_FACTORY_QUBITS,
     _MAX_NUM_STEPS,
     _MAX_OPERATOR_QUBITS,
     _MAX_SHOTS,
@@ -2378,6 +2377,28 @@ def test_listed_simulators_reads_the_package_classes() -> None:
     assert "QuTiP" in listed[1]["detail"]
 
 
+@pytest.mark.parametrize(
+    ("path", "key", "ids"),
+    [
+        ("/states", "states", ["basis", "gray", "angle", "amplitude"]),
+        ("/measurements", "measurements", ["z", "x", "counts"]),
+        ("/actions", "actions", ["plot", "save", "export"]),
+    ],
+)
+def test_get_page_catalogs_return_the_package_lists(path: str, key: str, ids: list[str]) -> None:
+    status, body = _request("GET", path)
+    payload = json.loads(body)
+    assert status == 200
+    assert [item["id"] for item in payload[key]] == ids
+
+
+def test_an_unknown_action_is_rejected() -> None:
+    with pytest.raises(ValueError, match="unknown action"):
+        check_page(_selection(thens=["print"]))
+    with pytest.raises(ValueError, match="unknown action"):
+        run_page(_selection(thens=["print"]))
+
+
 def test_get_models_returns_the_package_factories() -> None:
     status, body = _request("GET", "/models")
     payload = json.loads(body)
@@ -2594,14 +2615,9 @@ def test_ignored_actions_and_bad_numbers_fail_before_import(forbid_qutip: None) 
         build_simulator(_selection(simulator="trotterization", time_steps=2.0, shots=0))
 
 
-def test_page_limits_use_the_validator_caps() -> None:
+def test_page_limits_use_the_catalog_caps() -> None:
     assert _page_limits() == {
-        "states": {
-            "basis": _MAX_FACTORY_QUBITS,
-            "gray": _MAX_FACTORY_QUBITS,
-            "angle": _MAX_FACTORY_QUBITS,
-            "amplitude": _MAX_AMPLITUDES,
-        },
+        "states": {item["id"]: item["field"]["cap"] for item in listed_states()},
         "operatorQubits": _MAX_OPERATOR_QUBITS,
         "timeSteps": _MAX_TIME_STEPS,
         "numSteps": _MAX_NUM_STEPS,

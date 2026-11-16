@@ -16,15 +16,20 @@ from shadowsim._optional import import_optional
 from shadowsim.backends import _EXPORTS as _BACKEND_EXPORTS
 from shadowsim.backends.catalog import ListedBackend, listed_backends
 from shadowsim.benchmarking.benchmark import Benchmark
+from shadowsim.cli.catalog import (
+    action_record,
+    labels_for,
+    listed_states,
+    measurement_record,
+    measurements_for,
+    observables_for,
+    prepare_state,
+)
 from shadowsim.core.hamiltonian import Hamiltonian
 from shadowsim.core.local_hamiltonian import LocalHamiltonian
 from shadowsim.core.local_operator import LocalOperator
 from shadowsim.core.operator import Operator
 from shadowsim.core.state import State
-from shadowsim.encoding.amplitude import AmplitudeEncoding
-from shadowsim.encoding.angle import AngleEncoding
-from shadowsim.encoding.computational_basis import ComputationalBasisEncoding
-from shadowsim.encoding.gray import GrayEncoding
 from shadowsim.models.catalog import ListedParam, listed_models
 from shadowsim.models.ising import IsingModel
 from shadowsim.models.tavis_cummings import TavisCummingsModel
@@ -33,39 +38,30 @@ from shadowsim.simulators.result import SimulationResult, _resource_record, save
 from shadowsim.simulators.simulator import Simulator
 from shadowsim.utils.hermitian import hermitian
 
-_STATES = frozenset({"basis", "gray", "angle", "amplitude"})
 # A page click cannot afford the class defaults of 101 points and 10_000 shots.
 _CIRCUIT_TIME_STEPS = 11
 _CIRCUIT_NUM_STEPS = 4
 _CIRCUIT_SHOTS = 256
 _CIRCUIT_SEED = 0
-_DEFAULT_SAVE_PATH = "results/run1"
-_DEFAULT_EXPORT_DIR = "results"
 _MAX_OPERATOR_QUBITS = 8
 _MAX_FACTORY_QUBITS = 15
 _MAX_TIME_STEPS = 500
 _MAX_NUM_STEPS = 100
 _MAX_TROTTER_DEPTH = 100
 _MAX_SHOTS = 100000
-# The builder will not type more amplitudes than this. A longer list is still accepted.
-_MAX_AMPLITUDES = 16
 
 
 def _page_limits() -> dict[str, object]:
     """Return the builder page caps.
 
-    Basis, Gray, and angle lengths are ``_MAX_FACTORY_QUBITS``. The amplitude
-    count is the page typing cap and is not enforced on a posted list. A posted
-    factory is capped by the qubit count it reports. Every other field is a cap
-    a validator in this module enforces.
+    State caps are each catalog entry's ``field.cap``. Basis and Gray
+    preparation also reject a longer bit string. The amplitude count is the
+    page typing cap and is not enforced on a posted list. A posted factory is
+    capped by the qubit count it reports. Every other field is a cap a
+    validator in this module enforces.
     """
     return {
-        "states": {
-            "basis": _MAX_FACTORY_QUBITS,
-            "gray": _MAX_FACTORY_QUBITS,
-            "angle": _MAX_FACTORY_QUBITS,
-            "amplitude": _MAX_AMPLITUDES,
-        },
+        "states": {item["id"]: item["field"]["cap"] for item in listed_states()},
         "operatorQubits": _MAX_OPERATOR_QUBITS,
         "timeSteps": _MAX_TIME_STEPS,
         "numSteps": _MAX_NUM_STEPS,
@@ -244,9 +240,11 @@ def build_simulator(selection: Mapping[str, object], *, simulator: int = 0) -> S
         selection: ``total`` is the shared evolution time. ``state`` has ``id``
             and ``value``. ``model`` is ``id`` plus ``arguments``, or ``terms``
             plus ``qubits``. Each simulator has ``id``, ``arguments``, and
-            ``backend`` (null, or ``id`` plus ``arguments``). ``measure`` has
-            ``id`` and ``sites``, plus ``expression`` for ``counts``. ``actions``
-            is ignored. The simulator ``id`` is
+            ``backend`` (null, or ``id`` plus ``arguments``). ``state.id`` is an
+            id from :func:`shadowsim.cli.catalog.listed_states`. ``measure`` has
+            ``id`` and ``sites``, plus ``expression`` for ``counts``. ``measure.id``
+            is an id from :func:`shadowsim.cli.catalog.listed_measurements`.
+            ``actions`` is ignored. The simulator ``id`` is
             an id from :func:`shadowsim.simulators.catalog.listed_simulators`.
             A simulator that records observables ignores a missing backend. A
             circuit simulator's ``backend`` is an id from
@@ -313,7 +311,7 @@ def _build_simulator(document: _RunDocument, index: int) -> Simulator:
     backend = entry.backend_id
     if backend and backend not in _backend_ids():
         raise ValueError("unknown backend")
-    if document.state_id not in _STATES:
+    if not any(item["id"] == document.state_id for item in listed_states()):
         raise ValueError("unknown initial state")
     total_time = _positive_number(document.total)
     model = _page_model(document.model)
@@ -362,10 +360,12 @@ def _prepare_page(selection: Mapping[str, object], *, output_root: Path | None) 
     mismatched time grid fails here. The benchmark is not run, and nothing is written.
 
     Raises:
-        ValueError: The document cannot be built, or a save or export path is illegal.
+        ValueError: The document cannot be built, an action id is not listed, or
+            a save or export path is illegal.
         ImportError: The extra required by a simulator or backend is not installed.
     """
     document = _read_document(selection)
+    _require_actions(document.action_ids)
     directory = _save_directory(document, output_root)
     export_to = _export_location(document, output_root)
     simulators = tuple(_build_simulator(document, index) for index in range(len(document.simulators)))
@@ -397,8 +397,8 @@ def check_page(selection: Mapping[str, object], *, output_root: Path | None = No
 
     Raises:
         ValueError: The document cannot run, including an integer field below
-            its minimum, an edge list, or a qubit count above 15, or a save or
-            export path outside ``output_root``.
+            its minimum, an edge list, or a qubit count above 15, an action id
+            that is not listed, or a save or export path outside ``output_root``.
         ImportError: The extra required by a simulator or backend is not installed.
     """
     prepared = _prepare_page(selection, output_root=output_root)
@@ -414,10 +414,13 @@ def run_page(selection: Mapping[str, object], *, output_root: Path | None = None
     simulator may be the reference or a challenger. Every entry must share ``total``
     and ``time_steps``, because :class:`~shadowsim.benchmarking.benchmark.Benchmark`
     compares one time grid. ``time_steps`` is read from that entry's arguments.
-    ``actions`` lists the ids to run. ``save`` writes each result under ``save_path``,
-    or ``results/run1`` when that key is missing. One result is the directory itself.
+    ``actions`` lists the ids to run. An id that is not in
+    :func:`shadowsim.cli.catalog.listed_actions` is an error. ``save`` writes each
+    result under ``save_path``, or that action's catalog default when the key is
+    missing. One result is the directory itself.
     A benchmark writes ``sim_1``, ``sim_2``, and so on inside it. ``export`` writes
-    metrics JSON under ``export_path``, or ``results/`` when that key is missing.
+    metrics JSON under ``export_path``, or that action's catalog default when
+    the key is missing.
     A benchmark uses :meth:`~shadowsim.benchmarking.benchmark.Benchmark.save_error_metrics`.
     One simulator writes its runtime, shot budget, and circuit metrics with
     :func:`~shadowsim.simulators.result.save_resource_metrics`. ``plot`` is drawn by the
@@ -498,6 +501,21 @@ def _path_under_root(path: Path, root: Path, label: str) -> Path:
     return resolved
 
 
+def _require_actions(action_ids: frozenset[object]) -> None:
+    """Reject an action id that the catalog does not list.
+
+    Raises:
+        ValueError: An id is not listed.
+    """
+    for action_id in action_ids:
+        action_record(cast(str, action_id))
+
+
+def _action_path_default(action_id: str) -> str:
+    """Return the catalog default path for a path action."""
+    return action_record(action_id)["field"]["default"]
+
+
 def _save_directory(document: _RunDocument, output_root: Path | None) -> Path | None:
     """Return the save directory, or ``None`` when this run is not saved.
 
@@ -507,9 +525,10 @@ def _save_directory(document: _RunDocument, output_root: Path | None) -> Path | 
     """
     if "save" not in document.action_ids:
         return None
-    raw = document.actions.get("save_path", _DEFAULT_SAVE_PATH)
+    default = _action_path_default("save")
+    raw = document.actions.get("save_path", default)
     if raw is None:
-        raw = _DEFAULT_SAVE_PATH
+        raw = default
     if not isinstance(raw, str) or not raw.strip():
         raise ValueError("save path must be a path")
     path = Path(raw.strip())
@@ -527,9 +546,10 @@ def _export_location(document: _RunDocument, output_root: Path | None) -> Path |
     """
     if "export" not in document.action_ids:
         return None
-    raw = document.actions.get("export_path", _DEFAULT_EXPORT_DIR)
+    default = _action_path_default("export")
+    raw = document.actions.get("export_path", default)
     if raw is None:
-        raw = _DEFAULT_EXPORT_DIR
+        raw = default
     if not isinstance(raw, str) or not raw.strip():
         raise ValueError("export path must be a path")
     path = Path(raw.strip())
@@ -659,8 +679,9 @@ def _circuit_simulator(
 ) -> Simulator:
     """Build a circuit simulator on the catalog backend ``record`` names.
 
-    X rotates the selected qubits into the X basis before the measurement. Z
-    and counts measure every qubit in Z. The simulator records counts, or Pauli
+    A measurement whose catalog record sets ``rotate`` reads those qubits in the
+    X basis before the measurement. The others measure every qubit in Z. The
+    simulator records counts, or Pauli
     expectations when the backend has no shot budget, which
     :func:`_measured_result` reads.
     """
@@ -679,7 +700,7 @@ def _circuit_simulator(
             arguments, "trotter_depth", 1, "Trotter depth", maximum=_MAX_TROTTER_DEPTH
         )
         extra["order"] = _selection_order(arguments)
-    if measure_id == "x":
+    if measurement_record(measure_id).get("rotate"):
         extra["basis"] = _x_basis(model.num_qubits, sites)
     return cls(
         model.local_hamiltonians,
@@ -696,8 +717,12 @@ def _circuit_simulator(
 
 
 def _reject_counts(measure_id: str, label: str) -> None:
-    """Reject a counts measurement for a simulator or backend that returns expectations."""
-    if measure_id != "counts":
+    """Reject a counts measurement for a simulator or backend that returns expectations.
+
+    Raises:
+        ValueError: ``measure_id`` is not listed, or it is a counts measurement.
+    """
+    if measurement_record(measure_id)["kind"] != "counts":
         return
     raise ValueError(f"{label} returns Pauli expectations, not shot counts; use Aer for a counts measurement")
 
@@ -1316,90 +1341,23 @@ def _measurements(measure: Mapping[str, object], num_qubits: int) -> list[Measur
     Raises:
         ValueError: ``measure`` is unknown, or the counts ``expression`` is not allowed.
     """
-    measure_id = _text(measure.get("id"))
-    sites = _measure_sites(measure, num_qubits)
-    if measure_id in ("x", "z"):
-        return [Measurement.expectation(site) for site in sites]
-    if measure_id != "counts":
-        raise ValueError("unknown measurement")
-    expression = measure.get("expression")
-    if not isinstance(expression, str):
-        raise ValueError("a counts measurement needs an expression")
-    return [Measurement(tuple(sites), expression)]
+    return measurements_for(measure, num_qubits)
 
 
 def _observable_labels(measure: Mapping[str, object], num_qubits: int) -> list[str]:
     """Return one chart name per curve.
 
-    ``z`` on qubits 0 and 1 is ``⟨Z⟩ on 0`` and ``⟨Z⟩ on 1``. ``counts`` is its expression.
+    A Pauli measurement on qubits 0 and 1 is ``⟨Z⟩ on 0`` and ``⟨Z⟩ on 1``, using
+    that record's letter. ``counts`` is its expression.
     """
-    measure_id = _text(measure.get("id"))
-    if measure_id == "counts":
-        return [item.label for item in _measurements(measure, num_qubits)]
-    if measure_id not in ("x", "z"):
-        raise ValueError("unknown measurement")
-    letter = measure_id.upper()
-    return [f"⟨{letter}⟩ on {site}" for site in _measure_sites(measure, num_qubits)]
+    return labels_for(measure, num_qubits)
 
 
 def _observables(num_qubits: int, measure_id: str, sites: list[int]) -> list[Operator]:
-    """Return one Pauli on each selected qubit for ``measure_id``, which is ``x`` or ``z``."""
-    letter = measure_id.upper()
-    observables: list[Operator] = []
-    for site in sites:
-        label = ["I"] * num_qubits
-        label[site] = letter
-        observables.append(Operator("".join(label)))
-    return observables
-
-
-def _bit_string(value: object, label: str) -> list[int]:
-    """Return ``value`` as bits when it is a string of 0 and 1, at most ``_MAX_FACTORY_QUBITS`` characters."""
-    if (
-        not isinstance(value, str)
-        or not value
-        or len(value) > _MAX_FACTORY_QUBITS
-        or any(bit not in "01" for bit in value)
-    ):
-        raise ValueError(f"{label} must be a string of 0 and 1, at most {_MAX_FACTORY_QUBITS} characters")
-    return [int(bit) for bit in value]
-
-
-def _real_list(value: object, count: int | None, label: str) -> list[float]:
-    """Return ``value`` as finite real numbers, and require ``count`` of them when set."""
-    expected = f"{count} finite real numbers" if count is not None else "a non-empty list of finite real numbers"
-    if not isinstance(value, list) or not value or (count is not None and len(value) != count):
-        raise ValueError(f"{label} must be {expected}")
-    numbers: list[float] = []
-    for item in value:
-        if isinstance(item, bool) or not isinstance(item, (int, float)) or not math.isfinite(float(item)):
-            raise ValueError(f"{label} must be {expected}")
-        numbers.append(float(item))
-    return numbers
+    """Return one Pauli on each selected qubit for a Pauli ``measure_id``."""
+    return observables_for(num_qubits, measure_id, sites)
 
 
 def _initial_state(state_id: str, num_qubits: int, data: object = None) -> State:
     """Prepare ``state_id`` on ``num_qubits`` qubits from the posted ``data``."""
-    if state_id == "basis":
-        bits = _bit_string(data, "basis bits")
-        if len(bits) != num_qubits:
-            raise ValueError(f"basis bit string length must equal the qubit count ({num_qubits})")
-        return ComputationalBasisEncoding(num_qubits).encode(bits)
-    if state_id == "gray":
-        bits = _bit_string(data, "Gray code bits")
-        if len(bits) != num_qubits:
-            raise ValueError(f"Gray code bit string length must equal the qubit count ({num_qubits})")
-        return GrayEncoding(num_qubits).encode(bits)
-    if state_id == "angle":
-        return AngleEncoding().encode(_real_list(data, num_qubits, "angles"))
-    if state_id != "amplitude":
-        raise ValueError("unknown initial state")
-    state = AmplitudeEncoding().encode(_real_list(data, None, "amplitudes"))
-    prepared = state.get_num_qubits()
-    if prepared != num_qubits:
-        prepared_label = "qubit" if prepared == 1 else "qubits"
-        model_label = "qubit" if num_qubits == 1 else "qubits"
-        raise ValueError(
-            f"amplitude encoding prepares {prepared} {prepared_label}, model has {num_qubits} {model_label}"
-        )
-    return state
+    return prepare_state(state_id, num_qubits, data)
