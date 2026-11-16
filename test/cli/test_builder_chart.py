@@ -323,12 +323,12 @@ def test_benchmark_series_keep_their_curve_names() -> None:
             "times": [0, 1],
             "labels": ["⟨X⟩ on 1"],
             "series": [
-                {"name": "qutip#1", "labels": ["qutip#1 · ⟨X⟩ on 1"], "observables": [[1, 0]]},
-                {"name": "qutip#2", "observables": [[0, 1]]},
+                {"name": "QuTiP#1", "labels": ["QuTiP#1 · ⟨X⟩ on 1"], "observables": [[1, 0]]},
+                {"name": "QuTiP#2", "observables": [[0, 1]]},
             ],
         }
     )
-    assert _legend(chart) == ["qutip#1 · ⟨X⟩ on 1", "qutip#2 · ⟨X⟩ on 1"]
+    assert _legend(chart) == ["QuTiP#1 · ⟨X⟩ on 1", "QuTiP#2 · ⟨X⟩ on 1"]
     assert _node_text(_by_class(chart, "y-title")) == "⟨X⟩"
 
 
@@ -356,13 +356,13 @@ def _benchmark() -> dict[str, Any]:
         "saved": ["results/run1"],
         "series": [
             {
-                "name": "qutip#1",
-                "labels": ["qutip#1 · ⟨Z⟩ on 0", "qutip#1 · ⟨Z⟩ on 1"],
+                "name": "QuTiP#1",
+                "labels": ["QuTiP#1 · ⟨Z⟩ on 0", "QuTiP#1 · ⟨Z⟩ on 1"],
                 "observables": [[2, 0], [1, 1]],
             },
             {
-                "name": "qutip#2",
-                "labels": ["qutip#2 · ⟨Z⟩ on 0", "qutip#2 · ⟨Z⟩ on 1"],
+                "name": "QuTiP#2",
+                "labels": ["QuTiP#2 · ⟨Z⟩ on 0", "QuTiP#2 · ⟨Z⟩ on 1"],
                 "observables": [[0, 0], [1, 0]],
             },
         ],
@@ -378,6 +378,7 @@ def _benchmark() -> dict[str, Any]:
         "resources": [
             {
                 "simulator_id": "qutip_simulator#1",
+                "title": "QuTiP#1",
                 "wall_time_s": 0.41,
                 "shots_per_job": None,
                 "num_jobs": None,
@@ -470,23 +471,23 @@ def test_error_switch_replaces_the_curves_and_keeps_the_resource_line() -> None:
         "Error",
     ]
     assert _pressed(curves) == ["All", "Curves"]
-    assert _legend(curves) == ["qutip#1 · ⟨Z⟩ on 0", "qutip#1 · ⟨Z⟩ on 1", "qutip#2 · ⟨Z⟩ on 0", "qutip#2 · ⟨Z⟩ on 1"]
+    assert _legend(curves) == ["QuTiP#1 · ⟨Z⟩ on 0", "QuTiP#1 · ⟨Z⟩ on 1", "QuTiP#2 · ⟨Z⟩ on 0", "QuTiP#2 · ⟨Z⟩ on 1"]
     assert _node_text(_by_class(curves, "hint")) == "Saved to results/run1"
     resources = (
-        "qutip#1 0.41 s, depth N/A, width N/A, gates N/A, T N/A, Toffoli N/A"
+        "QuTiP#1 0.41 s, depth N/A, width N/A, gates N/A, T N/A, Toffoli N/A"
         " · aer 1.2 s, 256 shots × 11, depth 4, width 2, gates 9, T 1, Toffoli 2"
     )
     assert _node_text(_by_class(curves, "resources")) == resources
 
     error = _results(payload, click="Error")
     assert _pressed(error) == ["All", "Error"]
-    assert _node_text(_by_class(error, "y-title")) == "Error vs qutip#1"
-    assert _svg(error)["attrs"]["aria-label"] == "Error vs qutip#1 versus time"
+    assert _node_text(_by_class(error, "y-title")) == "Error vs QuTiP#1"
+    assert _svg(error)["attrs"]["aria-label"] == "Error vs QuTiP#1 versus time"
     assert len(_polylines(error)) == 2
-    assert _line_titles(error) == ["qutip#2 · ⟨Z⟩ on 0", "qutip#2 · ⟨Z⟩ on 1"]
+    assert _line_titles(error) == ["QuTiP#2 · ⟨Z⟩ on 0", "QuTiP#2 · ⟨Z⟩ on 1"]
     assert _legend(error) == [
-        "qutip#2 · ⟨Z⟩ on 0: max 2, RMSE 1.5",
-        "qutip#2 · ⟨Z⟩ on 1: max 1, RMSE 0.5",
+        "QuTiP#2 · ⟨Z⟩ on 0: max 2, RMSE 1.5",
+        "QuTiP#2 · ⟨Z⟩ on 1: max 1, RMSE 0.5",
     ]
     y_ticks, _x_ends = _axis_labels(error)
     assert y_ticks == ["0", "1", "2"]
@@ -495,22 +496,22 @@ def test_error_switch_replaces_the_curves_and_keeps_the_resource_line() -> None:
     assert _node_text(_by_class(error, "resources")) == resources
     assert _node_text(_by_class(error, "hint")) == "Saved to results/run1"
     readout = _invoke("hoverReadout", payload, 0, args=[payload, 0, "error"])
-    assert readout == "t = 0 · qutip#2 · ⟨Z⟩ on 0 = 2 · qutip#2 · ⟨Z⟩ on 1 = 0"
+    assert readout == "t = 0 · QuTiP#2 · ⟨Z⟩ on 0 = 2 · QuTiP#2 · ⟨Z⟩ on 1 = 0"
 
 
 def test_observable_switch_shows_one_chart_at_a_time() -> None:
     payload = _benchmark()
     one = _results(payload, click="⟨Z⟩ on 1")
     assert _pressed(one) == ["⟨Z⟩ on 1", "Curves"]
-    assert _legend(one) == ["qutip#1 · ⟨Z⟩ on 1", "qutip#2 · ⟨Z⟩ on 1"]
+    assert _legend(one) == ["QuTiP#1 · ⟨Z⟩ on 1", "QuTiP#2 · ⟨Z⟩ on 1"]
     assert len(_polylines(one)) == 2
 
     error = _results(payload, clicks=["⟨Z⟩ on 1", "Error"])
     assert _pressed(error) == ["⟨Z⟩ on 1", "Error"]
-    assert _legend(error) == ["qutip#2 · ⟨Z⟩ on 1: max 1, RMSE 0.5"]
-    assert _line_titles(error) == ["qutip#2 · ⟨Z⟩ on 1"]
+    assert _legend(error) == ["QuTiP#2 · ⟨Z⟩ on 1: max 1, RMSE 0.5"]
+    assert _line_titles(error) == ["QuTiP#2 · ⟨Z⟩ on 1"]
     assert _node_text(_by_class(error, "resources")) == (
-        "qutip#1 0.41 s, depth N/A, width N/A, gates N/A, T N/A, Toffoli N/A"
+        "QuTiP#1 0.41 s, depth N/A, width N/A, gates N/A, T N/A, Toffoli N/A"
         " · aer 1.2 s, 256 shots × 11, depth 4, width 2, gates 9, T 1, Toffoli 2"
     )
 
@@ -518,15 +519,15 @@ def test_observable_switch_shows_one_chart_at_a_time() -> None:
     assert _pressed(restored) == ["All", "Curves"]
     assert len(_polylines(restored)) == 4
     readout = _invoke("hoverReadout", payload, 0, args=[payload, 0, "error", 1])
-    assert readout == "t = 0 · qutip#2 · ⟨Z⟩ on 1 = 0"
+    assert readout == "t = 0 · QuTiP#2 · ⟨Z⟩ on 1 = 0"
 
 
 def test_simulator_switch_sits_between_curves_and_error() -> None:
     payload = _benchmark()
-    payload["series"][0]["name"] = "qutip"
-    payload["series"][1]["name"] = "split_jmatrix"
-    payload["series"][0]["labels"] = ["qutip · ⟨Z⟩ on 0", "qutip · ⟨Z⟩ on 1"]
-    payload["series"][1]["labels"] = ["split_jmatrix · ⟨Z⟩ on 0", "split_jmatrix · ⟨Z⟩ on 1"]
+    payload["series"][0]["name"] = "QuTiP"
+    payload["series"][1]["name"] = "Split J"
+    payload["series"][0]["labels"] = ["QuTiP · ⟨Z⟩ on 0", "QuTiP · ⟨Z⟩ on 1"]
+    payload["series"][1]["labels"] = ["Split J · ⟨Z⟩ on 0", "Split J · ⟨Z⟩ on 1"]
     panel = _results(payload)
     assert [_node_text(button) for button in _buttons(panel) if button["attrs"].get("data-view")] == [
         "Curves",
@@ -537,10 +538,10 @@ def test_simulator_switch_sits_between_curves_and_error() -> None:
 
     one = _results(payload, click="Split J")
     assert _pressed(one) == ["All", "Split J"]
-    assert _legend(one) == ["split_jmatrix · ⟨Z⟩ on 0", "split_jmatrix · ⟨Z⟩ on 1"]
+    assert _legend(one) == ["Split J · ⟨Z⟩ on 0", "Split J · ⟨Z⟩ on 1"]
     assert _node_text(_by_class(one, "y-title")) == "⟨Z⟩"
 
     focused = _results(payload, clicks=["⟨Z⟩ on 0", "QuTiP"])
     assert _pressed(focused) == ["⟨Z⟩ on 0", "QuTiP"]
-    assert _legend(focused) == ["qutip · ⟨Z⟩ on 0"]
+    assert _legend(focused) == ["QuTiP · ⟨Z⟩ on 0"]
     assert len(_polylines(focused)) == 1

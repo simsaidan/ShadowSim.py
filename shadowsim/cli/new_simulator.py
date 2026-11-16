@@ -151,6 +151,8 @@ class {names.class_name}(Simulator):
     TODO: replace this docstring with a real description of the backend.
     """
 
+    title = "{names.base_name}"
+
     def __init__(
         self,
         hamiltonians: list[Hamiltonian],

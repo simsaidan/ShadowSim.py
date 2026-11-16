@@ -159,6 +159,7 @@ class SplitJMatrixSimulator(ProductFormulaSimulator):
     time point in ``completed_steps``.
     """
 
+    title: str = "Split J"
     requires_sampling_backend: bool = True
     sampling_backend_error: str = "Split JMatrix samples an ancilla circuit and needs a backend with a shot budget"
     counts_skip: int = 1

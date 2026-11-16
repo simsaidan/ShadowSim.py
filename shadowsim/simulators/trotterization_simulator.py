@@ -162,6 +162,7 @@ class TrotterizationSimulator(ProductFormulaSimulator):
     time point in ``completed_steps``.
     """
 
+    title: str = "Trotter"
     closed_system: bool = True
 
     def __init__(

@@ -190,6 +190,29 @@ def test_ising_qubit_count_is_not_capped_on_the_page(qubits: str) -> None:
     assert _call("qubitProblem", page, False) is None
 
 
+def test_a_missing_simulator_is_not_a_reference() -> None:
+    page = _qutip_page()
+    assert _call("isReference", page, {"id": "qutip"}) is True
+    page["blocks"]["simulator"] = []
+    assert _call("isReference", page, {"id": "qutip"}) is False
+
+
+def test_added_operators_preview_uses_full_hamiltonians() -> None:
+    page = _qutip_page()
+    page["settings"]["qubits"] = "1"
+    page["basisBits"] = "0"
+    page["selection"]["model"] = "hamiltonian"
+    page["blocks"]["model"] = [
+        {"id": "hamiltonian", "stem": "added_hamiltonian", "symbol": "Hamiltonian", "adds": True}
+    ]
+    page["modelTerms"] = [{"id": "hamiltonian", "matrix": "[[1, 0], [0, -1]]"}]
+    text = _call("previewText", page)
+    assert isinstance(text, str)
+    assert "full_hamiltonians = [added_hamiltonian]" in text
+    assert "QutipSimulator(full_hamiltonians, lindblads_full, state," in text
+    assert "qutip_hamiltonians" not in text
+
+
 def test_qutip_without_a_backend_is_ready() -> None:
     page = _qutip_page()
     assert page["selection"]["backend"] is None
@@ -308,6 +331,7 @@ def test_split_j_rejects_a_backend_without_shots() -> None:
     assert _call("backendFits", page, split_j, "paulipropagation") is False
     assert _call("backendFits", page, split_j, "aer") is True
     assert _call("backendFits", page, trotter, "paulipropagation") is True
+    page["blocks"]["simulator"].append({"id": "qutip", "observables": True})
     assert _call("backendFits", page, {"id": "qutip"}, "aer") is False
 
 

@@ -32,7 +32,8 @@ def listed_simulators() -> list[ListedSimulator]:
     when the class sets ``requires_sampling_backend``, so the page pairs it only
     with a backend that has a shot budget. ``closed_system`` is true when the
     class sets that attribute. ``trotter`` is true when the constructor takes
-    ``trotter_depth``.
+    ``trotter_depth``. ``title`` and ``phrase`` are the class ``title``
+    attribute. A class without one uses its name with ``Simulator`` removed.
     ``setup`` names the class and leaves the page's constructor values as
     placeholders: ``{name}``, ``{hamiltonians}``, ``{lindblads}``, ``{qubits}``,
     ``{total}``, and ``{time_steps}``. A circuit simulator also leaves
@@ -63,11 +64,24 @@ def listed_simulators() -> list[ListedSimulator]:
     return listed
 
 
+def _catalog_title(cls: type, stem: str) -> str:
+    """Return the board title for ``cls``.
+
+    A class ``title`` is that string. Otherwise ``stem`` is the class name with
+    ``Simulator`` removed, so a simulator that does not set ``title`` still lists.
+    """
+    title = getattr(cls, "title", None)
+    if isinstance(title, str) and title:
+        return title
+    return stem
+
+
 def _describe_simulator(cls: type) -> ListedSimulator:
     """Describe one simulator class."""
-    title = cls.__name__.removesuffix("Simulator")
+    stem = cls.__name__.removesuffix("Simulator")
+    title = _catalog_title(cls, stem)
     document = inspect.getdoc(cls)
-    detail = title if document is None else document.split("\n", 1)[0].replace("``", "")
+    detail = stem if document is None else document.split("\n", 1)[0].replace("``", "")
     parameters = inspect.signature(cls).parameters
     observables = "observables" in parameters
     samples = bool(getattr(cls, "requires_sampling_backend", False))
@@ -96,7 +110,7 @@ def _describe_simulator(cls: type) -> ListedSimulator:
             ")"
         )
     return {
-        "id": title.lower(),
+        "id": stem.lower(),
         "title": title,
         "detail": detail,
         "phrase": title,

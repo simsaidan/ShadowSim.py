@@ -20,6 +20,8 @@ from shadowsim.simulators.simulator import Simulator
 class QutipSimulator(Simulator):
     """Simulate open or closed quantum dynamics with QuTiP."""
 
+    title: str = "QuTiP"
+
     def __init__(
         self,
         hamiltonians: Sequence[Hamiltonian],

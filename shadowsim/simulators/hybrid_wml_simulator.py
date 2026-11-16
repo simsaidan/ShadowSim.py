@@ -375,6 +375,7 @@ class HybridWMLSimulator(ProductFormulaSimulator):
     counts each finished time point in ``completed_steps``.
     """
 
+    title: str = "Hybrid WML"
     requires_sampling_backend: bool = True
     sampling_backend_error: str = "Hybrid WML samples a circuit and needs a backend with a shot budget"
 

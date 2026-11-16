@@ -433,27 +433,18 @@ function movedFromDefault(name) {
   return Boolean(param) && paramText(param) !== String(param.default ?? "");
 }
 
-function edgesFilled() {
-  const param = factoryParams().find((item) => item.name === "edges");
-  return Boolean(param) && paramText(param).trim() !== "";
-}
-
 function fieldLocked(param) {
-  if (param.name === "edges") return movedFromDefault("topology") || movedFromDefault("boundary");
-  if (param.name === "topology" || param.name === "boundary") return edgesFilled();
-  return false;
+  return factoryParams().some(
+    (other) => Array.isArray(other.disables) && other.disables.includes(param.name) && movedFromDefault(other.name),
+  );
 }
 
 function refreshFactoryLocks(chip) {
   if (!chip) return;
-  const filled = edgesFilled();
-  const moved = movedFromDefault("topology") || movedFromDefault("boundary");
-  const edges = chip.querySelector('[aria-label="edges"]');
-  const topology = chip.querySelector('[aria-label="topology"]');
-  const boundary = chip.querySelector('[aria-label="boundary"]');
-  if (edges) edges.disabled = moved;
-  if (topology) topology.disabled = filled;
-  if (boundary) boundary.disabled = filled;
+  for (const param of factoryParams()) {
+    const control = chip.querySelector(`[data-param="${param.name}"]`);
+    if (control) control.disabled = fieldLocked(param);
+  }
 }
 
 function rememberFactoryText(name, value) {
@@ -472,6 +463,7 @@ function factoryField(param) {
         "select",
         {
           "aria-label": param.label,
+          "data-param": param.name,
           disabled: locked || null,
           onchange: (event) => {
             rememberFactoryText(param.name, event.target.value);
@@ -495,6 +487,7 @@ function factoryField(param) {
       type: "text",
       inputmode: integer ? "numeric" : numeric ? "decimal" : "text",
       "aria-label": param.label,
+      "data-param": param.name,
       value,
       disabled: locked || null,
       spellcheck: "false",
@@ -2296,20 +2289,6 @@ function nearestTimeIndex(payload, fraction) {
   return best;
 }
 
-function simulatorTitle(name) {
-  const text = String(name || "");
-  const hash = text.indexOf("#");
-  const base = hash === -1 ? text : text.slice(0, hash);
-  const suffix = hash === -1 ? "" : text.slice(hash);
-  const titles = {
-    qutip: "QuTiP",
-    split_jmatrix: "Split J",
-    trotterization: "Trotter",
-    hybrid_wml: "Hybrid WML",
-  };
-  return `${titles[base] || base}${suffix}`;
-}
-
 function shownCurves(payload, view, observable) {
   const curves = view === "error" ? errorCurves(payload) : chartCurves(payload);
   const simulator = view && view !== "curves" && view !== "error" ? view : null;
@@ -2351,8 +2330,9 @@ function legendText(curve) {
   return `${curve.label}: max ${max}, RMSE ${rmse}`;
 }
 
-function resourceName(id) {
-  const text = String(id || "");
+function resourceName(record) {
+  if (record && typeof record.title === "string" && record.title) return record.title;
+  const text = String(record?.simulator_id || "");
   const hash = text.indexOf("#");
   const base = hash === -1 ? text : text.slice(0, hash);
   const suffix = hash === -1 ? "" : text.slice(hash);
@@ -2374,7 +2354,7 @@ function resourceLine(resources) {
       clauses.push(body);
       continue;
     }
-    const name = resourceName(record.simulator_id);
+    const name = resourceName(record);
     clauses.push(name ? `${name} ${body}` : body);
   }
   return clauses.join(" · ");
@@ -2442,7 +2422,7 @@ function chartViews(payload) {
   const views = [{ key: "curves", label: "Curves" }];
   for (const entry of series) {
     if (!entry || !entry.name) continue;
-    views.push({ key: String(entry.name), label: simulatorTitle(entry.name) });
+    views.push({ key: String(entry.name), label: String(entry.name) });
   }
   views.push({ key: "error", label: "Error" });
   return views;
