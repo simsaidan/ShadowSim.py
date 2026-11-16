@@ -51,7 +51,7 @@ from shadowsim.models import (
     tavis_cummings_hubbard,
 )
 from shadowsim.models.catalog import _describe_models, listed_model_terms, listed_models
-from shadowsim.simulators.catalog import _describe_simulator, listed_simulators
+from shadowsim.simulators.catalog import _chip_default, _chip_maximum, _describe_simulator, listed_simulators
 from shadowsim.simulators.result import _resource_record
 
 _SIMULATOR_FIELDS = ("time_steps", "num_steps", "seed", "trotter_depth", "order")
@@ -377,6 +377,34 @@ def test_an_exported_observables_simulator_uses_its_class(monkeypatch: pytest.Mo
                 expression='counts["1"] / shots',
             )
         )
+
+
+def test_an_exported_observables_simulator_uses_posted_time_steps(monkeypatch: pytest.MonkeyPatch) -> None:
+    class GridSimulator:
+        """An observables simulator that names its time grid."""
+
+        def __init__(
+            self,
+            hamiltonians: object,
+            lindblads: object,
+            state: object,
+            observables: object,
+            time_steps: int,
+            **kwargs: object,
+        ) -> None:
+            del hamiltonians, lindblads, state, kwargs
+            self.observables = observables
+            self.time_steps = time_steps
+
+    module = types.ModuleType("custom.grid")
+    module.GridSimulator = GridSimulator  # type: ignore[attr-defined]
+    from shadowsim import simulators
+
+    monkeypatch.setitem(simulators._EXPORTS, "GridSimulator", ("custom.grid", None))
+    monkeypatch.setitem(sys.modules, "custom.grid", module)
+    simulator = build_simulator(_selection(simulator="grid", time_steps=7))
+    assert isinstance(simulator, GridSimulator)
+    assert simulator.time_steps == 7
 
 
 def test_an_export_that_is_not_a_class_is_rejected(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -2392,6 +2420,30 @@ def test_describe_simulator_reads_constructor_fields() -> None:
     assert reference["setup"] == (
         "{name} = ReferenceSimulator(\n    e_ops,\n    time_steps={time_steps},\n    matrix,\n)"
     )
+
+    class PlainOrder:
+        def __init__(self, *, order: int = 1) -> None:
+            del order
+
+    assert _describe_simulator(PlainOrder)["fields"][0]["choices"] == []
+
+    class FlagOrder:
+        def __init__(self, *, order: Literal[True] = True) -> None:
+            del order
+
+    assert _describe_simulator(FlagOrder)["fields"][0]["choices"] == []
+
+    class BasisFirst:
+        def __init__(self, basis: str | None = None) -> None:
+            del basis
+
+    assert _describe_simulator(BasisFirst)["setup"] == "{name} = BasisFirst(\n    {basis},\n)"
+
+
+def test_chip_helpers_cover_the_page_default_and_an_unbounded_name() -> None:
+    assert _chip_default("seed") == "0"
+    with pytest.raises(KeyError, match="seed"):
+        _chip_maximum("seed")
 
 
 def test_simulator_arguments_follow_the_constructor_fields() -> None:
