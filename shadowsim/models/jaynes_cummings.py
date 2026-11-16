@@ -11,8 +11,14 @@ from shadowsim.models.tavis_cummings import (
     _DEFAULT_OMEGA_C,
     _DEFAULT_OMEGA_E,
     TavisCummingsModel,
+    _layout_qubits,
     tavis_cummings,
 )
+
+
+def _jaynes_cummings_qubits() -> int:
+    """Return the qubit count for one cavity and one emitter."""
+    return _layout_qubits()
 
 
 def _require_scalar(name: str, value: object, model: str) -> float:
@@ -36,7 +42,7 @@ class JaynesCummingsModel(TavisCummingsModel):
 
     def __post_init__(self) -> None:
         """Require the single-emitter qubit layout."""
-        if self.n_emitters != 1 or self.num_qubits != 3:
+        if self.n_emitters != 1 or self.num_qubits != _jaynes_cummings_qubits():
             raise ValueError(
                 "JaynesCummingsModel is the single-emitter case: "
                 f"n_emitters must be 1 and num_qubits must be 3, got {self.n_emitters} and {self.num_qubits}"
@@ -97,3 +103,6 @@ def jaynes_cummings(
     # Copy fields by name. dataclasses.asdict would recurse and drop Hamiltonian
     # and Operator instances.
     return JaynesCummingsModel(**{f.name: getattr(base, f.name) for f in fields(TavisCummingsModel)})
+
+
+setattr(jaynes_cummings, "qubit_count", _jaynes_cummings_qubits)

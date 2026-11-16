@@ -12,8 +12,14 @@ from shadowsim.models.tavis_cummings import (
     _DEFAULT_KAPPA,
     _DEFAULT_OMEGA_C,
     _DEFAULT_OMEGA_E,
+    _layout_qubits,
 )
 from shadowsim.models.tavis_cummings_hubbard import TavisCummingsHubbardModel, tavis_cummings_hubbard
+
+
+def _jaynes_cummings_hubbard_qubits(*, n_cavities: int = 1) -> int:
+    """Return the qubit count for ``n_cavities`` with one emitter each."""
+    return _layout_qubits(n_emitters=1, n_cavities=n_cavities)
 
 
 @dataclass(frozen=True)
@@ -27,7 +33,7 @@ class JaynesCummingsHubbardModel(TavisCummingsHubbardModel):
 
     def __post_init__(self) -> None:
         """Require one emitter on every cavity."""
-        if self.n_emitters != 1 or self.num_qubits != 3 * self.n_cavities:
+        if self.n_emitters != 1 or self.num_qubits != _jaynes_cummings_hubbard_qubits(n_cavities=self.n_cavities):
             raise ValueError(
                 "JaynesCummingsHubbardModel is the single-emitter case: "
                 "n_emitters must be 1 and num_qubits must be 3 * n_cavities, "
@@ -103,3 +109,6 @@ def jaynes_cummings_hubbard(
     return JaynesCummingsHubbardModel(
         **{field.name: getattr(base, field.name) for field in fields(TavisCummingsHubbardModel)}
     )
+
+
+setattr(jaynes_cummings_hubbard, "qubit_count", _jaynes_cummings_hubbard_qubits)

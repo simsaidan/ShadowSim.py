@@ -19,7 +19,6 @@ import pytest
 
 from shadowsim.cli.run import (
     _MAX_AMPLITUDES,
-    _MAX_EMITTERS,
     _MAX_FACTORY_QUBITS,
     _MAX_NUM_STEPS,
     _MAX_OPERATOR_QUBITS,
@@ -641,7 +640,6 @@ def test_limits_match_the_validator_caps() -> None:
                 "angle": _MAX_FACTORY_QUBITS,
                 "amplitude": _MAX_AMPLITUDES,
             },
-            "emitters": _MAX_EMITTERS,
             "operatorQubits": _MAX_OPERATOR_QUBITS,
             "timeSteps": _MAX_TIME_STEPS,
             "numSteps": _MAX_NUM_STEPS,
@@ -1288,7 +1286,7 @@ def test_a_check_returns_a_legal_qubit_count_without_a_child(monkeypatch: pytest
         (
             {"id": "tavis_cummings", "arguments": {"n_emitters": 14}},
             "100",
-            "emitters must be an integer from 1 to 13",
+            "at most 15 qubits",
         ),
         (
             {"id": "ising", "arguments": {"n_qubits": 2, "edges": "0-0"}},

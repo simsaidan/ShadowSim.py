@@ -79,7 +79,6 @@ def _page_caps() -> dict[str, Any]:
     assert isinstance(states, dict)
     return {
         "stateLimits": states,
-        "maxEmitters": payload["emitters"],
         "maxOperatorQubits": payload["operatorQubits"],
         "maxTimeSteps": payload["timeSteps"],
         "maxNumSteps": payload["numSteps"],
@@ -125,7 +124,6 @@ def _qutip_page() -> dict[str, Any]:
             {"id": "ising", "title": "Ising", "qubits": True, "setup": "model = ising(n_qubits={qubits})"}
         ],
         "preexistingId": "ising",
-        "emitterText": "1",
         "basisBits": "00",
         "grayBits": "",
         "angleText": "",
@@ -475,12 +473,20 @@ def test_benchmark_export_includes_save_error_metrics() -> None:
     assert 'benchmark.save_error_metrics(path="results/metrics.json")' in text
 
 
+def _layout_params(*names: str) -> list[dict[str, object]]:
+    """Return catalog fields for the layout arguments a preview should print."""
+    fields = {
+        "n_emitters": {"name": "n_emitters", "label": "Emitters", "kind": "integer", "default": "1", "minimum": 1},
+        "n_cavities": {"name": "n_cavities", "label": "Cavities", "kind": "integer", "default": "1", "minimum": 1},
+        "nu": {"name": "nu", "label": "Hopping", "kind": "number", "default": "0"},
+    }
+    return [fields[name] for name in names]
+
+
 def test_tavis_cummings_hubbard_preview_uses_cavities_and_hopping() -> None:
     page = _qutip_page()
     page["preexistingId"] = "tavis_cummings_hubbard"
-    page["cavityText"] = "2"
-    page["emitterText"] = "1"
-    page["hoppingText"] = "1.5"
+    page["factoryText"] = {"n_emitters": "1", "n_cavities": "2", "nu": "1.5"}
     page["basisBits"] = "000000"
     page["modelFactories"] = [
         {
@@ -488,19 +494,19 @@ def test_tavis_cummings_hubbard_preview_uses_cavities_and_hopping() -> None:
             "title": "Tavis-Cummings-Hubbard",
             "qubits": False,
             "setup": "model = tavis_cummings_hubbard()",
+            "params": _layout_params("n_emitters", "n_cavities", "nu"),
         }
     ]
-    assert _call("hubbardSelected", page) is True
-    assert _call("cavityModelSelected", page) is True
+    assert _call("factorySetsQubits", page) is True
     assert _call("fixedFactoryQubits", page) is None
     page["checkedQubits"] = 6
     assert _call("fixedFactoryQubits", page) == 6
     text = _call("previewText", page)
     assert isinstance(text, str)
     assert "from shadowsim.models import tavis_cummings_hubbard" in text
-    assert "model = tavis_cummings_hubbard(n_cavities=2, n_emitters=1, nu=1.5)" in text
+    assert "model = tavis_cummings_hubbard(n_emitters=1, n_cavities=2, nu=1.5)" in text
 
-    page["emitterText"] = "6"
+    page["factoryText"] = {"n_emitters": "6", "n_cavities": "2", "nu": "1.5"}
     page["checkedQubits"] = None
     assert _call("fixedFactoryQubits", page) is None
     assert _call("emitterProblem", page) is False
@@ -510,9 +516,7 @@ def test_tavis_cummings_hubbard_preview_uses_cavities_and_hopping() -> None:
 def test_jaynes_cummings_hubbard_preview_uses_cavities_and_hopping() -> None:
     page = _qutip_page()
     page["preexistingId"] = "jaynes_cummings_hubbard"
-    page["cavityText"] = "2"
-    page["emitterText"] = "4"
-    page["hoppingText"] = "1.5"
+    page["factoryText"] = {"n_cavities": "2", "nu": "1.5"}
     page["basisBits"] = "000000"
     page["modelFactories"] = [
         {
@@ -520,12 +524,10 @@ def test_jaynes_cummings_hubbard_preview_uses_cavities_and_hopping() -> None:
             "title": "Jaynes-Cummings-Hubbard",
             "qubits": False,
             "setup": "model = jaynes_cummings_hubbard()",
+            "params": _layout_params("n_cavities", "nu"),
         }
     ]
-    assert _call("jaynesHubbardSelected", page) is True
-    assert _call("hubbardSelected", page) is False
-    assert _call("usesEmitterCount", page) is False
-    assert _call("cavityModelSelected", page) is True
+    assert _call("factorySetsQubits", page) is True
     assert _call("fixedFactoryQubits", page) is None
     page["checkedQubits"] = 6
     assert _call("fixedFactoryQubits", page) == 6
@@ -535,7 +537,7 @@ def test_jaynes_cummings_hubbard_preview_uses_cavities_and_hopping() -> None:
     assert "model = jaynes_cummings_hubbard(n_cavities=2, nu=1.5)" in text
     assert "n_emitters" not in text
 
-    page["cavityText"] = "6"
+    page["factoryText"] = {"n_cavities": "6", "nu": "1.5"}
     page["checkedQubits"] = None
     assert _call("fixedFactoryQubits", page) is None
     assert _call("emitterProblem", page) is False
@@ -705,21 +707,27 @@ def test_matrix_size_uses_the_page_qubit_cap() -> None:
     assert _call("squareMatrix", page, wider) == {"problem": "At most 1 qubit."}
 
 
-@pytest.mark.parametrize("model_id", ["tavis_cummings", "tavis_cummings_hubbard"])
-def test_emitter_count_uses_the_page_cap(model_id: str) -> None:
+def test_integer_fields_use_the_catalog_minimum() -> None:
     page = _qutip_page()
-    page["preexistingId"] = model_id
-    page["maxEmitters"] = 3
-    page["emitterText"] = "4"
-    page["cavityText"] = "1"
-    page["hoppingText"] = "0"
-    page["modelFactories"] = [{"id": model_id, "title": model_id, "qubits": False, "setup": f"model = {model_id}()"}]
-    assert _call("factoryAlert", page) == "Emitters must be from 1 to 3"
-    assert _call("emitterCount", page) is None
+    page["preexistingId"] = "tavis_cummings"
+    page["modelFactories"] = [
+        {
+            "id": "tavis_cummings",
+            "title": "Tavis-Cummings",
+            "qubits": False,
+            "setup": "model = tavis_cummings()",
+            "params": _layout_params("n_emitters"),
+        }
+    ]
+    page["factoryText"] = {"n_emitters": ""}
+    assert _call("factoryAlert", page) == "Enter an integer of at least 1 for Emitters"
     assert _call("emitterProblem", page) is True
-    page["emitterText"] = "3"
-    assert _call("emitterCount", page) == 3
+    page["factoryText"] = {"n_emitters": "2"}
     assert _call("factoryAlert", page) is None
+    assert _call("emitterProblem", page) is False
+    page["modelFactories"][0]["params"][0]["minimum"] = 2
+    page["factoryText"] = {"n_emitters": "1"}
+    assert _call("factoryAlert", page) == "Enter an integer of at least 2 for Emitters"
 
 
 def test_hamiltonian_problems_use_different_messages() -> None:
@@ -808,7 +816,6 @@ def test_bad_ising_arguments_block_the_run() -> None:
 def test_per_emitter_list_must_match_the_emitter_count() -> None:
     page = _qutip_page()
     page["preexistingId"] = "tavis_cummings"
-    page["emitterText"] = "2"
     page["basisBits"] = "0000"
     page["modelFactories"] = [
         {
@@ -822,35 +829,33 @@ def test_per_emitter_list_must_match_the_emitter_count() -> None:
                 {"name": "kappa", "label": "kappa", "kind": "number", "default": "1"},
                 {"name": "gamma", "label": "gamma", "kind": "number_or_list", "default": "1"},
                 {"name": "g", "label": "g", "kind": "number_or_list", "default": "100"},
+                *_layout_params("n_emitters"),
             ],
         }
     ]
-    page["factoryText"] = {"g": "10, 20"}
+    page["factoryText"] = {"n_emitters": "2", "g": "10, 20"}
     text = _call("previewText", page)
     assert isinstance(text, str)
-    assert "model = tavis_cummings(n_emitters=2, omega_c=245000.0" in text
-    assert "g=[10.0, 20.0]" in text
+    assert "model = tavis_cummings(omega_c=245000.0" in text
+    assert "g=[10.0, 20.0], n_emitters=2" in text
 
-    page["factoryText"] = {"g": "1, 2, 3"}
+    page["factoryText"] = {"n_emitters": "2", "g": "1, 2, 3"}
     assert _call("factoryAlert", page) is None
     assert _call("runAllowed", page) is True
     listed = _call("previewText", page)
     assert isinstance(listed, str)
     assert "g=[1.0, 2.0, 3.0]" in listed
 
-    page["emitterText"] = ""
-    assert _call("factoryAlert", page) == "Enter an emitter count"
+    page["factoryText"] = {"n_emitters": ""}
+    assert _call("factoryAlert", page) == "Enter an integer of at least 1 for Emitters"
     assert _call("runAllowed", page) is False
 
 
 def test_hubbard_preview_keeps_structure_and_factory_arguments() -> None:
     page = _qutip_page()
     page["preexistingId"] = "tavis_cummings_hubbard"
-    page["cavityText"] = "2"
-    page["emitterText"] = "1"
-    page["hoppingText"] = "1.5"
     page["basisBits"] = "000000"
-    page["factoryText"] = {"omega_c": "10"}
+    page["factoryText"] = {"omega_c": "10", "n_emitters": "1", "n_cavities": "2", "nu": "1.5"}
     page["modelFactories"] = [
         {
             "id": "tavis_cummings_hubbard",
@@ -860,9 +865,10 @@ def test_hubbard_preview_keeps_structure_and_factory_arguments() -> None:
             "params": [
                 {"name": "omega_c", "label": "omega_c", "kind": "number", "default": "245000"},
                 {"name": "g", "label": "g", "kind": "number_or_list", "default": "100"},
+                *_layout_params("n_emitters", "n_cavities", "nu"),
             ],
         }
     ]
     text = _call("previewText", page)
     assert isinstance(text, str)
-    assert "model = tavis_cummings_hubbard(n_cavities=2, n_emitters=1, nu=1.5, omega_c=10.0, g=100.0)" in text
+    assert "model = tavis_cummings_hubbard(omega_c=10.0, g=100.0, n_emitters=1, n_cavities=2, nu=1.5)" in text

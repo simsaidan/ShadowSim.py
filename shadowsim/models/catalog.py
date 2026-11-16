@@ -11,38 +11,37 @@ from shadowsim.core.hamiltonian import Hamiltonian
 from shadowsim.core.local_hamiltonian import LocalHamiltonian
 from shadowsim.core.operator import Operator
 
-# The page fills these itself, or they are not free parameters.
-# ``n_qubits`` comes from the Qubits setting. Emitter count, cavity count, and
-# hopping already have their own chip fields. ``cavity_levels`` is fixed at 4,
-# and ``initial_fock`` only builds the factory state the page replaces.
-_SKIPPED_PARAMS = frozenset(
-    {
-        "n_qubits",
-        "n_emitters",
-        "n_cavities",
-        "nu",
-        "cavity_levels",
-        "initial_fock",
-    }
-)
+# The page fills ``n_qubits`` from the Qubits setting. ``cavity_levels`` is
+# fixed at 4, and ``initial_fock`` only builds the factory state the page
+# replaces.
+_SKIPPED_PARAMS = frozenset({"n_qubits", "cavity_levels", "initial_fock"})
 
 # ``custom`` is the topology ``ising`` reports after ``edges`` is set. Passing
 # it as ``topology`` is not a preset the factory accepts on its own.
 _HIDDEN_CHOICES: dict[str, frozenset[str]] = {"topology": frozenset({"custom"})}
 
+# Chip text for arguments whose parameter name is not the label.
+_PARAM_LABELS: dict[str, str] = {
+    "n_emitters": "Emitters",
+    "n_cavities": "Cavities",
+    "nu": "Hopping",
+}
+
 
 class ListedParam(TypedDict):
     """One factory argument the builder page can edit.
 
-    ``choices`` is present when ``kind`` is ``choice``. ``default`` is the text
-    that fills the chip. An empty ``edges`` default means the chain preset.
+    ``choices`` is present when ``kind`` is ``choice``. ``minimum`` is present
+    when ``kind`` is ``integer``. ``default`` is the text that fills the chip.
+    An empty ``edges`` default means the chain preset.
     """
 
     name: str
     label: str
-    kind: Literal["number", "choice", "edges", "number_or_list"]
+    kind: Literal["number", "integer", "choice", "edges", "number_or_list"]
     default: str
     choices: NotRequired[list[str]]
+    minimum: NotRequired[int]
 
 
 class ListedModel(TypedDict):
@@ -154,7 +153,8 @@ def _listed_params(factory: types.FunctionType) -> list[ListedParam]:
     """Return editable factory arguments in signature order.
 
     Parameters in :data:`_SKIPPED_PARAMS` are omitted, as are arguments that
-    have no default. A float default is formatted so ``float`` reads it back.
+    have no default. An ``int`` argument is an integer field with a minimum of
+    1. A float default is formatted so ``float`` reads it back.
     """
     listed: list[ListedParam] = []
     for parameter in inspect.signature(factory).parameters.values():
@@ -166,10 +166,11 @@ def _listed_params(factory: types.FunctionType) -> list[ListedParam]:
 
 def _listed_param(parameter: inspect.Parameter) -> ListedParam:
     """Describe one editable parameter."""
+    label = _PARAM_LABELS.get(parameter.name, parameter.name)
     if parameter.name == "edges":
         return {
             "name": parameter.name,
-            "label": parameter.name,
+            "label": label,
             "kind": "edges",
             "default": "" if parameter.default is None else _default_text(parameter.default),
         }
@@ -178,17 +179,25 @@ def _listed_param(parameter: inspect.Parameter) -> ListedParam:
         hidden = _HIDDEN_CHOICES.get(parameter.name, frozenset())
         return {
             "name": parameter.name,
-            "label": parameter.name,
+            "label": label,
             "kind": "choice",
             "default": _default_text(parameter.default),
             "choices": [choice for choice in choices if choice not in hidden],
+        }
+    if parameter.annotation is int:
+        return {
+            "name": parameter.name,
+            "label": label,
+            "kind": "integer",
+            "default": _default_text(parameter.default),
+            "minimum": 1,
         }
     kind: Literal["number", "number_or_list"] = (
         "number_or_list" if _accepts_sequence(parameter.annotation) else "number"
     )
     return {
         "name": parameter.name,
-        "label": parameter.name,
+        "label": label,
         "kind": kind,
         "default": _default_text(parameter.default),
     }
