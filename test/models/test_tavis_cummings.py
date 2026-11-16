@@ -58,6 +58,7 @@ def test_defaults_match_example2():
     assert isinstance(model, TavisCummingsModel)
     assert model.n_emitters == 1
     assert model.num_qubits == 3
+    assert tavis_cummings.qubit_count() == model.num_qubits
     assert model.measurements == [Measurement.cavity_population(0, 1), Measurement.population(2)]
 
     assert [h.sites for h in model.local_hamiltonians] == ref["local_sites"]
@@ -111,6 +112,7 @@ def test_two_emitters_layout_and_observables():
 
     assert model.n_emitters == 2
     assert model.num_qubits == 4
+    assert tavis_cummings.qubit_count(n_emitters=2) == model.num_qubits
     assert model.measurements == [
         Measurement.cavity_population(0, 1),
         Measurement.population(2),

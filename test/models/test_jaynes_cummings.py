@@ -40,6 +40,7 @@ def test_defaults_match_tavis_cummings():
     assert isinstance(model, TavisCummingsModel)
     assert model.n_emitters == 1
     assert model.num_qubits == 3
+    assert jaynes_cummings.qubit_count() == model.num_qubits
     _assert_same_operators(model, tavis_cummings())
 
 

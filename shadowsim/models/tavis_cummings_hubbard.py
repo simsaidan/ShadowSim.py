@@ -24,6 +24,7 @@ from shadowsim.models.tavis_cummings import (
     TavisCummingsModel,
     _block_measurements,
     _cavity_block,
+    _layout_qubits,
 )
 from shadowsim.simulators.reducers import Measurement
 from shadowsim.utils.constants import I
@@ -80,6 +81,11 @@ def _hopping(a: np.ndarray, nu: complex, n_middle: int) -> np.ndarray:
     return coupling * tensor([a.conjugate().T, *middle, a]) + np.conjugate(coupling) * tensor(
         [a, *middle, a.conjugate().T]
     )
+
+
+def _tavis_cummings_hubbard_qubits(*, n_emitters: int = 1, n_cavities: int = 1) -> int:
+    """Return the qubit count for ``n_cavities`` blocks of ``n_emitters``."""
+    return _layout_qubits(n_emitters=n_emitters, n_cavities=n_cavities)
 
 
 def tavis_cummings_hubbard(
@@ -151,8 +157,8 @@ def tavis_cummings_hubbard(
         cavity_levels=cavity_levels,
         initial_fock=initial_fock,
     )
-    block_qubits = 2 + n_emitters
-    num_qubits = n_cavities * block_qubits
+    num_qubits = _tavis_cummings_hubbard_qubits(n_emitters=n_emitters, n_cavities=n_cavities)
+    block_qubits = num_qubits // n_cavities
 
     local_hamiltonians: list[LocalHamiltonian] = []
     full_hamiltonians: list[Hamiltonian] = []
@@ -202,3 +208,6 @@ def tavis_cummings_hubbard(
         n_emitters=n_emitters,
         n_cavities=n_cavities,
     )
+
+
+setattr(tavis_cummings_hubbard, "qubit_count", _tavis_cummings_hubbard_qubits)

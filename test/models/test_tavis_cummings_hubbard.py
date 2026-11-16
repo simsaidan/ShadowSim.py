@@ -81,6 +81,7 @@ def test_two_cavities_without_hopping_are_disjoint_copies():
     assert model.n_cavities == 2
     assert model.n_emitters == 1
     assert model.num_qubits == 6
+    assert tavis_cummings_hubbard.qubit_count(n_emitters=1, n_cavities=2) == model.num_qubits
     assert len(model.local_hamiltonians) == 2 * terms
     assert len(model.full_hamiltonians) == 2 * len(block.full_hamiltonians)
     assert len(model.c_ops_local) == 2 * len(block.c_ops_local)

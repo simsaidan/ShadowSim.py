@@ -86,9 +86,6 @@ let modelTermKey = 0;
 let modelFactories = [];
 let preexistingId = null;
 let preexistingOpen = false;
-let emitterText = "1";
-let cavityText = "1";
-let hoppingText = "0";
 let factoryText = {};
 
 const settings = { qubits: "", total: "" };
@@ -160,9 +157,6 @@ function currentPage() {
     modelTerms,
     modelFactories,
     preexistingId,
-    emitterText,
-    cavityText,
-    hoppingText,
     factoryText,
     basisBits,
     grayBits,
@@ -176,7 +170,6 @@ function currentPage() {
     countsExpression,
     qubitsSource,
     stateLimits: limits.states,
-    maxEmitters: limits.emitters,
     maxOperatorQubits: limits.operatorQubits,
     maxTimeSteps: limits.timeSteps,
     maxNumSteps: limits.numSteps,
@@ -238,44 +231,12 @@ function amplitudeQubits(count) {
   return check(checks.amplitudeQubits, count);
 }
 
-function emitterCount() {
-  return check(checks.emitterCount);
-}
-
-function cavityCount() {
-  return check(checks.cavityCount);
-}
-
-function hoppingValue() {
-  return check(checks.hoppingValue);
-}
-
 function factoryAlert() {
   return check(checks.factoryAlert);
 }
 
-function hubbardSelected() {
-  return check(checks.hubbardSelected);
-}
-
-function jaynesHubbardSelected() {
-  return check(checks.jaynesHubbardSelected);
-}
-
-function usesEmitterCount() {
-  return check(checks.usesEmitterCount);
-}
-
-function cavityModelSelected() {
-  return check(checks.cavityModelSelected);
-}
-
-function fixedFactoryQubits() {
-  return check(checks.fixedFactoryQubits);
-}
-
-function emitterProblem() {
-  return check(checks.emitterProblem);
+function factorySetsQubits() {
+  return check(checks.factorySetsQubits);
 }
 
 function stateImpliedQubits() {
@@ -444,36 +405,17 @@ function acceptedLayoutQubits() {
   return acceptedQubits;
 }
 
+function qubitDetail(count) {
+  return count === 1 ? "1 qubit" : `${count} qubits`;
+}
+
 function preexistingDetail() {
-  if (preexistingId === "jaynes_cummings") {
-    const qubits = acceptedLayoutQubits();
-    if (qubits == null) return "3 qubits";
-    return qubits === 1 ? "1 qubit" : `${qubits} qubits`;
-  }
-  if (jaynesHubbardSelected()) {
-    const qubits = acceptedLayoutQubits();
-    if (qubits == null) return "Set cavities and hopping";
-    const cavities = cavityCount();
-    const cavityLabel = cavities === 1 ? "1 cavity" : `${cavities} cavities`;
-    return `${cavityLabel}, ${qubits} qubits`;
-  }
-  if (preexistingId === "tavis_cummings") {
-    const count = emitterCount();
-    const qubits = acceptedLayoutQubits();
-    if (count == null || qubits == null) return "Set the emitter count";
-    return count === 1 ? `1 emitter, ${qubits} qubits` : `${count} emitters, ${qubits} qubits`;
-  }
-  if (hubbardSelected()) {
-    const qubits = acceptedLayoutQubits();
-    if (qubits == null) return "Set cavities, emitters, and hopping";
-    const cavities = cavityCount();
-    const emitters = emitterCount();
-    const cavityLabel = cavities === 1 ? "1 cavity" : `${cavities} cavities`;
-    const emitterLabel = emitters === 1 ? "1 emitter" : `${emitters} emitters`;
-    return `${cavityLabel}, ${emitterLabel}, ${qubits} qubits`;
-  }
-  if (preexistingId === "ising") return "at least 2 qubits";
-  return chosenFactory()?.title ?? "";
+  const factory = chosenFactory();
+  if (!factory) return "";
+  const qubits = acceptedLayoutQubits();
+  if (factory.qubits) return qubits == null ? "at least 2 qubits" : qubitDetail(qubits);
+  if (qubits == null) return factoryAlert() || "Set the model arguments";
+  return qubitDetail(qubits);
 }
 
 function factoryParams() {
@@ -543,21 +485,24 @@ function factoryField(param) {
       ),
     );
   }
-  const numeric = param.kind === "number" || param.kind === "number_or_list";
+  const integer = param.kind === "integer";
+  const numeric = integer || param.kind === "number" || param.kind === "number_or_list";
   return el(
     "label",
     { className: "preexisting-field" },
     param.label,
     el("input", {
       type: "text",
-      inputmode: numeric ? "decimal" : "text",
+      inputmode: integer ? "numeric" : numeric ? "decimal" : "text",
       "aria-label": param.label,
       value,
       disabled: locked || null,
       spellcheck: "false",
       autocomplete: "off",
       oninput: (event) => {
-        rememberFactoryText(param.name, event.target.value.trim());
+        const next = integer ? event.target.value.replace(/\D/g, "") : event.target.value.trim();
+        if (integer && event.target.value !== next) event.target.value = next;
+        rememberFactoryText(param.name, next);
         refreshFactoryLocks(event.target.closest(".chip"));
         refreshCavityModel();
       },
@@ -623,46 +568,6 @@ function preexistingChip() {
       el("option", { value: item.id, selected: item.id === factory?.id }, item.title),
     ),
   );
-  const emitters = el("input", {
-    type: "text",
-    inputmode: "numeric",
-    "aria-label": "Emitters",
-    value: emitterText,
-    spellcheck: "false",
-    autocomplete: "off",
-    oninput: (event) => {
-      const next = event.target.value.replace(/\D/g, "");
-      if (event.target.value !== next) event.target.value = next;
-      emitterText = next;
-      refreshCavityModel();
-    },
-  });
-  const cavities = el("input", {
-    type: "text",
-    inputmode: "numeric",
-    "aria-label": "Cavities",
-    value: cavityText,
-    spellcheck: "false",
-    autocomplete: "off",
-    oninput: (event) => {
-      const next = event.target.value.replace(/\D/g, "");
-      if (event.target.value !== next) event.target.value = next;
-      cavityText = next;
-      refreshCavityModel();
-    },
-  });
-  const hopping = el("input", {
-    type: "text",
-    inputmode: "decimal",
-    "aria-label": "Hopping",
-    value: hoppingText,
-    spellcheck: "false",
-    autocomplete: "off",
-    oninput: (event) => {
-      hoppingText = event.target.value.trim();
-      refreshCavityModel();
-    },
-  });
   const alertText = modelAlert() ?? "Check the model arguments";
   return el(
     "div",
@@ -727,15 +632,6 @@ function preexistingChip() {
       ),
     ),
     preexistingOpen ? el("label", { className: "preexisting-field" }, "Model", select) : null,
-    preexistingOpen && (hubbardSelected() || jaynesHubbardSelected())
-      ? el("label", { className: "preexisting-field" }, "Cavities", cavities)
-      : null,
-    preexistingOpen && usesEmitterCount()
-      ? el("label", { className: "preexisting-field" }, "Emitters", emitters)
-      : null,
-    preexistingOpen && (hubbardSelected() || jaynesHubbardSelected())
-      ? el("label", { className: "preexisting-field" }, "Hopping", hopping)
-      : null,
     ...(preexistingOpen ? factoryParams().map(factoryField) : []),
   );
 }
@@ -771,12 +667,12 @@ function stateReady(id) {
 function writeQubitField() {
   const qubitsInput = document.querySelector('input[aria-label="Qubits"]');
   if (!qubitsInput) return;
-  qubitsInput.readOnly = stateOwnsQubits() || cavityModelSelected();
+  qubitsInput.readOnly = stateOwnsQubits() || factorySetsQubits();
   if (qubitsInput.value !== settings.qubits) qubitsInput.value = settings.qubits;
 }
 
 function syncStateQubits() {
-  if (!stateOwnsQubits() || cavityModelSelected()) return;
+  if (!stateOwnsQubits() || factorySetsQubits()) return;
   const count = stateImpliedQubits();
   settings.qubits = count == null ? "" : String(count);
   qubitsSource = count == null ? null : "state";
@@ -785,7 +681,7 @@ function syncStateQubits() {
 }
 
 function syncModelQubits() {
-  if (!cavityModelSelected()) {
+  if (!factorySetsQubits()) {
     if (qubitsSource !== "model") return;
     if (stateOwnsQubits()) {
       qubitsSource = null;
@@ -1881,9 +1777,9 @@ function settingsComponent() {
         inputmode: inputMode,
         value: settings[key],
         "aria-label": label,
-        readonly: key === "qubits" && (stateOwnsQubits() || cavityModelSelected()),
+        readonly: key === "qubits" && (stateOwnsQubits() || factorySetsQubits()),
         oninput: (event) => {
-          if (key === "qubits" && (stateOwnsQubits() || cavityModelSelected())) return;
+          if (key === "qubits" && (stateOwnsQubits() || factorySetsQubits())) return;
           settings[key] = event.target.value.trim();
           if (key === "qubits") {
             qubitsSource = settings.qubits === "" ? null : "user";
@@ -1993,7 +1889,7 @@ function scheduleCheck() {
 }
 
 function applyAcceptedQubits() {
-  if (!cavityModelSelected() || acceptedQubits == null) return;
+  if (!factorySetsQubits() || acceptedQubits == null) return;
   settings.qubits = String(acceptedQubits);
   qubitsSource = "model";
 }
@@ -2838,11 +2734,6 @@ function modelArguments() {
   if (selection.model !== "preexisting") return {};
   const body = { ...(postedFactory() ?? {}) };
   if (chosenFactory()?.qubits) body.n_qubits = settings.qubits;
-  if (usesEmitterCount()) body.n_emitters = emitterCount();
-  if (hubbardSelected() || jaynesHubbardSelected()) {
-    body.n_cavities = cavityCount();
-    body.nu = hoppingValue();
-  }
   return body;
 }
 
@@ -3437,9 +3328,6 @@ function resetBoard() {
   amplitudeText = "";
   qubitsSource = null;
   preexistingId = null;
-  emitterText = "1";
-  cavityText = "1";
-  hoppingText = "0";
   factoryText = {};
   modelTerms.splice(0, modelTerms.length);
   placedSims.splice(0, placedSims.length);
@@ -3492,12 +3380,8 @@ function applyModel(model) {
     settings.qubits = textNumber(args.n_qubits);
     qubitsSource = "user";
   }
-  if ("n_emitters" in args) emitterText = textNumber(args.n_emitters);
-  if ("n_cavities" in args) cavityText = textNumber(args.n_cavities);
-  if ("nu" in args) hoppingText = textNumber(args.nu);
-  const structural = new Set(["n_qubits", "n_emitters", "n_cavities", "nu"]);
   for (const [key, value] of Object.entries(args)) {
-    if (structural.has(key)) continue;
+    if (key === "n_qubits") continue;
     if (typeof value === "string" || typeof value === "number") factoryText[key] = textNumber(value);
   }
 }
@@ -3709,7 +3593,6 @@ function validLimits(payload) {
     states.gray,
     states.angle,
     states.amplitude,
-    payload.emitters,
     payload.operatorQubits,
     payload.timeSteps,
     payload.numSteps,

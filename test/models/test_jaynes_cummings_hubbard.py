@@ -64,6 +64,7 @@ def test_two_cavities_match_tavis_cummings_hubbard():
 
     assert model.n_cavities == 2
     assert model.num_qubits == 6
+    assert jaynes_cummings_hubbard.qubit_count(n_cavities=2) == model.num_qubits
     _assert_same_operators(model, tavis_cummings_hubbard(n_cavities=2, n_emitters=1, nu=nu, g=50.0))
 
 

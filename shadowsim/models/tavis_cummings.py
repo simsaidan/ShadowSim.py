@@ -69,6 +69,16 @@ class TavisCummingsModel:
     n_emitters: int
 
 
+def _layout_qubits(*, n_emitters: int = 1, n_cavities: int = 1) -> int:
+    """Return ``n_cavities`` blocks of two cavity qubits plus ``n_emitters``."""
+    return n_cavities * (2 + n_emitters)
+
+
+def _tavis_cummings_qubits(*, n_emitters: int = 1) -> int:
+    """Return the qubit count for one cavity and ``n_emitters``."""
+    return _layout_qubits(n_emitters=n_emitters)
+
+
 def _as_per_emitter(name: str, value: FloatOrSeq, n_emitters: int) -> list[float]:
     """Broadcast a scalar or validate a per-emitter sequence."""
     if isinstance(value, (int, float, np.floating)):
@@ -267,7 +277,7 @@ def tavis_cummings(
         cavity_levels=cavity_levels,
         initial_fock=initial_fock,
     )
-    num_qubits = 2 + n_emitters
+    num_qubits = _tavis_cummings_qubits(n_emitters=n_emitters)
     return TavisCummingsModel(
         full_hamiltonians=[Hamiltonian(matrix) for matrix in block.full_hamiltonians],
         local_hamiltonians=[LocalHamiltonian(matrix, sites) for matrix, sites in block.local_hamiltonians],
@@ -279,3 +289,6 @@ def tavis_cummings(
         num_qubits=num_qubits,
         n_emitters=n_emitters,
     )
+
+
+setattr(tavis_cummings, "qubit_count", _tavis_cummings_qubits)

@@ -21,7 +21,6 @@ import pytest
 from shadowsim.backends import listed_backends
 from shadowsim.cli.run import (
     _MAX_AMPLITUDES,
-    _MAX_EMITTERS,
     _MAX_FACTORY_QUBITS,
     _MAX_NUM_STEPS,
     _MAX_OPERATOR_QUBITS,
@@ -684,7 +683,31 @@ def test_ising_qubit_count_is_capped_before_the_factory(
 
 def test_factory_kwargs_reject_a_non_object() -> None:
     with pytest.raises(ValueError, match="factory arguments must be an object"):
-        _factory_kwargs([], [], n_emitters=None)
+        _factory_kwargs([], [])
+
+
+def test_integer_fields_use_the_catalog_minimum() -> None:
+    counted = {"name": "n_sites", "label": "Sites", "kind": "integer", "default": "1", "minimum": 2}
+    assert _factory_kwargs([counted], {"n_sites": "3"}) == {"n_sites": 3}
+    with pytest.raises(ValueError, match="n_sites must be an integer of at least 2"):
+        _factory_kwargs([counted], {"n_sites": 1})
+    for minimum in (True, "1", None):
+        loose = {"name": "n_sites", "label": "Sites", "kind": "integer", "default": "1", "minimum": minimum}
+        assert _factory_kwargs([loose], {"n_sites": 1}) == {"n_sites": 1}
+    omitted = {"name": "n_sites", "label": "Sites", "kind": "integer", "default": "1"}
+    assert _factory_kwargs([omitted], {"n_sites": 4}) == {"n_sites": 4}
+
+
+def test_a_factory_without_qubit_count_is_rejected_before_it_builds(monkeypatch: pytest.MonkeyPatch) -> None:
+    import shadowsim.cli.run as page_run
+
+    def plain(*, omega_c: float = 1.0) -> None:
+        raise AssertionError("plain was built")
+
+    plain.__module__ = "shadowsim.models.jaynes_cummings"
+    monkeypatch.setattr(page_run.models, "jaynes_cummings", plain)
+    with pytest.raises(ValueError, match="does not report a qubit count"):
+        _model("jaynes_cummings", {})
 
 
 def test_ising_accepts_fifteen_qubits() -> None:
@@ -716,13 +739,13 @@ def test_tavis_cummings_hubbard_sizes_from_cavities_and_hopping() -> None:
 @pytest.mark.parametrize(
     ("overrides", "match"),
     [
-        ({"cavities": 0}, "cavities must be an integer of at least 1"),
-        ({"cavities": True}, "cavities must be an integer of at least 1"),
-        ({"nu": "nope"}, "hopping must be a real number"),
-        ({"nu": True}, "hopping must be a real number"),
-        ({"nu": []}, "hopping must be a real number"),
-        ({"nu": "  "}, "hopping must be a real number"),
-        ({"nu": float("inf")}, "hopping must be a real number"),
+        ({"cavities": 0}, "n_cavities must be an integer of at least 1"),
+        ({"cavities": True}, "n_cavities must be an integer of at least 1"),
+        ({"nu": "nope"}, "nu must be a real number"),
+        ({"nu": True}, "nu must be a real number"),
+        ({"nu": []}, "nu must be a real number"),
+        ({"nu": "  "}, "nu must be a real number"),
+        ({"nu": float("inf")}, "nu must be a real number"),
         ({"cavities": 2, "emitters": 6}, "at most 15 qubits"),
     ],
 )
@@ -744,13 +767,13 @@ def test_jaynes_cummings_hubbard_sizes_from_cavities_and_hopping() -> None:
 @pytest.mark.parametrize(
     ("overrides", "match"),
     [
-        ({"cavities": 0}, "cavities must be an integer of at least 1"),
-        ({"cavities": True}, "cavities must be an integer of at least 1"),
-        ({"nu": "nope"}, "hopping must be a real number"),
-        ({"nu": True}, "hopping must be a real number"),
-        ({"nu": []}, "hopping must be a real number"),
-        ({"nu": "  "}, "hopping must be a real number"),
-        ({"nu": float("inf")}, "hopping must be a real number"),
+        ({"cavities": 0}, "n_cavities must be an integer of at least 1"),
+        ({"cavities": True}, "n_cavities must be an integer of at least 1"),
+        ({"nu": "nope"}, "nu must be a real number"),
+        ({"nu": True}, "nu must be a real number"),
+        ({"nu": []}, "nu must be a real number"),
+        ({"nu": "  "}, "nu must be a real number"),
+        ({"nu": float("inf")}, "nu must be a real number"),
         ({"cavities": 6}, "at most 15 qubits"),
     ],
 )
@@ -797,7 +820,7 @@ def test_check_page_returns_the_built_qubit_count(
     [
         (
             {"model": "tavis_cummings", "emitters": 14, "basis": "100"},
-            "emitters must be an integer from 1 to 13",
+            "at most 15 qubits",
         ),
         ({"factory": {"edges": "0-0"}}, "self-loop"),
         (
@@ -818,9 +841,22 @@ def test_check_page_rejects_emitter_count_edges_and_qubit_cap(
 
 
 @pytest.mark.parametrize("model_id", ["tavis_cummings", "tavis_cummings_hubbard"])
-@pytest.mark.parametrize("emitters", [0, 14, True, "nope"])
-def test_tavis_emitter_count_is_rejected_before_import(forbid_qutip: None, model_id: str, emitters: object) -> None:
-    with pytest.raises(ValueError, match="emitters must be an integer from 1 to 13"):
+@pytest.mark.parametrize(
+    ("emitters", "match"),
+    [
+        (0, "n_emitters must be an integer of at least 1"),
+        (True, "n_emitters must be an integer of at least 1"),
+        ("nope", "n_emitters must be an integer of at least 1"),
+        (14, "at most 15 qubits"),
+    ],
+)
+def test_tavis_emitter_count_is_rejected_before_import(
+    forbid_qutip: None,
+    model_id: str,
+    emitters: object,
+    match: str,
+) -> None:
+    with pytest.raises(ValueError, match=match):
         build_simulator(_selection(model=model_id, emitters=emitters, basis="100"))
 
 
@@ -1977,7 +2013,13 @@ def test_describe_models_formats_each_default_kind() -> None:
     module.varied = varied  # type: ignore[attr-defined]
     params = {item["name"]: item for item in _describe_models(module)[0]["params"]}
     assert params["text"]["default"] == "hi"
-    assert params["count"]["default"] == "3"
+    assert params["count"] == {
+        "name": "count",
+        "label": "count",
+        "kind": "integer",
+        "default": "3",
+        "minimum": 1,
+    }
     assert params["flag"]["default"] == ""
     assert params["other"]["default"] == ""
     assert params["bare"]["kind"] == "number_or_list"
@@ -2063,6 +2105,11 @@ def _cavity_params(*, sequence: bool) -> list[dict[str, object]]:
     ]
 
 
+def _integer_param(name: str, label: str) -> dict[str, object]:
+    """Return one catalog integer field with the page minimum."""
+    return {"name": name, "label": label, "kind": "integer", "default": "1", "minimum": 1}
+
+
 def test_listed_models_reads_the_package_factories() -> None:
     listed = listed_models()
     assert [item["id"] for item in listed] == [
@@ -2097,20 +2144,23 @@ def test_listed_models_reads_the_package_factories() -> None:
     ]
     scalars = _cavity_params(sequence=False)
     sequences = _cavity_params(sequence=True)
+    emitters = _integer_param("n_emitters", "Emitters")
+    cavities = _integer_param("n_cavities", "Cavities")
+    hopping = {"name": "nu", "label": "Hopping", "kind": "number", "default": "0"}
     assert listed[1]["title"] == "Jaynes-Cummings"
     assert listed[1]["qubits"] is False
     assert listed[1]["params"] == scalars
     assert listed[2]["title"] == "Jaynes-Cummings-Hubbard"
     assert listed[2]["qubits"] is False
     assert listed[2]["setup"] == "model = jaynes_cummings_hubbard()"
-    assert listed[2]["params"] == scalars
+    assert listed[2]["params"] == [*scalars, cavities, hopping]
     assert listed[3]["setup"] == "model = tavis_cummings()"
-    assert listed[3]["params"] == sequences
+    assert listed[3]["params"] == [*sequences, emitters]
     assert listed[4]["title"] == "Tavis-Cummings-Hubbard"
     assert listed[4]["qubits"] is False
     assert listed[4]["setup"] == "model = tavis_cummings_hubbard()"
-    assert listed[4]["params"] == sequences
-    skipped = {"n_qubits", "n_emitters", "n_cavities", "nu", "cavity_levels", "initial_fock"}
+    assert listed[4]["params"] == [*sequences, emitters, cavities, hopping]
+    skipped = {"n_qubits", "cavity_levels", "initial_fock"}
     for item in listed:
         assert skipped.isdisjoint(param["name"] for param in item["params"])
     kappa = next(param for param in scalars if param["name"] == "kappa")
@@ -2517,7 +2567,6 @@ def test_page_limits_use_the_validator_caps() -> None:
             "angle": _MAX_FACTORY_QUBITS,
             "amplitude": _MAX_AMPLITUDES,
         },
-        "emitters": _MAX_EMITTERS,
         "operatorQubits": _MAX_OPERATOR_QUBITS,
         "timeSteps": _MAX_TIME_STEPS,
         "numSteps": _MAX_NUM_STEPS,

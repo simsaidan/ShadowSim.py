@@ -174,59 +174,22 @@
     return `${label} must be from 1 to ${maximum}${tail}`;
   }
 
-  function emitterCount() {
-    const text = page.emitterText.trim();
-    if (!positiveIntAtMost(text, page.maxEmitters)) return null;
-    return Number(text);
+  function integerMinimum(param) {
+    const minimum = param.minimum;
+    return Number.isInteger(minimum) && minimum >= 1 ? minimum : 1;
   }
 
-  function emitterAlert() {
-    const text = page.emitterText.trim();
-    if (positiveIntAtMost(text, page.maxEmitters)) return null;
-    if (positiveIntText(text)) return `Emitters must be from 1 to ${page.maxEmitters}`;
-    return "Enter an emitter count";
-  }
-
-  function usesEmitterCount() {
-    return page.preexistingId === "tavis_cummings" || page.preexistingId === "tavis_cummings_hubbard";
-  }
-
-  function hubbardSelected() {
-    return page.selection.model === "preexisting" && page.preexistingId === "tavis_cummings_hubbard";
-  }
-
-  function jaynesHubbardSelected() {
-    return page.selection.model === "preexisting" && page.preexistingId === "jaynes_cummings_hubbard";
-  }
-
-  function cavityCount() {
-    const text = String(page.cavityText ?? "").trim();
-    if (!positiveIntText(text)) return null;
-    return Number(text);
-  }
-
-  function hoppingValue() {
-    const text = String(page.hoppingText ?? "").trim();
-    if (!/^-?(?:\d+\.?\d*|\.\d+)(?:e[+-]?\d+)?$/i.test(text)) return null;
-    const value = Number(text);
-    return Number.isFinite(value) ? value : null;
+  function integerAlert(param) {
+    const text = factoryFieldText(param).trim();
+    const minimum = integerMinimum(param);
+    if (!positiveIntText(text) || BigInt(text) < BigInt(minimum)) {
+      return `Enter an integer of at least ${minimum} for ${param.label}`;
+    }
+    return null;
   }
 
   function factoryAlert() {
     if (page.selection.model !== "preexisting") return null;
-    if (page.preexistingId === "tavis_cummings") {
-      const emitters = emitterAlert();
-      if (emitters) return emitters;
-    }
-    if (jaynesHubbardSelected()) {
-      if (cavityCount() == null) return "Enter a cavity count of at least 1";
-      if (hoppingValue() == null) return "Enter a real hopping strength";
-    } else if (hubbardSelected()) {
-      if (cavityCount() == null) return "Enter a cavity count of at least 1";
-      const emitters = emitterAlert();
-      if (emitters) return emitters;
-      if (hoppingValue() == null) return "Enter a real hopping strength";
-    }
     return paramAlert();
   }
 
@@ -289,7 +252,10 @@
   function paramAlert() {
     for (const param of factoryParams()) {
       const text = factoryFieldText(param).trim();
-      if (param.kind === "number") {
+      if (param.kind === "integer") {
+        const problem = integerAlert(param);
+        if (problem) return problem;
+      } else if (param.kind === "number") {
         if (realText(text) == null) return `Enter a real number for ${param.label}`;
       } else if (param.kind === "number_or_list") {
         const values = numberValues(text);
@@ -308,15 +274,13 @@
     return null;
   }
 
-  function cavityModelSelected() {
-    return (
-      page.selection.model === "preexisting" &&
-      (page.preexistingId === "jaynes_cummings" || usesEmitterCount() || jaynesHubbardSelected())
-    );
+  function factorySetsQubits() {
+    const factory = chosenFactory();
+    return page.selection.model === "preexisting" && factory != null && factory.qubits === false;
   }
 
   function fixedFactoryQubits() {
-    if (!cavityModelSelected()) return null;
+    if (!factorySetsQubits()) return null;
     const stored = page.checkedQubits;
     return Number.isInteger(stored) ? stored : null;
   }
@@ -654,7 +618,7 @@
   function numberProblem(preview) {
     const qubits = settingNumber("qubits");
     const total = settingNumber("total");
-    const needsQubits = !cavityModelSelected();
+    const needsQubits = !factorySetsQubits();
     if (total == null || (needsQubits && qubits == null)) {
       const missing = needsQubits ? "qubits and total time" : "a total time";
       const tail = preview ? " to preview the script." : ".";
@@ -714,6 +678,10 @@
 
   function factoryArgument(param) {
     const text = factoryFieldText(param).trim();
+    if (param.kind === "integer") {
+      if (integerAlert(param)) return null;
+      return `${param.name}=${factoryFieldText(param).trim()}`;
+    }
     if (param.kind === "edges") {
       const pairs = parseEdges(text);
       if (!pairs || !pairs.length) return null;
@@ -732,11 +700,7 @@
 
   function factoryArguments(factory) {
     const args = [];
-    if (jaynesHubbardSelected()) args.push(`n_cavities=${cavityCount()}`, `nu=${pyFloat(hoppingValue())}`);
-    else if (hubbardSelected()) {
-      args.push(`n_cavities=${cavityCount()}`, `n_emitters=${emitterCount()}`, `nu=${pyFloat(hoppingValue())}`);
-    } else if (page.preexistingId === "tavis_cummings") args.push(`n_emitters=${emitterCount()}`);
-    else if (factory.qubits) {
+    if (factory.qubits) {
       const qubits = settingNumber("qubits");
       args.push(`n_qubits=${qubits == null ? "" : String(Math.round(qubits))}`);
     }
@@ -1252,14 +1216,8 @@
   return {
     amplitudeQubits: bind(amplitudeQubits),
     blockById: bind(blockById),
-    cavityModelSelected: bind(cavityModelSelected),
+    factorySetsQubits: bind(factorySetsQubits),
     chosenFactory: bind(chosenFactory),
-    cavityCount: bind(cavityCount),
-    emitterCount: bind(emitterCount),
-    usesEmitterCount: bind(usesEmitterCount),
-    hubbardSelected: bind(hubbardSelected),
-    jaynesHubbardSelected: bind(jaynesHubbardSelected),
-    hoppingValue: bind(hoppingValue),
     factoryAlert: bind(factoryAlert),
     emitterProblem: bind(emitterProblem),
     entryBody: bind(entryBody),

@@ -43,7 +43,6 @@ _DEFAULT_SAVE_PATH = "results/run1"
 _DEFAULT_EXPORT_DIR = "results"
 _MAX_OPERATOR_QUBITS = 8
 _MAX_FACTORY_QUBITS = 15
-_MAX_EMITTERS = 13
 _MAX_TIME_STEPS = 500
 _MAX_NUM_STEPS = 100
 _MAX_TROTTER_DEPTH = 100
@@ -56,8 +55,9 @@ def _page_limits() -> dict[str, object]:
     """Return the builder page caps.
 
     Basis, Gray, and angle lengths are ``_MAX_FACTORY_QUBITS``. The amplitude
-    count is the page typing cap and is not enforced on a posted list. Every
-    other field is a cap a validator in this module enforces.
+    count is the page typing cap and is not enforced on a posted list. A posted
+    factory is capped by the qubit count it reports. Every other field is a cap
+    a validator in this module enforces.
     """
     return {
         "states": {
@@ -66,7 +66,6 @@ def _page_limits() -> dict[str, object]:
             "angle": _MAX_FACTORY_QUBITS,
             "amplitude": _MAX_AMPLITUDES,
         },
-        "emitters": _MAX_EMITTERS,
         "operatorQubits": _MAX_OPERATOR_QUBITS,
         "timeSteps": _MAX_TIME_STEPS,
         "numSteps": _MAX_NUM_STEPS,
@@ -96,8 +95,6 @@ _ACTION_KEYS = frozenset({"ids", "save_path", "export_path"})
 _ENTRY_KEYS = frozenset({"id", "arguments", "backend"})
 _BACKEND_KEYS = frozenset({"id", "arguments"})
 _STATE_KEYS = frozenset({"id", "value"})
-# Structural names ``_model`` reads beside the chip fields.
-_STRUCTURAL_ARGUMENTS = frozenset({"n_qubits", "n_emitters", "n_cavities", "nu"})
 
 
 @dataclass(frozen=True)
@@ -267,18 +264,14 @@ def build_simulator(selection: Mapping[str, object], *, simulator: int = 0) -> S
             Hamiltonian term is required.
             Factory ``arguments`` use the factory's parameter names. A posted
             name the factory does not take fails. ``n_qubits`` is at most 15.
-            Tavis–Cummings reads ``n_emitters`` (1 to 13, default 1) and uses
-            ``2 + n_emitters`` qubits. Tavis–Cummings–Hubbard reads
-            ``n_cavities`` (default 1), ``n_emitters`` (1 to 13, default 1), and
-            real ``nu`` (default 0). Its qubit count is ``n_cavities * (2 +
-            n_emitters)``, at most 15. Jaynes–Cummings–Hubbard reads
-            ``n_cavities`` and real ``nu``, with one emitter per cavity, so its
-            qubit count is ``3 * n_cavities``, at most 15. Jaynes–Cummings is 3
-            qubits. The other arguments are the chip fields. A missing chip
-            field keeps that model's default.
-            Numbers are finite reals or numeric text. A per-emitter value is a
-            scalar or a sequence whose length is the emitter count. ``edges`` is
-            empty, dash pairs such as ``0-1, 1-2``, or a list of pairs.
+            An integer field is an integer of at least the catalog minimum, and
+            a missing field keeps the factory default. A factory that does not
+            take ``n_qubits`` must report a qubit count, and that count is at
+            most 15. The other arguments are finite reals or numeric text. A
+            per-emitter value is a scalar or a sequence whose length is
+            ``n_emitters``, or length 1 when the factory has no emitter count.
+            ``edges`` is empty, dash pairs such as ``0-1, 1-2``, or a list of
+            pairs.
             ``state.value`` is the payload for ``state.id``. A basis or Gray code
             is a string of 0 and 1 whose length is the qubit count, at most 15
             characters. Angle is one finite real number per qubit. Amplitude is
@@ -403,8 +396,9 @@ def check_page(selection: Mapping[str, object], *, output_root: Path | None = No
         ``qubits``, the qubit count of the built model.
 
     Raises:
-        ValueError: The document cannot run, including an illegal emitter count,
-            edge list, or qubit cap, or a save or export path outside ``output_root``.
+        ValueError: The document cannot run, including an integer field below
+            its minimum, an edge list, or a qubit count above 15, or a save or
+            export path outside ``output_root``.
         ImportError: The extra required by a simulator or backend is not installed.
     """
     prepared = _prepare_page(selection, output_root=output_root)
@@ -1106,68 +1100,34 @@ def _acted_sites(value: object, num_qubits: int, dim: int) -> list[int]:
     return ordered
 
 
-def _emitter_count(value: object) -> int:
-    """Return an emitter count from 1 to ``_MAX_EMITTERS``. A missing value is 1."""
-    if value is None:
-        return 1
-    try:
-        count = _integer(value)
-    except ValueError:
-        raise ValueError(f"emitters must be an integer from 1 to {_MAX_EMITTERS}") from None
-    if count < 1 or count > _MAX_EMITTERS:
-        raise ValueError(f"emitters must be an integer from 1 to {_MAX_EMITTERS}")
-    return count
-
-
-def _cavity_count(value: object) -> int:
-    """Return a cavity count of at least 1. A missing value is 1."""
-    if value is None:
-        return 1
-    try:
-        count = _integer(value)
-    except ValueError:
-        raise ValueError("cavities must be an integer of at least 1") from None
-    if count < 1:
-        raise ValueError("cavities must be an integer of at least 1")
-    return count
-
-
-def _hopping(value: object) -> float:
-    """Return a finite real hopping strength. A missing value is 0."""
-    if value is None:
-        return 0.0
-    if isinstance(value, bool) or not isinstance(value, (int, float, str)):
-        raise ValueError("hopping must be a real number")
-    if isinstance(value, str):
-        text = value.strip()
-        if not text:
-            raise ValueError("hopping must be a real number")
-        try:
-            number = float(text)
-        except ValueError:
-            raise ValueError("hopping must be a real number") from None
-    else:
-        number = float(value)
-    if not math.isfinite(number):
-        raise ValueError("hopping must be a real number")
-    return number
-
-
 _REAL_TEXT = re.compile(r"^-?(?:\d+\.?\d*|\.\d+)(?:e[+-]?\d+)?$", re.IGNORECASE)
 _EDGE_PAIR = re.compile(r"^(\d+)-(\d+)$")
 _EDGE_PAREN = re.compile(r"\(\s*(\d+)\s*,\s*(\d+)\s*\)")
 
 
-def _factory_kwargs(params: list[ListedParam], payload: object, *, n_emitters: int | None) -> dict[str, object]:
+def _factory_kwargs(params: list[ListedParam], payload: object) -> dict[str, object]:
     """Return factory keyword arguments posted by the chip.
 
     A missing chip field keeps that default. An empty ``edges`` value is omitted
-    so the chain preset stays in place.
+    so the chain preset stays in place. Integer fields are bound first. A
+    per-emitter list then uses the bound ``n_emitters``, or length 1 when that
+    argument was not posted.
     """
     if not isinstance(payload, Mapping):
         raise ValueError("factory arguments must be an object")
     kwargs: dict[str, object] = {}
     for param in params:
+        if param["kind"] != "integer":
+            continue
+        name = param["name"]
+        if name not in payload or payload[name] is None:
+            continue
+        kwargs[name] = _factory_integer(name, payload[name], _integer_minimum(param))
+    posted_emitters = kwargs.get("n_emitters")
+    sequence_length = posted_emitters if isinstance(posted_emitters, int) else 1
+    for param in params:
+        if param["kind"] == "integer":
+            continue
         name = param["name"]
         if name not in payload or payload[name] is None:
             continue
@@ -1181,10 +1141,29 @@ def _factory_kwargs(params: list[ListedParam], payload: object, *, n_emitters: i
         elif kind == "choice":
             kwargs[name] = _factory_choice(name, param.get("choices"), value)
         elif kind == "number_or_list":
-            kwargs[name] = _factory_sequence(name, value, n_emitters)
+            kwargs[name] = _factory_sequence(name, value, sequence_length)
         else:
             kwargs[name] = _factory_real(name, value)
     return kwargs
+
+
+def _integer_minimum(param: ListedParam) -> int:
+    """Return the catalog minimum for an integer field."""
+    minimum = param.get("minimum", 1)
+    if isinstance(minimum, bool) or not isinstance(minimum, int):
+        return 1
+    return minimum
+
+
+def _factory_integer(name: str, value: object, minimum: int) -> int:
+    """Return an integer chip argument of at least ``minimum``."""
+    try:
+        number = _integer(value)
+    except ValueError:
+        raise ValueError(f"{name} must be an integer of at least {minimum}") from None
+    if number < minimum:
+        raise ValueError(f"{name} must be an integer of at least {minimum}")
+    return number
 
 
 def _factory_real(name: str, value: object) -> float:
@@ -1272,64 +1251,51 @@ def _edge_text(text: str) -> list[tuple[int, int]] | None:
     return pairs
 
 
-def _factory_qubit_budget(
-    parameters: Mapping[str, inspect.Parameter],
-    *,
-    n_emitters: int | None,
-    n_cavities: int | None,
-) -> None:
-    """Reject a layout whose qubit count is above the page budget.
+def _factory_qubit_cap(build: object, parameters: Mapping[str, inspect.Parameter], bound: Mapping[str, object]) -> None:
+    """Reject a reported qubit count above the page budget.
 
-    ``n_qubits`` is capped where it is read. Both cavity and emitter counts use
-    ``n_cavities * (2 + n_emitters)``. Cavities alone use ``3 * n_cavities``.
-    Emitters alone are already at most ``_MAX_EMITTERS``, and a factory with neither is 3 qubits.
+    A factory that takes ``n_qubits`` is capped where that argument is read.
+    Any other factory must provide ``qubit_count`` so the layout can be rejected
+    before the operators are built.
     """
-    if "n_qubits" in parameters or n_cavities is None:
+    if "n_qubits" in parameters:
         return
-    if n_emitters is not None and n_cavities * (2 + n_emitters) > _MAX_FACTORY_QUBITS:
-        raise ValueError(f"cavities and emitters must use at most {_MAX_FACTORY_QUBITS} qubits")
-    if n_emitters is None and n_cavities * 3 > _MAX_FACTORY_QUBITS:
-        raise ValueError(f"cavities must use at most {_MAX_FACTORY_QUBITS} qubits")
+    counter = getattr(build, "qubit_count", None)
+    if not callable(counter):
+        raise ValueError("model does not report a qubit count")
+    kwargs = {name: bound[name] for name in inspect.signature(counter).parameters if name in bound}
+    if counter(**kwargs) > _MAX_FACTORY_QUBITS:
+        raise ValueError(f"must use at most {_MAX_FACTORY_QUBITS} qubits")
 
 
 def _model(model_id: str, arguments: Mapping[str, object]) -> IsingModel | TavisCummingsModel:
     """Build the selected factory by binding ``arguments`` to its signature.
 
-    ``n_qubits``, ``n_emitters``, ``n_cavities``, and ``nu`` use the page
-    coercers when the signature has those names. Chip fields go through
-    :func:`_factory_kwargs`, and a list-valued field uses the bound emitter
-    count, or length 1 when the signature has no ``n_emitters``. A posted name
-    the signature does not take fails. A missing chip field keeps the default.
+    ``n_qubits`` is read from the Qubits setting when the signature takes it.
+    The other posted names are catalog fields and go through
+    :func:`_factory_kwargs`. A factory that does not take ``n_qubits`` is capped
+    from its ``qubit_count`` before it builds. A posted name the signature does
+    not take fails. A missing chip field keeps the default.
     """
     record = next((item for item in listed_models() if item["id"] == model_id), None)
     if record is None:
         raise ValueError("unknown model")
     build = getattr(models, record["id"])
     parameters = inspect.signature(build).parameters
-    structural = _STRUCTURAL_ARGUMENTS.intersection(parameters)
     chip_names = {param["name"] for param in record["params"]}
-    unknown = [name for name in arguments if name not in structural and name not in chip_names]
+    if "n_qubits" in parameters:
+        chip_names.add("n_qubits")
+    unknown = [name for name in arguments if name not in chip_names]
     if unknown:
         raise ValueError(f"unknown argument {min(unknown)}")
     bound: dict[str, object] = {}
-    n_emitters: int | None = None
-    n_cavities: int | None = None
     if "n_qubits" in parameters:
         num_qubits = _integer(arguments.get("n_qubits"))
         if num_qubits > _MAX_FACTORY_QUBITS:
             raise ValueError(f"qubits must be at most {_MAX_FACTORY_QUBITS}")
         bound["n_qubits"] = num_qubits
-    if "n_emitters" in parameters:
-        n_emitters = _emitter_count(arguments.get("n_emitters"))
-        bound["n_emitters"] = n_emitters
-    if "n_cavities" in parameters:
-        n_cavities = _cavity_count(arguments.get("n_cavities"))
-        bound["n_cavities"] = n_cavities
-    _factory_qubit_budget(parameters, n_emitters=n_emitters, n_cavities=n_cavities)
-    sequence_length = n_emitters if n_emitters is not None else 1
-    bound.update(_factory_kwargs(record["params"], arguments, n_emitters=sequence_length))
-    if "nu" in parameters:
-        bound["nu"] = _hopping(arguments.get("nu"))
+    bound.update(_factory_kwargs(record["params"], arguments))
+    _factory_qubit_cap(build, parameters, bound)
     return cast(IsingModel | TavisCummingsModel, build(**bound))
 
 
