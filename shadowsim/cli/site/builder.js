@@ -279,7 +279,7 @@ function factoryField(param) {
   if (param.kind === "choice") {
     return el(
       "label",
-      { className: "preexisting-field" },
+      { className: "chip-field" },
       param.label,
       el(
         "select",
@@ -305,7 +305,7 @@ function factoryField(param) {
   const numeric = integer || param.kind === "number" || param.kind === "number_or_list";
   return el(
     "label",
-    { className: "preexisting-field" },
+    { className: "chip-field" },
     param.label,
     el("input", {
       type: "text",
@@ -385,7 +385,7 @@ function preexistingChip() {
     { className: `chip tone-teal preexisting${state.preexistingOpen ? " is-editing" : ""}` },
     el(
       "div",
-      { className: "preexisting-head" },
+      { className: "chip-head" },
       el(
         "button",
         {
@@ -405,11 +405,11 @@ function preexistingChip() {
       ),
       el(
         "div",
-        { className: "preexisting-actions" },
+        { className: "chip-actions" },
         el(
           "span",
           {
-            className: "basis-alert preexisting-alert",
+            className: "chip-alert preexisting-alert",
             role: "img",
             "aria-label": alertText,
             title: alertText,
@@ -450,7 +450,7 @@ function preexistingChip() {
         ),
       ),
     ),
-    state.preexistingOpen ? el("label", { className: "preexisting-field" }, "Model", select) : null,
+    state.preexistingOpen ? el("label", { className: "chip-field" }, "Model", select) : null,
     ...(state.preexistingOpen ? factoryParams().map(factoryField) : []),
   );
 }
@@ -522,7 +522,7 @@ function stateAlertLabel(id) {
 function paintStateChip() {
   const detail = document.querySelector(".basis-detail");
   if (detail && state.selection.state) detail.textContent = stateDetail(state.selection.state);
-  const alert = document.querySelector(".chip.tone-gold .basis-alert");
+  const alert = document.querySelector(".chip.tone-gold .chip-alert");
   if (!alert || !state.selection.state) return;
   const label = stateAlertLabel(state.selection.state);
   alert.hidden =
@@ -548,7 +548,7 @@ function stateChip(options) {
     { className: `chip tone-gold state ${options.id}${open ? " is-editing" : ""}` },
     el(
       "div",
-      { className: "basis-head" },
+      { className: "chip-head" },
       el(
         "button",
         {
@@ -568,11 +568,11 @@ function stateChip(options) {
       ),
       el(
         "div",
-        { className: "basis-actions" },
+        { className: "chip-actions" },
         el(
           "span",
           {
-            className: "basis-alert",
+            className: "chip-alert",
             role: "img",
             "aria-label": stateAlertLabel(options.id),
             title: stateAlertLabel(options.id),
@@ -613,7 +613,7 @@ function stateChip(options) {
         ),
       ),
     ),
-    open ? el("label", { className: "basis-field" }, options.field, input) : null,
+    open ? el("label", { className: "chip-field" }, options.field, input) : null,
   );
 }
 
@@ -703,7 +703,7 @@ function simulatorChip(entry) {
     { className: `chip tone-blue simulator${entry.open ? " is-editing" : ""}` },
     el(
       "div",
-      { className: "simulator-head" },
+      { className: "chip-head" },
       el(
         "button",
         {
@@ -723,7 +723,7 @@ function simulatorChip(entry) {
       ),
       el(
         "div",
-        { className: "simulator-actions" },
+        { className: "chip-actions" },
         entry.open
           ? el(
               "button",
@@ -776,7 +776,7 @@ function pathChip(block) {
     { className: `chip tone-rose path ${block.id}${open ? " is-editing" : ""}` },
     el(
       "div",
-      { className: "path-head" },
+      { className: "chip-head" },
       el(
         "button",
         {
@@ -796,7 +796,7 @@ function pathChip(block) {
       ),
       el(
         "div",
-        { className: "path-actions" },
+        { className: "chip-actions" },
         open
           ? el(
               "button",
@@ -833,7 +833,7 @@ function pathChip(block) {
     open
       ? el(
           "label",
-          { className: "path-field" },
+          { className: "chip-field" },
           field.label || "Path",
           el("input", {
             type: "text",
@@ -892,7 +892,7 @@ function backendChip(entry) {
     { className: `chip tone-violet backend${editing ? " is-editing" : ""}` },
     el(
       "div",
-      { className: "backend-head" },
+      { className: "chip-head" },
       el(
         "button",
         {
@@ -913,7 +913,7 @@ function backendChip(entry) {
       ),
       el(
         "div",
-        { className: "backend-actions" },
+        { className: "chip-actions" },
         editing
           ? el(
               "button",
@@ -951,7 +951,7 @@ function backendChip(entry) {
     editing && samples
       ? el(
           "label",
-          { className: "backend-field" },
+          { className: "chip-field" },
           "Shots",
           el("input", {
             type: "text",
@@ -1086,7 +1086,7 @@ function hamiltonianChip(term) {
     { className: "chip tone-teal hamiltonian is-editing", "data-key": String(term.key) },
     el(
       "div",
-      { className: "basis-head" },
+      { className: "chip-head" },
       el(
         "div",
         {},
@@ -1095,14 +1095,14 @@ function hamiltonianChip(term) {
       ),
       el(
         "div",
-        { className: "basis-actions" },
-        el("span", { className: "basis-alert", role: "img" }, "!"),
+        { className: "chip-actions" },
+        el("span", { className: "chip-alert", role: "img" }, "!"),
         el(
           "button",
           {
             className: "remove",
             type: "button",
-            "aria-label": "Remove Add a Hamiltonian",
+            "aria-label": "Remove Hamiltonian",
             onclick: (event) => {
               event.stopPropagation();
               removeTerm(term.key);
@@ -1112,7 +1112,7 @@ function hamiltonianChip(term) {
         ),
       ),
     ),
-    el("label", { className: "basis-field" }, "Matrix", input),
+    el("label", { className: "chip-field" }, "Matrix", input),
   );
   paintOperatorAlert(chip, term);
   return chip;
@@ -1166,7 +1166,7 @@ function localSiteFields(term) {
       ),
     );
   }
-  return el("div", { className: "measure-fields" }, ...boxes);
+  return el("div", { className: "qubit-picker" }, ...boxes);
 }
 
 function localFields(term) {
@@ -1184,7 +1184,7 @@ function localFields(term) {
   return el(
     "div",
     { className: "local-fields" },
-    el("label", { className: "basis-field" }, "Matrix", input),
+    el("label", { className: "chip-field" }, "Matrix", input),
     localSiteFields(term),
   );
 }
@@ -1199,7 +1199,7 @@ function paintOperatorAlert(chip, term) {
   const problem = operatorProblem(term);
   const shown =
     Boolean(problem) && (term.id === "hamiltonian" || checks.qubitCount(currentPage()) != null);
-  const alert = chip.querySelector(".basis-alert");
+  const alert = chip.querySelector(".chip-alert");
   const field = chip.querySelector("textarea");
   const alertId = `operator-alert-${term.key}`;
   if (alert) {
@@ -1229,7 +1229,7 @@ function paintLocalHamiltonianChips() {
     const fields = chip.querySelector(".local-fields");
     if (!open) fields?.remove();
     else if (!fields) chip.append(localFields(term));
-    else fields.querySelector(".measure-fields")?.replaceWith(localSiteFields(term));
+    else fields.querySelector(".qubit-picker")?.replaceWith(localSiteFields(term));
     paintOperatorAlert(chip, term);
   });
 }
@@ -1246,7 +1246,7 @@ function actedQubitChip(term) {
     },
     el(
       "div",
-      { className: "basis-head" },
+      { className: "chip-head" },
       el(
         "div",
         {},
@@ -1255,14 +1255,14 @@ function actedQubitChip(term) {
       ),
       el(
         "div",
-        { className: "basis-actions" },
-        el("span", { className: "basis-alert", role: "img" }, "!"),
+        { className: "chip-actions" },
+        el("span", { className: "chip-alert", role: "img" }, "!"),
         el(
           "button",
           {
             className: "remove",
             type: "button",
-            "aria-label": `Remove ${title}`,
+            "aria-label": lindblad ? "Remove Lindblad operator" : "Remove local Hamiltonian",
             onclick: (event) => {
               event.stopPropagation();
               removeTerm(term.key);
@@ -1858,7 +1858,7 @@ function paintPathDetails() {
     const block = checks.blockById(currentPage(), "then", id);
     if (block?.field?.kind !== "path") continue;
     const chip = document.querySelector(`.chip.path.${id}`);
-    const detail = chip?.querySelector(".path-head span");
+    const detail = chip?.querySelector(".chip-head span");
     if (!detail) continue;
     const shown = pathValue(id).trim();
     detail.textContent = shown || block.detail;
@@ -1884,12 +1884,12 @@ function paintMeasureChip() {
   if (count == null) {
     chip.classList.remove("is-editing");
     chip.querySelector(".done")?.remove();
-    chip.querySelector(".measure-fields")?.remove();
-    chip.querySelector(".counts-field")?.remove();
+    chip.querySelector(".qubit-picker")?.remove();
+    chip.querySelector(".chip-field")?.remove();
     return;
   }
   if (!state.measureOpen) return;
-  const fields = chip.querySelector(".measure-fields");
+  const fields = chip.querySelector(".qubit-picker");
   const next = measureFields();
   if (fields) fields.replaceWith(next);
   else chip.append(next);
@@ -1901,7 +1901,7 @@ function paintMeasureChip() {
   const hint = chip.querySelector(".counts-hint");
   if (hint) hint.textContent = countsHint();
   else chip.append(countsField());
-  const input = chip.querySelector(".counts-field input");
+  const input = chip.querySelector(".chip-field input");
   if (input) input.placeholder = countsPlaceholder();
 }
 
@@ -2384,7 +2384,7 @@ function measureFields() {
       ),
     );
   }
-  return el("div", { className: "measure-fields" }, ...boxes);
+  return el("div", { className: "qubit-picker" }, ...boxes);
 }
 
 function countsHint() {
@@ -2405,7 +2405,7 @@ function countsPlaceholder() {
 function countsField() {
   return el(
     "label",
-    { className: "counts-field" },
+    { className: "chip-field" },
     "Expression",
     el("input", {
       type: "text",
@@ -2430,12 +2430,12 @@ function measureChip(block) {
       { className: "chip tone-green measure" },
       el(
         "div",
-        { className: "measure-head" },
+        { className: "chip-head" },
         el("strong", {}, block.title),
         el("span", { className: "measure-detail" }, block.detail ?? ""),
         el(
           "div",
-          { className: "measure-actions" },
+          { className: "chip-actions" },
           el(
             "button",
             {
@@ -2460,7 +2460,7 @@ function measureChip(block) {
     { className: `chip tone-green measure${open ? " is-editing" : ""}` },
     el(
       "div",
-      { className: "measure-head" },
+      { className: "chip-head" },
       el(
         "button",
         {
@@ -2480,7 +2480,7 @@ function measureChip(block) {
       ),
       el(
         "div",
-        { className: "measure-actions" },
+        { className: "chip-actions" },
         open
           ? el(
               "button",

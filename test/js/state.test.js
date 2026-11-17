@@ -5,7 +5,7 @@ const { catalog, loadPage } = require("./load-page");
 
 function describe(card) {
   const done = card.querySelector("button.done");
-  const head = card.querySelector(".basis-head > button");
+  const head = card.querySelector(".chip-head > button");
   return {
     editing: card.className.includes("is-editing"),
     done: done ? done.textContent : null,

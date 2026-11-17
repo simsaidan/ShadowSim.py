@@ -200,7 +200,7 @@ function showingPlaceholder(window) {
 }
 
 function operatorAlert(chip) {
-  const alert = chip.querySelector(".basis-alert");
+  const alert = chip.querySelector(".chip-alert");
   const field = chip.querySelector("textarea");
   const describedby = field?.getAttribute("aria-describedby") ?? null;
   return {
