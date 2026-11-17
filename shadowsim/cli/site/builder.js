@@ -1928,38 +1928,10 @@ function paintDerived() {
   paintQubitField();
 }
 
-function stateEntryMessage(preview) {
-  const field = stateField(state.selection.state);
-  const ending = preview ? " and total time to preview the script." : " and total time.";
-  return `${field?.empty || "Enter an initial state"}${ending}`;
-}
-
 function statusMessage() {
   if (state.statusHold) return state.statusHold;
-  if (!checks.isComplete(currentPage()))
-    return (
-      checks.operatorStatus(currentPage(), false) ??
-      checks.socketStatus(currentPage(), false) ??
-      "Place a block in each slot."
-    );
-  if (checks.factoryAlert(currentPage())) return `${checks.factoryAlert(currentPage())}.`;
-  if (checks.stateInputProblem(currentPage()) === "size")
-    return checks.stateSizeStatus(currentPage(), false);
-  if (checks.stateInputProblem(currentPage()) === "empty") return stateEntryMessage(false);
-  const numbers = checks.numberProblem(currentPage(), false);
-  if (numbers) return numbers;
-  if (checks.simParamProblem(currentPage(), false))
-    return checks.simParamProblem(currentPage(), false);
-  if (!checks.simParamsReady(currentPage())) return "Enter simulator parameters.";
-  if (!checks.sameTimeGrid(currentPage()))
-    return "Use the same number of time steps for every simulator.";
-  if (!checks.measureSitesReady(currentPage())) return "Pick at least one qubit.";
-  if (checks.countsStatus(currentPage(), false)) return checks.countsStatus(currentPage(), false);
-  if (checks.shotsProblem(currentPage(), false)) return checks.shotsProblem(currentPage(), false);
-  if (!checks.shotsReady(currentPage())) return "Enter a shot count.";
-  if (!checks.backendFieldsReady(currentPage()))
-    return checks.backendFieldStatus(currentPage(), false);
-  if (!checks.savePathReady(currentPage())) return pathMessage(false);
+  const problem = checks.firstProblem(currentPage());
+  if (problem) return problem.message;
   if (state.checkError) return `${state.checkError.replace(/[.!?]$/, "")}.`;
   if (state.checkInFlight || !accepted()) return "Checking the selection.";
   return "Ready to run.";
@@ -2048,39 +2020,11 @@ function copyBoardButton() {
 function codeBody() {
   const code = previewText();
   if (code) return el("pre", { className: "script" }, code);
-  let message =
-    checks.operatorStatus(currentPage(), true) ??
-    checks.socketStatus(currentPage(), true) ??
-    "Place a block in each slot to preview the script.";
-  if (checks.isComplete(currentPage())) {
-    const numbers = checks.numberProblem(currentPage(), true);
-    if (checks.factoryAlert(currentPage()))
-      message = `${checks.factoryAlert(currentPage())} to preview the script.`;
-    else if (checks.stateInputProblem(currentPage()) === "size")
-      message = checks.stateSizeStatus(currentPage(), true);
-    else if (checks.stateInputProblem(currentPage()) === "empty") message = stateEntryMessage(true);
-    else if (numbers) message = numbers;
-    else if (checks.simParamProblem(currentPage(), true))
-      message = checks.simParamProblem(currentPage(), true);
-    else if (!checks.simParamsReady(currentPage()))
-      message = "Enter simulator parameters to preview the script.";
-    else if (!checks.sameTimeGrid(currentPage()))
-      message = "Use the same number of time steps to preview the script.";
-    else if (!checks.measureSitesReady(currentPage()))
-      message = "Pick at least one qubit to preview the script.";
-    else if (checks.countsStatus(currentPage(), true))
-      message = checks.countsStatus(currentPage(), true);
-    else if (checks.shotsProblem(currentPage(), true))
-      message = checks.shotsProblem(currentPage(), true);
-    else if (!checks.shotsReady(currentPage()))
-      message = "Enter a shot count to preview the script.";
-    else if (!checks.backendFieldsReady(currentPage()))
-      message = checks.backendFieldStatus(currentPage(), true);
-    else if (!checks.savePathReady(currentPage())) message = pathMessage(true);
-    else if (state.checkError)
-      message = `${state.checkError.replace(/[.!?]$/, "")} to preview the script.`;
-    else message = "Checking the selection.";
-  }
+  const problem = checks.firstProblem(currentPage());
+  if (problem) return el("p", { className: "placeholder" }, problem.previewMessage);
+  const message = state.checkError
+    ? `${state.checkError.replace(/[.!?]$/, "")} to preview the script.`
+    : "Checking the selection.";
   return el("p", { className: "placeholder" }, message);
 }
 
@@ -3070,17 +3014,6 @@ function measureChip(block) {
     open ? measureFields() : null,
     open && block.field?.kind === "expression" ? countsField() : null,
   );
-}
-
-function pathMessage(preview) {
-  const missing = checks.missingPaths(currentPage());
-  const tail = preview ? " to preview the script." : ".";
-  const names = missing.map((id) =>
-    String(checks.blockById(currentPage(), "then", id)?.field?.aria || "path").toLowerCase(),
-  );
-  const article = (name) => (/^[aeiou]/i.test(name) ? "an" : "a");
-  if (!names.length) return `Enter a path${tail}`;
-  return `Enter ${names.map((name) => `${article(name)} ${name}`).join(" and ")}${tail}`;
 }
 
 function thenSummary() {
