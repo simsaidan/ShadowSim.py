@@ -412,6 +412,30 @@ test("clear empties the board", () => {
   window.close();
 });
 
+test("an old saved board is dropped on startup", async () => {
+  const { window, page } = prepare();
+  const checks = [];
+  window.fetch = async () => {
+    checks.push(true);
+    return { ok: false, json: async () => ({ error: "unknown field amplitudeText" }) };
+  };
+  window.localStorage.setItem(
+    "shadowsim.builder.board",
+    JSON.stringify({
+      version: 1,
+      selection: { state: "amplitude" },
+      settings: { qubits: "1", total: "1" },
+      amplitudeText: "1, 0",
+    }),
+  );
+  await page.restoreBoard();
+  assert.equal(checks.length, 0);
+  assert.equal(window.localStorage.getItem("shadowsim.builder.board"), null);
+  assert.equal(page.state.statusHold, null);
+  assert.equal(page.state.selection.state, null);
+  window.close();
+});
+
 test("a bad saved document does not fill the board", async () => {
   const { window, page } = prepare();
   fillIsing(page);
@@ -764,5 +788,66 @@ test("export and import round-trip the board", async () => {
   assert.equal("server" in parsed, false);
   assert.deepEqual(parsed.state, { id: "basis", value: "01" });
   assert.equal(parsed.total, "1");
+  window.close();
+});
+
+test("different time-step defaults are flagged on the method fields", () => {
+  const { window, page } = prepare();
+  resetPage(page);
+  const field = (defaultValue) => ({
+    name: "time_steps",
+    label: "Time steps",
+    kind: "integer",
+    default: defaultValue,
+    minimum: 1,
+    maximum: page.state.limits.timeSteps,
+  });
+  page.state.blocks.simulator = [
+    {
+      id: "qutip",
+      title: "QuTiP",
+      detail: "Reference",
+      observables: true,
+      fields: [field("101")],
+    },
+    {
+      id: "trotterization",
+      title: "Trotterization",
+      detail: "Product formula",
+      observables: false,
+      fields: [field("11")],
+    },
+  ];
+  const board = mount(window);
+  page.draw(board);
+  const steps = () => [...board.querySelectorAll('input[aria-label="Time steps"]')];
+  const alerts = () => [...board.querySelectorAll(".chip.simulator .chip-alert")];
+  const message = "Use the same number of time steps for every simulator.";
+
+  page.place("simulator", "qutip");
+  assert.equal(steps().length, 1);
+  assert.equal(steps()[0].hasAttribute("aria-invalid"), false);
+  assert.equal(alerts()[0].hidden, true);
+  assert.equal(page.statusMessage(), "Place a block in the Initial state slot.");
+
+  page.place("simulator", "trotterization");
+  assert.equal(steps().length, 2);
+  for (const input of steps()) {
+    assert.equal(input.getAttribute("aria-invalid"), "true");
+    assert.equal(input.getAttribute("title"), message);
+    const alert = input.ownerDocument.getElementById(input.getAttribute("aria-describedby"));
+    assert.equal(alert.hidden, false);
+    assert.equal(alert.getAttribute("aria-label"), message);
+  }
+  assert.equal(page.statusMessage(), "Place a block in the Initial state slot.");
+
+  click(board.querySelector(".chip.simulator .done"));
+  const closed = board.querySelector(".chip.simulator");
+  assert.equal(closed.querySelector('input[aria-label="Time steps"]'), null);
+  assert.equal(closed.querySelector(".chip-alert").hidden, false);
+
+  typeInto(steps()[0], "101");
+  for (const input of steps()) assert.equal(input.hasAttribute("aria-invalid"), false);
+  for (const alert of alerts()) assert.equal(alert.hidden, true);
   window.close();
 });

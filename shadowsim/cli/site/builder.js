@@ -46,6 +46,15 @@ const LANES = [
 
 const DEFAULT_SHOTS = "256";
 const BOARD_KEY = "shadowsim.builder.board";
+const DOCUMENT_KEYS = new Set([
+  "version",
+  "total",
+  "state",
+  "model",
+  "simulators",
+  "measure",
+  "actions",
+]);
 const CHECK_DELAY = 200;
 
 const state = {
@@ -642,7 +651,14 @@ function stateFieldChip(block) {
   });
 }
 
-function simField(params, key, label, seed) {
+function timeStepMessage(entry) {
+  const message = checks.timeStepMismatch(currentPage());
+  if (!message || String(entry.params?.time_steps ?? "") === "") return null;
+  return message;
+}
+
+function simField(params, key, label, seed, describedBy) {
+  const message = describedBy ? checks.timeStepMismatch(currentPage()) : null;
   return el(
     "label",
     {},
@@ -651,6 +667,9 @@ function simField(params, key, label, seed) {
       type: "text",
       inputmode: seed ? "text" : "numeric",
       "aria-label": label,
+      "aria-invalid": message ? "true" : null,
+      "aria-describedby": message ? describedBy : null,
+      title: message,
       value: params[key],
       spellcheck: "false",
       oninput: (event) => {
@@ -666,7 +685,7 @@ function simField(params, key, label, seed) {
   );
 }
 
-function simulatorControl(params, field) {
+function simulatorControl(params, field, describedBy) {
   const value = String(params[field.name] ?? field.default ?? "");
   if (field.kind === "choice") {
     const choices = Array.isArray(field.choices) ? field.choices : [];
@@ -690,17 +709,25 @@ function simulatorControl(params, field) {
       ),
     );
   }
-  return simField(params, field.name, field.label, !Number.isInteger(field.minimum));
+  const mismatch = field.name === "time_steps" ? describedBy : null;
+  return simField(params, field.name, field.label, !Number.isInteger(field.minimum), mismatch);
 }
 
 function simulatorChip(entry) {
   const block = checks.blockById(currentPage(), "simulator", entry.id);
   const params = entry.params;
   if (!block) return null;
-  const controls = (block.fields ?? []).map((field) => simulatorControl(params, field));
+  const mismatch = timeStepMessage(entry);
+  const alertId = `time-steps-alert-${entry.key}`;
+  const controls = (block.fields ?? []).map((field) =>
+    simulatorControl(params, field, field.name === "time_steps" && mismatch ? alertId : null),
+  );
   return el(
     "div",
-    { className: `chip tone-blue simulator${entry.open ? " is-editing" : ""}` },
+    {
+      className: `chip tone-blue simulator${entry.open ? " is-editing" : ""}`,
+      "data-key": String(entry.key),
+    },
     el(
       "div",
       { className: "chip-head" },
@@ -724,6 +751,18 @@ function simulatorChip(entry) {
       el(
         "div",
         { className: "chip-actions" },
+        el(
+          "span",
+          {
+            className: "chip-alert",
+            role: "img",
+            id: alertId,
+            "aria-label": mismatch ?? "",
+            title: mismatch ?? "",
+            hidden: !mismatch,
+          },
+          "!",
+        ),
         entry.open
           ? el(
               "button",
@@ -1905,6 +1944,33 @@ function paintMeasureChip() {
   if (input) input.placeholder = countsPlaceholder();
 }
 
+function paintTimeSteps() {
+  const message = checks.timeStepMismatch(currentPage());
+  document.querySelectorAll(".chip.simulator").forEach((chip) => {
+    const entry = state.placedSims.find((item) => String(item.key) === chip.dataset.key);
+    const shown = Boolean(message) && String(entry?.params?.time_steps ?? "") !== "";
+    const alert = chip.querySelector(".chip-alert");
+    const field = chip.querySelector('input[aria-label="Time steps"]');
+    const alertId = `time-steps-alert-${chip.dataset.key}`;
+    if (alert) {
+      alert.hidden = !shown;
+      alert.setAttribute("id", alertId);
+      alert.setAttribute("aria-label", shown ? message : "");
+      alert.title = shown ? message : "";
+    }
+    if (!field) return;
+    if (shown) {
+      field.setAttribute("aria-invalid", "true");
+      field.setAttribute("aria-describedby", alertId);
+      field.title = message;
+      return;
+    }
+    field.removeAttribute("aria-invalid");
+    field.removeAttribute("aria-describedby");
+    field.removeAttribute("title");
+  });
+}
+
 function paintDerived() {
   paintFactoryLocks();
   paintFactoryDetail();
@@ -1912,6 +1978,7 @@ function paintDerived() {
   paintStateChip();
   paintHamiltonianChips();
   paintLocalHamiltonianChips();
+  paintTimeSteps();
   paintBackendDetails();
   paintPathDetails();
   paintMeasureChip();
@@ -3022,7 +3089,7 @@ async function restoreBoard() {
     forgetBoard();
     return;
   }
-  if (!plainObject(saved)) {
+  if (!plainObject(saved) || Object.keys(saved).some((key) => !DOCUMENT_KEYS.has(key))) {
     forgetBoard();
     return;
   }

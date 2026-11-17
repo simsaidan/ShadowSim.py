@@ -132,7 +132,7 @@ test("a complete selection enables Run", () => {
 test("an incomplete form disables Run", () => {
   const state = pageState({ complete: false });
   assert.equal(state.label, "Run simulation");
-  assert.equal(state.status, "Place a block in each slot.");
+  assert.equal(state.status, "Place a block in the Initial state slot.");
   assert.equal(state.ready, false);
   assert.equal(state.renderedDisabled, true);
   assert.equal(state.syncedDisabled, true);

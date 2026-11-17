@@ -1,11 +1,11 @@
 const { catalog } = require("./load-page");
 
 const LANES = [
-  { id: "state" },
-  { id: "model" },
-  { id: "simulator" },
-  { id: "measure" },
-  { id: "then" },
+  { id: "state", title: "Initial state" },
+  { id: "model", title: "Model" },
+  { id: "simulator", title: "Method" },
+  { id: "measure", title: "Measure" },
+  { id: "then", title: "Then" },
 ];
 
 const QUTIP_SETUP =

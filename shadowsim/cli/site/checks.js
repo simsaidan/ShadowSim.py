@@ -390,6 +390,16 @@
     return state.placedSims.every((entry) => entry.params?.time_steps === steps);
   }
 
+  function timeStepMismatch(state) {
+    const values = [];
+    for (const entry of state.placedSims) {
+      const value = String(entry.params?.time_steps ?? "");
+      if (value !== "") values.push(value);
+    }
+    if (values.length < 2 || values.every((value) => value === values[0])) return null;
+    return "Use the same number of time steps for every simulator.";
+  }
+
   function hasThen(state, id) {
     return state.placedThens.includes(id);
   }
@@ -660,10 +670,13 @@
     const qubits = settingNumber(state, "qubits");
     const total = settingNumber(state, "total");
     const needsQubits = !factorySetsQubits(state);
-    if (total == null || (needsQubits && qubits == null)) {
-      const missing = needsQubits ? "qubits and total time" : "a total time";
-      const tail = preview ? " to preview the script." : ".";
-      return `Enter ${missing}${tail}`;
+    const tail = preview ? " to preview the script." : ".";
+    const missingQubits = needsQubits && qubits == null;
+    if (missingQubits && total == null) return `Enter qubits and total time${tail}`;
+    if (missingQubits) return `Enter qubits${tail}`;
+    if (total == null) {
+      const qubitsMessage = needsQubits ? qubitProblem(state, preview) : null;
+      return qubitsMessage ?? `Enter a total time${tail}`;
     }
     if (qubits == null) return totalProblem(state, preview);
     return qubitProblem(state, preview) ?? totalProblem(state, preview);
@@ -691,15 +704,28 @@
     return { message, previewMessage: render(true) };
   }
 
+  function slotFilled(state, lane) {
+    if (lane.id === "model") {
+      if (state.modelTerms.length > 0) return true;
+      return state.selection.model === "preexisting" && Boolean(chosenFactory(state));
+    }
+    return Boolean(blockById(state, lane.id, state.selection[lane.id]));
+  }
+
+  function emptySlotMessage(state, preview) {
+    const lane = state.lanes.find((item) => !slotFilled(state, item));
+    const tail = preview ? " to preview the script." : ".";
+    if (!lane?.title) return `Place a block in each slot${tail}`;
+    return `Place a block in the ${lane.title} slot${tail}`;
+  }
+
   function boardProblem(state) {
     if (isComplete(state)) return null;
     return voiced(
       (preview) =>
         operatorStatus(state, preview) ??
         socketStatus(state, preview) ??
-        (preview
-          ? "Place a block in each slot to preview the script."
-          : "Place a block in each slot."),
+        emptySlotMessage(state, preview),
     );
   }
 
@@ -1406,6 +1432,7 @@
     readState,
     runAllowed,
     sameTimeGrid,
+    timeStepMismatch,
     savePathReady,
     selectedSites,
     settingNumber,
