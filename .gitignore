@@ -24,6 +24,10 @@ htmlcov/
 # Hypothesis example database (local failure replay)
 .hypothesis/
 
+# Node
+node_modules/
+coverage/
+
 
 /results/**
 !/results/.gitkeep

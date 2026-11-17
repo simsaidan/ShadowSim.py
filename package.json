@@ -1,0 +1,16 @@
+{
+  "name": "shadowsim",
+  "private": true,
+  "engines": {
+    "node": "^22.22.2 || ^24.15.0 || >=26.0.0"
+  },
+  "scripts": {
+    "lint": "biome check",
+    "test": "node --test \"test/js/*.test.js\"",
+    "coverage": "node --test --experimental-test-coverage \"test/js/*.test.js\""
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^2.6.8",
+    "jsdom": "^31.0.1"
+  }
+}

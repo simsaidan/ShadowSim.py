@@ -60,6 +60,18 @@ uv run --group lint ruff format .
 uv run --group lint ruff format --check .
 ```
 
+The builder page scripts are checked with [Biome](https://biomejs.dev/) and tested
+with Node. CI runs the same commands. Node must be 22.22.2 or newer on the 22
+line, 24.15.0 or newer on the 24 line, or 26 or newer.
+
+```bash
+npm ci
+npm run lint
+npm test
+```
+
+`npm run coverage` reports JavaScript coverage and does not fail the build.
+
 ## Type checking
 
 Install [mypy](https://mypy.readthedocs.io/) with the optional extras so QuTiP and
@@ -98,6 +110,7 @@ Names that already exist are refused. The command writes:
 git checkout -b feature/your-change
 ```
 3. Make your changes and keep commits focused.
-4. Run tests, Ruff, and mypy locally (`uv run pytest`, the [linting](#linting)
-   commands, and the [type checking](#type-checking) commands above).
+4. Run tests, Ruff, the Node checks, and mypy locally (`uv run pytest`, the
+   [linting](#linting) commands, and the [type checking](#type-checking)
+   commands above).
 5. Open a pull request with a clear description of what changed and why.
