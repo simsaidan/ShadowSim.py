@@ -48,6 +48,7 @@ def test_index_serves_the_builder_page():
             assert response.status == 200
             assert response.headers["Content-Type"].startswith("text/html")
             assert "ShadowSim.py Simulation Builder" in body
+            assert '<script type="module" src="/builder.js">' in body
             assert body.index('src="/checks.js"') < body.index('src="/builder.js"')
         with urllib.request.urlopen(f"http://127.0.0.1:{port}/styles.css") as response:
             assert response.status == 200
@@ -61,6 +62,14 @@ def test_index_serves_the_builder_page():
             assert response.status == 200
             assert "javascript" in response.headers["Content-Type"]
             assert "Pick a model" in response.read().decode("utf-8")
+        with urllib.request.urlopen(f"http://127.0.0.1:{port}/dom.js") as response:
+            assert response.status == 200
+            assert "javascript" in response.headers["Content-Type"]
+            assert "function el" in response.read().decode("utf-8")
+        with urllib.request.urlopen(f"http://127.0.0.1:{port}/chart.js") as response:
+            assert response.status == 200
+            assert "javascript" in response.headers["Content-Type"]
+            assert "function resultsComponent" in response.read().decode("utf-8")
         with pytest.raises(urllib.error.HTTPError) as exc_info:
             urllib.request.urlopen(f"http://127.0.0.1:{port}/other")
         assert exc_info.value.code == 404
@@ -839,6 +848,8 @@ def test_the_page_exchanges_a_query_token_for_a_cookie() -> None:
             "/actions",
             "/styles.css",
             "/builder.js",
+            "/dom.js",
+            "/chart.js",
         ):
             status, headers, body = _open(port, path)
             assert status == 401

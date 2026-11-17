@@ -4,8 +4,19 @@ const path = require("node:path");
 const { JSDOM } = require("jsdom");
 
 const root = path.resolve(__dirname, "../..");
-const checksSource = fs.readFileSync(path.join(root, "shadowsim/cli/site/checks.js"), "utf8");
-const builderSource = fs.readFileSync(path.join(root, "shadowsim/cli/site/builder.js"), "utf8");
+const site = path.join(root, "shadowsim/cli/site");
+const checksSource = fs.readFileSync(path.join(site, "checks.js"), "utf8");
+
+function classicSource(source) {
+  // The page tests eval one script. Drop the module syntax that eval cannot run.
+  return source
+    .replace(/^\s*import\s.+;?\s*$/gm, "")
+    .replace(/^export\s+(?=(?:async\s+)?function|const|let|class)\b/gm, "");
+}
+
+const moduleSources = ["dom.js", "chart.js", "builder.js"].map((name) =>
+  classicSource(fs.readFileSync(path.join(site, name), "utf8")),
+);
 
 let cachedCatalog = null;
 
@@ -38,7 +49,7 @@ function bindingsFooter(source) {
   return `return {\n${fields.join(",\n")}\n};`;
 }
 
-const footer = bindingsFooter(builderSource);
+const footer = bindingsFooter(moduleSources.join("\n"));
 
 function installImmediateTimers(window) {
   // The page tests run scheduled work inline. setInterval stays idle so the
@@ -78,7 +89,7 @@ function loadPage() {
   // The old harness had no fetch. scheduleCheck skips the request until a test installs one.
   window.fetch = undefined;
   const writes = installClipboard(window);
-  const source = `(function () {\n${checksSource}\n${builderSource}\n${footer}\n})()`;
+  const source = `(function () {\n${[checksSource, ...moduleSources, footer].join("\n")}\n})()`;
   const page = window.eval(source);
   return { window, page, writes };
 }
