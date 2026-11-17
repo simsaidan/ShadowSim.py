@@ -5,55 +5,39 @@
   if (typeof module !== "undefined" && module.exports) module.exports = api;
   else root.checks = api;
 })(typeof globalThis !== "undefined" ? globalThis : this, () => {
-  let page = null;
-
-  function using(state, fn) {
-    const previous = page;
-    page = state;
-    try {
-      return fn();
-    } finally {
-      page = previous;
-    }
+  function blockById(state, laneId, blockId) {
+    return state.blocks[laneId].find((block) => block.id === blockId) ?? null;
   }
 
-  function bind(fn) {
-    return (state, ...args) => using(state, () => fn(...args));
+  function chosenFactory(state) {
+    return state.modelFactories.find((item) => item.id === state.preexistingId) ?? null;
   }
 
-  function blockById(laneId, blockId) {
-    return page.blocks[laneId].find((block) => block.id === blockId) ?? null;
-  }
-
-  function chosenFactory() {
-    return page.modelFactories.find((item) => item.id === page.preexistingId) ?? null;
-  }
-
-  function operatorsReady() {
-    if (page.selection.model === "preexisting" || !page.modelTerms.length) return false;
-    if (page.modelTerms.some((term) => termProblem(term))) return false;
-    return page.modelTerms.some(
+  function operatorsReady(state) {
+    if (state.selection.model === "preexisting" || !state.modelTerms.length) return false;
+    if (state.modelTerms.some((term) => termProblem(state, term))) return false;
+    return state.modelTerms.some(
       (term) => term.id === "hamiltonian" || term.id === "local_hamiltonian",
     );
   }
 
-  function usingAddedOperators() {
-    return page.selection.model !== "preexisting" && page.modelTerms.length > 0;
+  function usingAddedOperators(state) {
+    return state.selection.model !== "preexisting" && state.modelTerms.length > 0;
   }
 
-  function termProblem(term) {
-    if (term.id === "hamiltonian") return hamiltonianProblem(term);
-    if (term.id === "local_hamiltonian") return localHamiltonianProblem(term);
-    if (term.id === "lindblad") return lindbladProblem(term);
+  function termProblem(state, term) {
+    if (term.id === "hamiltonian") return hamiltonianProblem(state, term);
+    if (term.id === "local_hamiltonian") return localHamiltonianProblem(state, term);
+    if (term.id === "lindblad") return lindbladProblem(state, term);
     return "Unknown operator.";
   }
 
-  function isReference(entry) {
-    return Boolean(blockById("simulator", entry.id)?.observables);
+  function isReference(state, entry) {
+    return Boolean(blockById(state, "simulator", entry.id)?.observables);
   }
 
-  function simulatorFields(entry) {
-    const fields = blockById("simulator", entry.id)?.fields;
+  function simulatorFields(state, entry) {
+    const fields = blockById(state, "simulator", entry.id)?.fields;
     return Array.isArray(fields) ? fields : [];
   }
 
@@ -68,77 +52,78 @@
     return /^-?\d+$/.test(value);
   }
 
-  function needsBackend() {
-    return page.placedSims.some((entry) => !isReference(entry));
+  function needsBackend(state) {
+    return state.placedSims.some((entry) => !isReference(state, entry));
   }
 
-  function backendFits(entry, backendId) {
-    if (!entry || isReference(entry) || !backendId) return false;
-    const backend = blockById("backend", backendId);
+  function backendFits(state, entry, backendId) {
+    if (!entry || isReference(state, entry) || !backendId) return false;
+    const backend = blockById(state, "backend", backendId);
     if (!backend) return false;
-    const simulator = blockById("simulator", entry.id);
+    const simulator = blockById(state, "simulator", entry.id);
     if (simulator?.samples && !backend.shots) return false;
     return true;
   }
 
-  function socketsReady() {
-    return page.placedSims.every(
-      (entry) => isReference(entry) || backendFits(entry, entry.backend),
+  function socketsReady(state) {
+    return state.placedSims.every(
+      (entry) => isReference(state, entry) || backendFits(state, entry, entry.backend),
     );
   }
 
-  function socketStatus(preview) {
-    if (!otherSlotsPlaced()) return null;
-    const open = page.placedSims.find(
-      (entry) => !isReference(entry) && !backendFits(entry, entry.backend),
+  function socketStatus(state, preview) {
+    if (!otherSlotsPlaced(state)) return null;
+    const open = state.placedSims.find(
+      (entry) => !isReference(state, entry) && !backendFits(state, entry, entry.backend),
     );
     if (!open) return null;
     const tail = preview ? " to preview the script." : ".";
     return `Snap a backend onto each simulator${tail}`;
   }
 
-  function otherSlotsPlaced() {
-    return page.lanes.every((lane) => {
+  function otherSlotsPlaced(state) {
+    return state.lanes.every((lane) => {
       if (lane.id === "model") return true;
-      if (lane.id === "backend" && !needsBackend()) return true;
-      return Boolean(blockById(lane.id, page.selection[lane.id]));
+      if (lane.id === "backend" && !needsBackend(state)) return true;
+      return Boolean(blockById(state, lane.id, state.selection[lane.id]));
     });
   }
 
-  function operatorStatus(preview) {
-    if (!otherSlotsPlaced() || !usingAddedOperators() || operatorsReady()) return null;
+  function operatorStatus(state, preview) {
+    if (!otherSlotsPlaced(state) || !usingAddedOperators(state) || operatorsReady(state))
+      return null;
     const tail = preview ? " to preview the script." : ".";
-    const hasHamiltonian = page.modelTerms.some(
+    const hasHamiltonian = state.modelTerms.some(
       (term) => term.id === "hamiltonian" || term.id === "local_hamiltonian",
     );
     return hasHamiltonian ? `Enter a valid operator${tail}` : `Enter a Hamiltonian${tail}`;
   }
 
-  function isComplete() {
-    const lanesReady = page.lanes.every((lane) => {
-      if (lane.id === "backend" && !needsBackend()) return true;
-      if (lane.id === "model" && page.selection.model === "preexisting")
-        return Boolean(chosenFactory());
-      if (lane.id === "model") return operatorsReady();
-      return Boolean(blockById(lane.id, page.selection[lane.id]));
+  function isComplete(state) {
+    const lanesReady = state.lanes.every((lane) => {
+      if (lane.id === "backend" && !needsBackend(state)) return true;
+      if (lane.id === "model" && state.selection.model === "preexisting")
+        return Boolean(chosenFactory(state));
+      if (lane.id === "model") return operatorsReady(state);
+      return Boolean(blockById(state, lane.id, state.selection[lane.id]));
     });
-    return lanesReady && socketsReady();
+    return lanesReady && socketsReady(state);
   }
 
-  function settingNumber(key) {
-    if (page.settings[key] === "") return null;
-    const value = Number(page.settings[key]);
+  function settingNumber(state, key) {
+    if (state.settings[key] === "") return null;
+    const value = Number(state.settings[key]);
     return Number.isFinite(value) ? value : null;
   }
 
-  function formatSetting(key) {
-    const value = settingNumber(key);
+  function formatSetting(state, key) {
+    const value = settingNumber(state, key);
     if (value == null) return null;
     return Object.is(value, -0) ? "0" : String(value);
   }
 
-  function qubitPhrase() {
-    const label = formatSetting("qubits");
+  function qubitPhrase(state) {
+    const label = formatSetting(state, "qubits");
     if (label == null) return null;
     return Number(label) === 1 ? "1 qubit" : `${label} qubits`;
   }
@@ -147,8 +132,8 @@
     return Number.isInteger(value) ? `${value}.0` : String(value);
   }
 
-  function stateOwnsQubits() {
-    return Object.hasOwn(page.stateLimits, page.selection.state);
+  function stateOwnsQubits(state) {
+    return Object.hasOwn(state.stateLimits, state.selection.state);
   }
 
   function numberList(raw, maxCount) {
@@ -170,32 +155,32 @@
     return Math.log2(Math.max(2, padded));
   }
 
-  function selectedState() {
-    return blockById("state", page.selection.state);
+  function selectedState(state) {
+    return blockById(state, "state", state.selection.state);
   }
 
-  function stateField() {
-    return selectedState()?.field ?? null;
+  function stateField(state) {
+    return selectedState(state)?.field ?? null;
   }
 
-  function actionTextValue(id) {
-    const stored = page.actionText?.[id];
+  function actionTextValue(state, id) {
+    const stored = state.actionText?.[id];
     if (typeof stored === "string") return stored;
-    const field = blockById("then", id)?.field;
+    const field = blockById(state, "then", id)?.field;
     return typeof field?.default === "string" ? field.default : "";
   }
 
-  function expressionTextValue() {
-    const stored = page.expressionText?.[page.selection.measure];
+  function expressionTextValue(state) {
+    const stored = state.expressionText?.[state.selection.measure];
     return typeof stored === "string" ? stored : "";
   }
 
-  function measureRecord() {
-    return blockById("measure", page.selection.measure);
+  function measureRecord(state) {
+    return blockById(state, "measure", state.selection.measure);
   }
 
-  function modelMeasureSelected() {
-    return page.selection.measure === "model";
+  function modelMeasureSelected(state) {
+    return state.selection.measure === "model";
   }
 
   function positiveIntText(value) {
@@ -218,8 +203,8 @@
     return Number.isInteger(minimum) && minimum >= 1 ? minimum : 1;
   }
 
-  function integerAlert(param) {
-    const text = factoryFieldText(param).trim();
+  function integerAlert(state, param) {
+    const text = factoryFieldText(state, param).trim();
     const minimum = integerMinimum(param);
     if (!positiveIntText(text) || BigInt(text) < BigInt(minimum)) {
       return `Enter an integer of at least ${minimum} for ${param.label}`;
@@ -227,18 +212,18 @@
     return null;
   }
 
-  function factoryAlert() {
-    if (page.selection.model !== "preexisting") return null;
-    return paramAlert();
+  function factoryAlert(state) {
+    if (state.selection.model !== "preexisting") return null;
+    return paramAlert(state);
   }
 
-  function factoryParams() {
-    const params = chosenFactory()?.params;
+  function factoryParams(state) {
+    const params = chosenFactory(state)?.params;
     return Array.isArray(params) ? params : [];
   }
 
-  function factoryFieldText(param) {
-    const stored = page.factoryText?.[param.name];
+  function factoryFieldText(state, param) {
+    const stored = state.factoryText?.[param.name];
     return typeof stored === "string" ? stored : String(param.default ?? "");
   }
 
@@ -288,11 +273,11 @@
     return pairs;
   }
 
-  function paramAlert() {
-    for (const param of factoryParams()) {
-      const text = factoryFieldText(param).trim();
+  function paramAlert(state) {
+    for (const param of factoryParams(state)) {
+      const text = factoryFieldText(state, param).trim();
       if (param.kind === "integer") {
-        const problem = integerAlert(param);
+        const problem = integerAlert(state, param);
         if (problem) return problem;
       } else if (param.kind === "number") {
         if (realText(text) == null) return `Enter a real number for ${param.label}`;
@@ -313,25 +298,25 @@
     return null;
   }
 
-  function factorySetsQubits() {
-    const factory = chosenFactory();
-    return page.selection.model === "preexisting" && factory != null && factory.qubits === false;
+  function factorySetsQubits(state) {
+    const factory = chosenFactory(state);
+    return state.selection.model === "preexisting" && factory != null && factory.qubits === false;
   }
 
-  function fixedFactoryQubits() {
-    if (!factorySetsQubits()) return null;
-    const stored = page.checkedQubits;
+  function fixedFactoryQubits(state) {
+    if (!factorySetsQubits(state)) return null;
+    const stored = state.checkedQubits;
     return Number.isInteger(stored) ? stored : null;
   }
 
-  function emitterProblem() {
-    return factoryAlert() != null;
+  function emitterProblem(state) {
+    return factoryAlert(state) != null;
   }
 
-  function readState(stateId = page.selection.state) {
-    const field = blockById("state", stateId)?.field ?? null;
+  function readState(state, stateId = state.selection.state) {
+    const field = blockById(state, "state", stateId)?.field ?? null;
     if (!field) return null;
-    const stored = page.stateText?.[stateId];
+    const stored = state.stateText?.[stateId];
     const text = typeof stored === "string" ? stored : "";
     if (field.kind === "bits") {
       const filled = text !== "";
@@ -346,40 +331,42 @@
     return { field, text, values, filled, count };
   }
 
-  function stateImpliedQubits() {
-    return readState()?.count ?? null;
+  function stateImpliedQubits(state) {
+    return readState(state)?.count ?? null;
   }
 
-  function stateSizeProblem() {
-    const expected = fixedFactoryQubits();
+  function stateSizeProblem(state) {
+    const expected = fixedFactoryQubits(state);
     if (expected == null) return null;
-    const actual = stateImpliedQubits();
+    const actual = stateImpliedQubits(state);
     if (actual == null || actual === expected) return null;
     return expected;
   }
 
-  function stateSizeStatus(preview) {
-    const expected = stateSizeProblem();
-    const field = stateField();
+  function stateSizeStatus(state, preview) {
+    const expected = stateSizeProblem(state);
+    const field = stateField(state);
     const tail = preview ? " to preview the script." : ".";
     if (expected == null || !field) return "";
     return `${String(field.size).replaceAll("{n}", String(expected))}${tail}`;
   }
 
-  function stateInputProblem() {
-    const read = readState();
+  function stateInputProblem(state) {
+    const read = readState(state);
     if (!read) return null;
-    if (stateSizeProblem() != null) return "size";
+    if (stateSizeProblem(state) != null) return "size";
     return read.filled ? null : "empty";
   }
 
-  function entryParamsReady(entry) {
-    return simulatorFields(entry).every((field) => fieldReady(field, entry.params?.[field.name]));
+  function entryParamsReady(state, entry) {
+    return simulatorFields(state, entry).every((field) =>
+      fieldReady(field, entry.params?.[field.name]),
+    );
   }
 
-  function simParamProblem(preview) {
-    for (const entry of page.placedSims) {
-      for (const field of simulatorFields(entry)) {
+  function simParamProblem(state, preview) {
+    for (const entry of state.placedSims) {
+      for (const field of simulatorFields(state, entry)) {
         if (!Number.isInteger(field.maximum)) continue;
         const problem = oversizePositiveInt(
           String(entry.params?.[field.name] ?? ""),
@@ -393,61 +380,61 @@
     return null;
   }
 
-  function simParamsReady() {
-    return page.placedSims.every(entryParamsReady);
+  function simParamsReady(state) {
+    return state.placedSims.every((entry) => entryParamsReady(state, entry));
   }
 
-  function sameTimeGrid() {
-    if (page.placedSims.length < 2) return true;
-    const steps = page.placedSims[0].params?.time_steps;
-    return page.placedSims.every((entry) => entry.params?.time_steps === steps);
+  function sameTimeGrid(state) {
+    if (state.placedSims.length < 2) return true;
+    const steps = state.placedSims[0].params?.time_steps;
+    return state.placedSims.every((entry) => entry.params?.time_steps === steps);
   }
 
-  function hasThen(id) {
-    return page.placedThens.includes(id);
+  function hasThen(state, id) {
+    return state.placedThens.includes(id);
   }
 
-  function missingPaths() {
+  function missingPaths(state) {
     const missing = [];
-    for (const block of page.blocks.then ?? []) {
-      if (!hasThen(block.id) || block.field?.kind !== "path") continue;
-      if (actionTextValue(block.id).trim() === "") missing.push(block.id);
+    for (const block of state.blocks.then ?? []) {
+      if (!hasThen(state, block.id) || block.field?.kind !== "path") continue;
+      if (actionTextValue(state, block.id).trim() === "") missing.push(block.id);
     }
     return missing;
   }
 
-  function savePathReady() {
-    return missingPaths().length === 0;
+  function savePathReady(state) {
+    return missingPaths(state).length === 0;
   }
 
-  function qubitCount() {
-    const value = settingNumber("qubits");
+  function qubitCount(state) {
+    const value = settingNumber(state, "qubits");
     if (value == null || !Number.isInteger(value) || value < 1) return null;
     return value;
   }
 
-  function selectedSites(count) {
+  function selectedSites(state, count) {
     if (count == null) return [];
-    if (page.measureSites == null) return Array.from({ length: count }, (_, index) => index);
-    return page.measureSites.filter((site) => Number.isInteger(site) && site >= 0 && site < count);
+    if (state.measureSites == null) return Array.from({ length: count }, (_, index) => index);
+    return state.measureSites.filter((site) => Number.isInteger(site) && site >= 0 && site < count);
   }
 
-  function shotsReady() {
-    return page.placedSims.every((entry) => {
-      const backend = blockById("backend", entry.backend);
+  function shotsReady(state) {
+    return state.placedSims.every((entry) => {
+      const backend = blockById(state, "backend", entry.backend);
       if (!backend?.shots) return true;
-      return positiveIntAtMost(String(entry.shots ?? "").trim(), page.maxShots);
+      return positiveIntAtMost(String(entry.shots ?? "").trim(), state.maxShots);
     });
   }
 
-  function shotsProblem(preview) {
-    for (const entry of page.placedSims) {
-      const backend = blockById("backend", entry.backend);
+  function shotsProblem(state, preview) {
+    for (const entry of state.placedSims) {
+      const backend = blockById(state, "backend", entry.backend);
       if (!backend?.shots) continue;
       const problem = oversizePositiveInt(
         String(entry.shots ?? "").trim(),
         "Shots",
-        page.maxShots,
+        state.maxShots,
         preview,
       );
       if (problem) return problem;
@@ -488,9 +475,9 @@
     return null;
   }
 
-  function backendFieldIssue() {
-    for (const entry of page.placedSims) {
-      const fields = blockById("backend", entry.backend)?.fields ?? [];
+  function backendFieldIssue(state) {
+    for (const entry of state.placedSims) {
+      const fields = blockById(state, "backend", entry.backend)?.fields ?? [];
       for (const field of fields) {
         const text = entry.backendFields?.[field.name];
         if (field.kind === "gates") {
@@ -504,12 +491,12 @@
     return null;
   }
 
-  function backendFieldsReady() {
-    return backendFieldIssue() == null;
+  function backendFieldsReady(state) {
+    return backendFieldIssue(state) == null;
   }
 
-  function backendFieldStatus(preview) {
-    const issue = backendFieldIssue();
+  function backendFieldStatus(state, preview) {
+    const issue = backendFieldIssue(state);
     if (issue) {
       const sentence = issue.replace(/\.$/, "");
       return preview ? `${sentence} to preview the script.` : issue;
@@ -533,11 +520,11 @@
     return `[${names.map(pyString).join(", ")}]`;
   }
 
-  function measureSitesReady() {
-    if (modelMeasureSelected()) return true;
-    const count = qubitCount();
-    if (!page.selection.measure || count == null) return true;
-    return selectedSites(count).length > 0;
+  function measureSitesReady(state) {
+    if (modelMeasureSelected(state)) return true;
+    const count = qubitCount(state);
+    if (!state.selection.measure || count == null) return true;
+    return selectedSites(state, count).length > 0;
   }
 
   function pyString(value) {
@@ -622,38 +609,39 @@
     return keyProblem;
   }
 
-  function countsProblem() {
-    if (measureRecord()?.field?.kind !== "expression") return null;
-    const sampled = page.placedSims.every(
+  function countsProblem(state) {
+    if (measureRecord(state)?.field?.kind !== "expression") return null;
+    const sampled = state.placedSims.every(
       (entry) =>
-        !isReference(entry) && (!entry.backend || blockById("backend", entry.backend)?.shots),
+        !isReference(state, entry) &&
+        (!entry.backend || blockById(state, "backend", entry.backend)?.shots),
     );
     if (!sampled) return "Counts needs a backend with a shot budget.";
-    const count = qubitCount();
+    const count = qubitCount(state);
     if (count == null) return null;
-    const sites = selectedSites(count);
+    const sites = selectedSites(state, count);
     if (!sites.length) return null;
-    return expressionProblem(expressionTextValue(), sites.length);
+    return expressionProblem(expressionTextValue(state), sites.length);
   }
 
-  function countsStatus(preview) {
-    const problem = countsProblem();
+  function countsStatus(state, preview) {
+    const problem = countsProblem(state);
     if (!problem || !preview) return problem;
     return `${problem.replace(/\.$/, "")} to preview the script.`;
   }
 
-  function qubitBounds() {
-    if (usingAddedOperators()) return { min: 1, max: page.maxOperatorQubits };
+  function qubitBounds(state) {
+    if (usingAddedOperators(state)) return { min: 1, max: state.maxOperatorQubits };
     // The factory that takes n_qubits is Ising: at least 2. The upper cap is the server's.
-    if (page.selection.model === "preexisting" && chosenFactory()?.qubits)
+    if (state.selection.model === "preexisting" && chosenFactory(state)?.qubits)
       return { min: 2, max: null };
     return { min: 1, max: null };
   }
 
-  function qubitProblem(preview) {
-    const value = settingNumber("qubits");
+  function qubitProblem(state, preview) {
+    const value = settingNumber(state, "qubits");
     if (value == null) return null;
-    const { min, max } = qubitBounds();
+    const { min, max } = qubitBounds(state);
     const tail = preview ? " to preview the script." : ".";
     if (!Number.isInteger(value) || value < min)
       return `Qubits must be an integer of at least ${min}${tail}`;
@@ -661,48 +649,48 @@
     return null;
   }
 
-  function totalProblem(preview) {
-    const value = settingNumber("total");
+  function totalProblem(state, preview) {
+    const value = settingNumber(state, "total");
     if (value == null || value > 0) return null;
     const tail = preview ? " to preview the script." : ".";
     return `Total time must be a positive number${tail}`;
   }
 
-  function numberProblem(preview) {
-    const qubits = settingNumber("qubits");
-    const total = settingNumber("total");
-    const needsQubits = !factorySetsQubits();
+  function numberProblem(state, preview) {
+    const qubits = settingNumber(state, "qubits");
+    const total = settingNumber(state, "total");
+    const needsQubits = !factorySetsQubits(state);
     if (total == null || (needsQubits && qubits == null)) {
       const missing = needsQubits ? "qubits and total time" : "a total time";
       const tail = preview ? " to preview the script." : ".";
       return `Enter ${missing}${tail}`;
     }
-    if (qubits == null) return totalProblem(preview);
-    return qubitProblem(preview) ?? totalProblem(preview);
+    if (qubits == null) return totalProblem(state, preview);
+    return qubitProblem(state, preview) ?? totalProblem(state, preview);
   }
 
-  function settingsReady() {
+  function settingsReady(state) {
     return (
-      numberProblem(false) == null &&
-      stateInputProblem() == null &&
-      simParamsReady() &&
-      sameTimeGrid() &&
-      savePathReady() &&
-      measureSitesReady() &&
-      countsProblem() == null &&
-      shotsReady() &&
-      backendFieldsReady() &&
-      !emitterProblem() &&
-      (!usingAddedOperators() || operatorsReady())
+      numberProblem(state, false) == null &&
+      stateInputProblem(state) == null &&
+      simParamsReady(state) &&
+      sameTimeGrid(state) &&
+      savePathReady(state) &&
+      measureSitesReady(state) &&
+      countsProblem(state) == null &&
+      shotsReady(state) &&
+      backendFieldsReady(state) &&
+      !emitterProblem(state) &&
+      (!usingAddedOperators(state) || operatorsReady(state))
     );
   }
 
-  function runAllowed() {
-    return isComplete() && settingsReady();
+  function runAllowed(state) {
+    return isComplete(state) && settingsReady(state);
   }
 
-  function stateLine() {
-    const read = readState();
+  function stateLine(state) {
+    const read = readState(state);
     if (!read?.field.encode) return "";
     if (read.field.kind === "bits") {
       if (!read.text) return "";
@@ -712,9 +700,9 @@
     return `state = ${read.field.encode}().encode([${read.values.map(pyFloat).join(", ")}])`;
   }
 
-  function fillSetup(block, name, shots = "", fields = {}) {
-    const qubits = settingNumber("qubits");
-    const total = settingNumber("total");
+  function fillSetup(state, block, name, shots = "", fields = {}) {
+    const qubits = settingNumber(state, "qubits");
+    const total = settingNumber(state, "total");
     let setup = block.setup
       .replaceAll("{name}", name)
       .replaceAll("{qubits}", qubits == null ? "" : String(Math.round(qubits)))
@@ -726,11 +714,11 @@
     return setup;
   }
 
-  function factoryArgument(param) {
-    const text = factoryFieldText(param).trim();
+  function factoryArgument(state, param) {
+    const text = factoryFieldText(state, param).trim();
     if (param.kind === "integer") {
-      if (integerAlert(param)) return null;
-      return `${param.name}=${factoryFieldText(param).trim()}`;
+      if (integerAlert(state, param)) return null;
+      return `${param.name}=${factoryFieldText(state, param).trim()}`;
     }
     if (param.kind === "edges") {
       const pairs = parseEdges(text);
@@ -748,49 +736,51 @@
     return `${param.name}=${pyFloat(value)}`;
   }
 
-  function factoryArguments(factory) {
+  function factoryArguments(state, factory) {
     const args = [];
     if (factory.qubits) {
-      const qubits = settingNumber("qubits");
+      const qubits = settingNumber(state, "qubits");
       args.push(`n_qubits=${qubits == null ? "" : String(Math.round(qubits))}`);
     }
-    for (const param of factoryParams()) {
-      const rendered = factoryArgument(param);
+    for (const param of factoryParams(state)) {
+      const rendered = factoryArgument(state, param);
       if (rendered) args.push(rendered);
     }
     return args;
   }
 
-  function modelLine() {
-    const factory = chosenFactory();
-    if (page.selection.model === "preexisting" && factory) {
-      if (factoryAlert() != null) return "";
-      return `model = ${factory.id}(${factoryArguments(factory).join(", ")})`;
+  function modelLine(state) {
+    const factory = chosenFactory(state);
+    if (state.selection.model === "preexisting" && factory) {
+      if (factoryAlert(state) != null) return "";
+      return `model = ${factory.id}(${factoryArguments(state, factory).join(", ")})`;
     }
-    return usingAddedOperators() ? addedOperatorLines() : "";
+    return usingAddedOperators(state) ? addedOperatorLines(state) : "";
   }
 
-  function matrixLiteral(term) {
+  function matrixLiteral(state, term) {
     const parsed =
-      term.id === "lindblad" ? squareMatrix(term.matrix ?? "") : inspectMatrix(term.matrix ?? "");
+      term.id === "lindblad"
+        ? squareMatrix(state, term.matrix ?? "")
+        : inspectMatrix(state, term.matrix ?? "");
     const rows = parsed.matrix.map((row) => `[${row.map(pyComplex).join(", ")}]`).join(", ");
     return `np.array([${rows}], dtype=complex)`;
   }
 
-  function addedOperatorLines() {
-    const count = qubitCount();
+  function addedOperatorLines(state) {
+    const count = qubitCount(state);
     const seen = {};
     const lines = [];
     const full = [];
     const circuit = [];
     const lindblads = [];
-    page.modelTerms.forEach((term) => {
-      const block = blockById("model", term.id);
-      if (!block || termProblem(term)) return;
+    state.modelTerms.forEach((term) => {
+      const block = blockById(state, "model", term.id);
+      if (!block || termProblem(state, term)) return;
       seen[term.id] = (seen[term.id] || 0) + 1;
       const suffix = seen[term.id] === 1 ? "" : `_${seen[term.id]}`;
       const name = `${block.stem}${suffix}`;
-      const matrix = matrixLiteral(term);
+      const matrix = matrixLiteral(state, term);
       if (term.id === "hamiltonian") {
         lines.push(`${name} = Hamiltonian(${matrix})`);
         full.push(name);
@@ -813,16 +803,18 @@
     return lines.join("\n");
   }
 
-  function postedTerms() {
-    if (!operatorsReady()) return undefined;
-    return page.modelTerms.map((term) => {
+  function postedTerms(state) {
+    if (!operatorsReady(state)) return undefined;
+    return state.modelTerms.map((term) => {
       const parsed =
-        term.id === "lindblad" ? squareMatrix(term.matrix ?? "") : inspectMatrix(term.matrix ?? "");
+        term.id === "lindblad"
+          ? squareMatrix(state, term.matrix ?? "")
+          : inspectMatrix(state, term.matrix ?? "");
       const body = {
         id: term.id,
         matrix: parsed.matrix.map((row) => row.map((value) => [value.re, value.im])),
       };
-      if (term.id !== "hamiltonian") body.sites = localSites(term, qubitCount());
+      if (term.id !== "hamiltonian") body.sites = localSites(term, qubitCount(state));
       return body;
     });
   }
@@ -835,58 +827,58 @@
     return `(${pyFloat(value.re)}${value.im < 0 ? "" : "+"}${signed})`;
   }
 
-  function termLines() {
-    if (usingAddedOperators()) return [];
+  function termLines(state) {
+    if (usingAddedOperators(state)) return [];
     const seen = {};
-    return page.modelTerms.flatMap((term) => {
-      const block = blockById("model", term.id);
+    return state.modelTerms.flatMap((term) => {
+      const block = blockById(state, "model", term.id);
       if (!block) return [];
       seen[term.id] = (seen[term.id] || 0) + 1;
       const suffix = seen[term.id] === 1 ? "" : `_${seen[term.id]}`;
       const name = `${block.stem}${suffix}`;
       if (term.id === "lindblad") {
-        if (lindbladProblem(term)) return [fillSetup(block, name)];
-        const parsed = squareMatrix(term.matrix ?? "");
+        if (lindbladProblem(state, term)) return [fillSetup(state, block, name)];
+        const parsed = squareMatrix(state, term.matrix ?? "");
         const rows = parsed.matrix.map((row) => `[${row.map(pyComplex).join(", ")}]`).join(", ");
-        const sites = localSites(term, qubitCount()).join(", ");
+        const sites = localSites(term, qubitCount(state)).join(", ");
         return [`${name} = LocalOperator(np.array([${rows}], dtype=complex), [${sites}])`];
       }
       if (term.id !== "hamiltonian" && term.id !== "local_hamiltonian")
-        return [fillSetup(block, name)];
-      const inspected = inspectMatrix(term.matrix ?? "");
-      const localProblem = term.id === "local_hamiltonian" && localHamiltonianProblem(term);
-      if (inspected.problem || localProblem) return [fillSetup(block, name)];
+        return [fillSetup(state, block, name)];
+      const inspected = inspectMatrix(state, term.matrix ?? "");
+      const localProblem = term.id === "local_hamiltonian" && localHamiltonianProblem(state, term);
+      if (inspected.problem || localProblem) return [fillSetup(state, block, name)];
       const rows = inspected.matrix.map((row) => `[${row.map(pyComplex).join(", ")}]`).join(", ");
       const matrix = `np.array([${rows}], dtype=complex)`;
       if (term.id === "hamiltonian") return [`${name} = Hamiltonian(${matrix})`];
-      const sites = localSites(term, qubitCount()).join(", ");
+      const sites = localSites(term, qubitCount(state)).join(", ");
       return [`${name} = LocalHamiltonian(${matrix}, [${sites}])`];
     });
   }
 
-  function measurementSetup() {
-    if (modelMeasureSelected()) return "measurements = model.measurements";
-    const count = qubitCount();
-    const sites = selectedSites(count);
-    if (measureRecord()?.field?.kind === "expression") {
+  function measurementSetup(state) {
+    if (modelMeasureSelected(state)) return "measurements = model.measurements";
+    const count = qubitCount(state);
+    const sites = selectedSites(state, count);
+    if (measureRecord(state)?.field?.kind === "expression") {
       const qubits = sites.length === 1 ? `(${sites[0]},)` : `(${sites.join(", ")})`;
-      return `measurements = [Measurement(${qubits}, ${pyQuoted(expressionTextValue().trim())})]`;
+      return `measurements = [Measurement(${qubits}, ${pyQuoted(expressionTextValue(state).trim())})]`;
     }
     const expectation = (site) =>
       `Measurement((${site},), '(counts["0"] - counts["1"]) / shots', "expectation on ${site}")`;
     if (count == null || sites.length === count) {
-      return `measurements = [Measurement((i,), '(counts["0"] - counts["1"]) / shots', f"expectation on {i}") for i in range(${systemQubits()})]`;
+      return `measurements = [Measurement((i,), '(counts["0"] - counts["1"]) / shots', f"expectation on {i}") for i in range(${systemQubits(state)})]`;
     }
     return `measurements = [${sites.map((site) => expectation(site)).join(", ")}]`;
   }
 
-  function observableSetup() {
-    if (modelMeasureSelected()) return "e_ops = model.e_ops";
-    const letter = measureRecord()?.letter ?? "";
-    const count = qubitCount();
-    const sites = selectedSites(count);
+  function observableSetup(state) {
+    if (modelMeasureSelected(state)) return "e_ops = model.e_ops";
+    const letter = measureRecord(state)?.letter ?? "";
+    const count = qubitCount(state);
+    const sites = selectedSites(state, count);
     if (count == null || sites.length === count) {
-      const countName = systemQubits();
+      const countName = systemQubits(state);
       return `e_ops = [Operator("I" * i + "${letter}" + "I" * (${countName} - i - 1))
          for i in range(${countName})]`;
     }
@@ -897,13 +889,13 @@
     return `e_ops = [${operators.join(", ")}]`;
   }
 
-  function systemQubits() {
-    return usingAddedOperators() ? String(qubitCount()) : "model.num_qubits";
+  function systemQubits(state) {
+    return usingAddedOperators(state) ? String(qubitCount(state)) : "model.num_qubits";
   }
 
-  function postedBackend(entry) {
-    if (isReference(entry) || !entry.backend) return null;
-    const block = blockById("backend", entry.backend);
+  function postedBackend(state, entry) {
+    if (isReference(state, entry) || !entry.backend) return null;
+    const block = blockById(state, "backend", entry.backend);
     const fields = {};
     if (block?.shots) fields.shots = String(entry.shots ?? "").trim();
     for (const field of block?.fields ?? []) {
@@ -912,31 +904,31 @@
     return { id: entry.backend, arguments: fields };
   }
 
-  function entryBody(entry) {
+  function entryBody(state, entry) {
     const params = entry.params ?? {};
     const fields = {};
-    for (const field of simulatorFields(entry)) {
+    for (const field of simulatorFields(state, entry)) {
       fields[field.name] = String(params[field.name] ?? "");
     }
-    return { id: entry.id, arguments: fields, backend: postedBackend(entry) };
+    return { id: entry.id, arguments: fields, backend: postedBackend(state, entry) };
   }
 
-  function pauliBasis(sites) {
-    const letter = measureRecord()?.letter ?? "Z";
-    const count = qubitCount();
-    if (count == null || sites.length === count) return `"${letter}" * ${systemQubits()}`;
+  function pauliBasis(state, sites) {
+    const letter = measureRecord(state)?.letter ?? "Z";
+    const count = qubitCount(state);
+    if (count == null || sites.length === count) return `"${letter}" * ${systemQubits(state)}`;
     const letters = Array.from({ length: count }, (_, qubit) =>
       sites.includes(qubit) ? letter : "Z",
     );
     return pyString(letters.join(""));
   }
 
-  function simulatorCall(entry, name, backendName) {
+  function simulatorCall(state, entry, name, backendName) {
     const params = entry.params;
-    const block = blockById("simulator", entry.id);
+    const block = blockById(state, "simulator", entry.id);
     if (!params || !block?.setup) return "";
-    const total = settingNumber("total");
-    const added = usingAddedOperators();
+    const total = settingNumber(state, "total");
+    const added = usingAddedOperators(state);
     let hamiltonians = "model.local_hamiltonians";
     let lindblads = "model.c_ops_local";
     if (block.observables) {
@@ -946,14 +938,16 @@
       hamiltonians = "circuit_hamiltonians";
       lindblads = "lindblads";
     }
-    const sites = selectedSites(qubitCount());
+    const sites = selectedSites(state, qubitCount(state));
     const basis =
-      !modelMeasureSelected() && measureRecord()?.rotate ? `,\n    basis=${pauliBasis(sites)}` : "";
+      !modelMeasureSelected(state) && measureRecord(state)?.rotate
+        ? `,\n    basis=${pauliBasis(state, sites)}`
+        : "";
     let setup = block.setup
       .replaceAll("{name}", name)
       .replaceAll("{hamiltonians}", hamiltonians)
       .replaceAll("{lindblads}", lindblads)
-      .replaceAll("{qubits}", systemQubits())
+      .replaceAll("{qubits}", systemQubits(state))
       .replaceAll("{total}", total == null ? "" : pyFloat(total))
       .replaceAll("{basis}", basis)
       .replaceAll("{backend}", backendName);
@@ -966,70 +960,74 @@
     return setup;
   }
 
-  function backendClass(backendId) {
-    const setup = blockById("backend", backendId)?.setup ?? "";
+  function backendClass(state, backendId) {
+    const setup = blockById(state, "backend", backendId)?.setup ?? "";
     return setup.match(/circuit_backend = ([A-Za-z0-9_]+)/)?.[1] ?? "";
   }
 
-  function backendSetup(backendId, variable, shots, fields) {
-    const block = blockById("backend", backendId);
+  function backendSetup(state, backendId, variable, shots, fields) {
+    const block = blockById(state, "backend", backendId);
     if (!block) return "";
-    return fillSetup(block, "", shots, fields).replace(/^circuit_backend =/, `${variable} =`);
+    return fillSetup(state, block, "", shots, fields).replace(
+      /^circuit_backend =/,
+      `${variable} =`,
+    );
   }
 
-  function metricsTarget() {
-    const directory = actionTextValue("export").trim();
+  function metricsTarget(state) {
+    const directory = actionTextValue(state, "export").trim();
     return directory.endsWith(".json")
       ? `path=${pyString(directory)}`
       : `output_dir=${pyString(directory)}`;
   }
 
-  function exportCall() {
-    return `benchmark.save_error_metrics(${metricsTarget()})`;
+  function exportCall(state) {
+    return `benchmark.save_error_metrics(${metricsTarget(state)})`;
   }
 
-  function resourceMetricsCall() {
-    return `save_resource_metrics(sim, result.runtime, ${metricsTarget()})`;
+  function resourceMetricsCall(state) {
+    return `save_resource_metrics(sim, result.runtime, ${metricsTarget(state)})`;
   }
 
-  function benchmarkThenLines(names) {
+  function benchmarkThenLines(state, names) {
     const lines = [`benchmark = Benchmark(${names.join(", ")})`, "benchmark.run()"];
-    page.placedSims.forEach((entry, index) => {
-      if (!isReference(entry)) lines.push(`${names[index]}.measure(measurements)`);
+    state.placedSims.forEach((entry, index) => {
+      if (!isReference(state, entry)) lines.push(`${names[index]}.measure(measurements)`);
     });
-    if (hasThen("plot")) lines.push("benchmark.save_result_plot()");
-    if (hasThen("save")) {
+    if (hasThen(state, "plot")) lines.push("benchmark.save_result_plot()");
+    if (hasThen(state, "save")) {
       names.forEach((name) => {
         lines.push(
-          `${name}.last_result.save(${pyString(`${actionTextValue("save").trim()}/${name}`)})`,
+          `${name}.last_result.save(${pyString(`${actionTextValue(state, "save").trim()}/${name}`)})`,
         );
       });
     }
-    if (hasThen("export")) lines.push(exportCall());
+    if (hasThen(state, "export")) lines.push(exportCall(state));
     return lines;
   }
 
-  function singleThenLines() {
-    const exporting = hasThen("export");
-    const metrics = resourceMetricsCall();
-    const saveLine = `result.save(${pyString(actionTextValue("save").trim())})`;
-    if (!isReference(page.placedSims[0])) {
+  function singleThenLines(state) {
+    const exporting = hasThen(state, "export");
+    const metrics = resourceMetricsCall(state);
+    const saveLine = `result.save(${pyString(actionTextValue(state, "save").trim())})`;
+    if (!isReference(state, state.placedSims[0])) {
       const lines = ["sim.simulate()", "result = sim.measure(measurements)"];
-      if (hasThen("save")) lines.push(saveLine);
-      if (hasThen("plot")) lines.push("sim.plot_results()");
+      if (hasThen(state, "save")) lines.push(saveLine);
+      if (hasThen(state, "plot")) lines.push("sim.plot_results()");
       if (exporting) lines.push(metrics);
       return lines;
     }
-    if (hasThen("save") && hasThen("plot")) {
+    if (hasThen(state, "save") && hasThen(state, "plot")) {
       const lines = ["result = sim.simulate()", saveLine, "sim.plot_results()"];
       if (exporting) lines.push(metrics);
       return lines;
     }
-    if (hasThen("save")) {
-      if (!exporting) return [`sim.simulate().save(${pyString(actionTextValue("save").trim())})`];
+    if (hasThen(state, "save")) {
+      if (!exporting)
+        return [`sim.simulate().save(${pyString(actionTextValue(state, "save").trim())})`];
       return ["result = sim.simulate()", saveLine, metrics];
     }
-    if (hasThen("plot")) {
+    if (hasThen(state, "plot")) {
       if (!exporting) return ["sim.simulate()", "sim.plot_results()"];
       return ["result = sim.simulate()", "sim.plot_results()", metrics];
     }
@@ -1037,71 +1035,72 @@
     return ["result = sim.simulate()"];
   }
 
-  function encodingImport() {
-    const name = stateField()?.encode;
+  function encodingImport(state) {
+    const name = stateField(state)?.encode;
     return name ? `from shadowsim.encoding import ${name}` : "";
   }
 
-  function simulatorClass(entry) {
-    const setup = blockById("simulator", entry.id)?.setup ?? "";
+  function simulatorClass(state, entry) {
+    const setup = blockById(state, "simulator", entry.id)?.setup ?? "";
     return setup.match(/=\s*([A-Za-z0-9_]+)/)?.[1] ?? "";
   }
 
-  function simulatorImport() {
+  function simulatorImport(state) {
     const names = [];
     let circuit = false;
-    page.placedSims.forEach((entry) => {
-      const className = simulatorClass(entry);
+    state.placedSims.forEach((entry) => {
+      const className = simulatorClass(state, entry);
       if (!className) return;
       if (!names.includes(className)) names.push(className);
-      if (!blockById("simulator", entry.id)?.observables) circuit = true;
+      if (!blockById(state, "simulator", entry.id)?.observables) circuit = true;
     });
-    if (circuit && !modelMeasureSelected()) names.push("Measurement");
+    if (circuit && !modelMeasureSelected(state)) names.push("Measurement");
     names.sort();
     return names.length ? `from shadowsim.simulators import ${names.join(", ")}` : "";
   }
 
-  function previewText() {
-    if (!runAllowed()) return "";
+  function previewText(state) {
+    if (!runAllowed(state)) return "";
     const lines = ["import numpy as np"];
-    const encoding = encodingImport();
+    const encoding = encodingImport(state);
     if (encoding) lines.push(encoding);
-    if (page.selection.model === "preexisting")
-      lines.push(`from shadowsim.models import ${page.preexistingId}`);
-    else if (page.selection.model)
-      lines.push(`from shadowsim.models import ${page.selection.model}`);
-    const simulators = simulatorImport();
+    if (state.selection.model === "preexisting")
+      lines.push(`from shadowsim.models import ${state.preexistingId}`);
+    else if (state.selection.model)
+      lines.push(`from shadowsim.models import ${state.selection.model}`);
+    const simulators = simulatorImport(state);
     if (simulators) lines.push(simulators);
-    const benchmark = page.placedSims.length >= 2;
-    if (!benchmark && hasThen("export"))
+    const benchmark = state.placedSims.length >= 2;
+    if (!benchmark && hasThen(state, "export"))
       lines.push("from shadowsim.simulators.result import save_resource_metrics");
     const backendClasses = [];
-    page.placedSims.forEach((entry) => {
-      if (isReference(entry)) return;
-      const className = backendClass(entry.backend);
+    state.placedSims.forEach((entry) => {
+      if (isReference(state, entry)) return;
+      const className = backendClass(state, entry.backend);
       if (className && !backendClasses.includes(className)) backendClasses.push(className);
     });
     if (backendClasses.length)
       lines.push(`from shadowsim.backends import ${backendClasses.join(", ")}`);
     const symbols = [
       ...new Set(
-        page.modelTerms.map((term) => blockById("model", term.id)?.symbol).filter(Boolean),
+        state.modelTerms.map((term) => blockById(state, "model", term.id)?.symbol).filter(Boolean),
       ),
     ];
     if (
-      page.placedSims.some((entry) => blockById("simulator", entry.id)?.observables) &&
-      !modelMeasureSelected()
+      state.placedSims.some((entry) => blockById(state, "simulator", entry.id)?.observables) &&
+      !modelMeasureSelected(state)
     ) {
       symbols.push("Operator");
     }
-    if (page.modelTerms.some((term) => term.id === "lindblad" && !lindbladProblem(term)))
+    if (state.modelTerms.some((term) => term.id === "lindblad" && !lindbladProblem(state, term)))
       symbols.push("LocalOperator");
     if (symbols.length) lines.push(`from shadowsim.core import ${symbols.join(", ")}`);
     if (benchmark) lines.push("from shadowsim.benchmarking import Benchmark");
-    const beforeSimulator = ["", stateLine(), "", modelLine(), ...termLines(), ""];
-    page.placedSims.forEach((entry, index) => {
-      if (isReference(entry)) return;
+    const beforeSimulator = ["", stateLine(state), "", modelLine(state), ...termLines(state), ""];
+    state.placedSims.forEach((entry, index) => {
+      if (isReference(state, entry)) return;
       const setup = backendSetup(
+        state,
         entry.backend,
         `circuit_backend_${index + 1}`,
         entry.shots,
@@ -1109,20 +1108,20 @@
       );
       if (setup) beforeSimulator.push(setup, "");
     });
-    if (page.placedSims.some((entry) => blockById("simulator", entry.id)?.observables)) {
-      beforeSimulator.push(observableSetup(), "");
+    if (state.placedSims.some((entry) => blockById(state, "simulator", entry.id)?.observables)) {
+      beforeSimulator.push(observableSetup(state), "");
     }
-    if (page.placedSims.some((entry) => !isReference(entry)))
-      beforeSimulator.push(measurementSetup(), "");
-    const names = page.placedSims.map((_, index) => (benchmark ? `sim_${index + 1}` : "sim"));
+    if (state.placedSims.some((entry) => !isReference(state, entry)))
+      beforeSimulator.push(measurementSetup(state), "");
+    const names = state.placedSims.map((_, index) => (benchmark ? `sim_${index + 1}` : "sim"));
     lines.push(
       ...beforeSimulator,
-      ...page.placedSims.map((entry, index) =>
-        simulatorCall(entry, names[index], `circuit_backend_${index + 1}`),
+      ...state.placedSims.map((entry, index) =>
+        simulatorCall(state, entry, names[index], `circuit_backend_${index + 1}`),
       ),
       "",
     );
-    lines.push(...(benchmark ? benchmarkThenLines(names) : singleThenLines()));
+    lines.push(...(benchmark ? benchmarkThenLines(state, names) : singleThenLines(state)));
     return lines.join("\n");
   }
 
@@ -1220,49 +1219,49 @@
     );
   }
 
-  function squareMatrix(text) {
+  function squareMatrix(state, text) {
     const parsed = parseMatrix(text ?? "");
     if (parsed.error === "empty") return { problem: "Enter a matrix." };
     if (parsed.error) return { problem: "Enter a square matrix." };
     const { matrix } = parsed;
     const size = matrix.length;
-    const maxQubits = page.maxOperatorQubits;
+    const maxQubits = state.maxOperatorQubits;
     const noun = maxQubits === 1 ? "qubit" : "qubits";
     if (size > 2 ** maxQubits) return { problem: `At most ${maxQubits} ${noun}.` };
     if (size < 2 || (size & (size - 1)) !== 0) return { problem: "Size must be a power of two." };
     return { matrix, qubits: Math.log2(size) };
   }
 
-  function inspectMatrix(text) {
-    const parsed = squareMatrix(text);
+  function inspectMatrix(state, text) {
+    const parsed = squareMatrix(state, text);
     if (parsed.problem) return parsed;
     if (!isHermitian(parsed.matrix)) return { problem: "Matrix must be Hermitian." };
     return parsed;
   }
 
-  function fixedQubitCount() {
-    if (stateOwnsQubits() || page.qubitsSource === "user") return qubitCount();
+  function fixedQubitCount(state) {
+    if (stateOwnsQubits(state) || state.qubitsSource === "user") return qubitCount(state);
     return null;
   }
 
-  function hamiltonianProblem(term) {
-    const inspected = inspectMatrix(term.matrix);
+  function hamiltonianProblem(state, term) {
+    const inspected = inspectMatrix(state, term.matrix);
     if (inspected.problem) return inspected.problem;
-    const fixed = fixedQubitCount();
+    const fixed = fixedQubitCount(state);
     if (fixed != null && inspected.qubits !== fixed) {
       const side = 2 ** fixed;
       const label = fixed === 1 ? "qubit" : "qubits";
       return `Must be ${side}×${side} for ${fixed} ${label}.`;
     }
-    if (fixed == null && new Set(validHamiltonianQubits()).size > 1)
+    if (fixed == null && new Set(validHamiltonianQubits(state)).size > 1)
       return "Matrices must be the same size.";
     return null;
   }
 
-  function validHamiltonianQubits() {
-    return page.modelTerms.flatMap((term) => {
+  function validHamiltonianQubits(state) {
+    return state.modelTerms.flatMap((term) => {
       if (term.id !== "hamiltonian") return [];
-      const inspected = inspectMatrix(term.matrix);
+      const inspected = inspectMatrix(state, term.matrix);
       return inspected.problem ? [] : [inspected.qubits];
     });
   }
@@ -1273,8 +1272,8 @@
       .sort((left, right) => left - right);
   }
 
-  function actedQubitProblem(term, parse) {
-    const count = qubitCount();
+  function actedQubitProblem(state, term, parse) {
+    const count = qubitCount(state);
     if (count == null) return "Set qubits first.";
     const sites = localSites(term, count);
     if (!sites.length) return "Pick at least one qubit.";
@@ -1290,73 +1289,73 @@
     return null;
   }
 
-  function localHamiltonianProblem(term) {
-    return actedQubitProblem(term, inspectMatrix);
+  function localHamiltonianProblem(state, term) {
+    return actedQubitProblem(state, term, (text) => inspectMatrix(state, text));
   }
 
-  function lindbladProblem(term) {
-    return actedQubitProblem(term, squareMatrix);
+  function lindbladProblem(state, term) {
+    return actedQubitProblem(state, term, (text) => squareMatrix(state, text));
   }
 
   return {
-    amplitudeQubits: bind(amplitudeQubits),
-    blockById: bind(blockById),
-    factorySetsQubits: bind(factorySetsQubits),
-    chosenFactory: bind(chosenFactory),
-    factoryAlert: bind(factoryAlert),
-    emitterProblem: bind(emitterProblem),
-    entryBody: bind(entryBody),
-    fixedFactoryQubits: bind(fixedFactoryQubits),
-    formatSetting: bind(formatSetting),
-    hamiltonianProblem: bind(hamiltonianProblem),
-    backendFieldNumber: bind(backendFieldNumber),
-    backendFieldStatus: bind(backendFieldStatus),
-    backendFieldsReady: bind(backendFieldsReady),
-    gateFieldProblem: bind(gateFieldProblem),
-    gateNames: bind(gateNames),
-    backendFits: bind(backendFits),
-    inspectMatrix: bind(inspectMatrix),
-    isComplete: bind(isComplete),
-    isReference: bind(isReference),
-    lindbladProblem: bind(lindbladProblem),
-    localHamiltonianProblem: bind(localHamiltonianProblem),
-    localSites: bind(localSites),
-    measureSitesReady: bind(measureSitesReady),
-    countsProblem: bind(countsProblem),
-    countsStatus: bind(countsStatus),
-    expressionProblem: bind(expressionProblem),
-    missingPaths: bind(missingPaths),
-    numberList: bind(numberList),
-    numberProblem: bind(numberProblem),
-    operatorStatus: bind(operatorStatus),
-    otherSlotsPlaced: bind(otherSlotsPlaced),
-    positiveIntText: bind(positiveIntText),
-    postedTerms: bind(postedTerms),
-    previewText: bind(previewText),
-    qubitCount: bind(qubitCount),
-    qubitPhrase: bind(qubitPhrase),
-    qubitProblem: bind(qubitProblem),
-    readState: bind(readState),
-    runAllowed: bind(runAllowed),
-    sameTimeGrid: bind(sameTimeGrid),
-    savePathReady: bind(savePathReady),
-    selectedSites: bind(selectedSites),
-    settingNumber: bind(settingNumber),
-    settingsReady: bind(settingsReady),
-    shotsProblem: bind(shotsProblem),
-    shotsReady: bind(shotsReady),
-    simParamProblem: bind(simParamProblem),
-    simParamsReady: bind(simParamsReady),
-    socketStatus: bind(socketStatus),
-    squareMatrix: bind(squareMatrix),
-    stateImpliedQubits: bind(stateImpliedQubits),
-    stateInputProblem: bind(stateInputProblem),
-    stateOwnsQubits: bind(stateOwnsQubits),
-    stateSizeProblem: bind(stateSizeProblem),
-    stateSizeStatus: bind(stateSizeStatus),
-    termProblem: bind(termProblem),
-    totalProblem: bind(totalProblem),
-    usingAddedOperators: bind(usingAddedOperators),
-    validHamiltonianQubits: bind(validHamiltonianQubits),
+    amplitudeQubits: (_state, count) => amplitudeQubits(count),
+    blockById,
+    factorySetsQubits,
+    chosenFactory,
+    factoryAlert,
+    emitterProblem,
+    entryBody,
+    fixedFactoryQubits,
+    formatSetting,
+    hamiltonianProblem,
+    backendFieldNumber: (_state, field, text) => backendFieldNumber(field, text),
+    backendFieldStatus,
+    backendFieldsReady,
+    gateFieldProblem: (_state, field, text) => gateFieldProblem(field, text),
+    gateNames: (_state, text) => gateNames(text),
+    backendFits,
+    inspectMatrix,
+    isComplete,
+    isReference,
+    lindbladProblem,
+    localHamiltonianProblem,
+    localSites: (_state, term, count) => localSites(term, count),
+    measureSitesReady,
+    countsProblem,
+    countsStatus,
+    expressionProblem: (_state, text, width) => expressionProblem(text, width),
+    missingPaths,
+    numberList: (_state, raw, maxCount) => numberList(raw, maxCount),
+    numberProblem,
+    operatorStatus,
+    otherSlotsPlaced,
+    positiveIntText: (_state, value) => positiveIntText(value),
+    postedTerms,
+    previewText,
+    qubitCount,
+    qubitPhrase,
+    qubitProblem,
+    readState,
+    runAllowed,
+    sameTimeGrid,
+    savePathReady,
+    selectedSites,
+    settingNumber,
+    settingsReady,
+    shotsProblem,
+    shotsReady,
+    simParamProblem,
+    simParamsReady,
+    socketStatus,
+    squareMatrix,
+    stateImpliedQubits,
+    stateInputProblem,
+    stateOwnsQubits,
+    stateSizeProblem,
+    stateSizeStatus,
+    termProblem,
+    totalProblem,
+    usingAddedOperators,
+    validHamiltonianQubits,
   };
 });
