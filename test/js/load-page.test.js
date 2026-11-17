@@ -13,15 +13,15 @@ test("catalog exports the builder page lists", () => {
 test("loadPage runs the builder against a document", () => {
   const { window, page, writes } = loadPage();
   assert.equal(page.applyLimits(catalog().limits), true);
-  assert.equal(page.limits.timeSteps, catalog().limits.timeSteps);
+  assert.equal(page.state.limits.timeSteps, catalog().limits.timeSteps);
   window.localStorage.setItem("shadowsim.builder.board", "{}");
   assert.equal(window.localStorage.getItem("shadowsim.builder.board"), "{}");
   const settings = page.settingsComponent();
   assert.equal(settings.querySelector(".run").localName, "button");
-  page.selection.state = "basis";
-  assert.equal(page.selection.state, "basis");
-  page.running = true;
-  assert.equal(page.running, true);
+  page.state.selection.state = "basis";
+  assert.equal(page.state.selection.state, "basis");
+  page.state.running = true;
+  assert.equal(page.state.running, true);
   let fired = false;
   const id = window.setTimeout(() => {
     fired = true;

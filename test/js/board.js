@@ -28,44 +28,44 @@ function prepare() {
   const exported = catalog();
   const { page } = loaded;
   if (!page.applyLimits(exported.limits)) throw new Error("missing limits");
-  page.BLOCKS.state = structuredClone(exported.states);
-  page.BLOCKS.measure = structuredClone(exported.measures);
-  page.BLOCKS.then = structuredClone(exported.actions);
+  page.state.blocks.state = structuredClone(exported.states);
+  page.state.blocks.measure = structuredClone(exported.measures);
+  page.state.blocks.then = structuredClone(exported.actions);
   return loaded;
 }
 
 function resetPage(page) {
-  page.selection.state = null;
-  page.selection.model = null;
-  page.selection.simulator = null;
-  page.selection.backend = null;
-  page.selection.measure = null;
-  page.selection.then = null;
-  page.settings.qubits = "";
-  page.settings.total = "";
-  for (const key of Object.keys(page.stateText)) delete page.stateText[key];
-  page.qubitsSource = null;
-  page.preexistingId = null;
-  page.factoryText = {};
-  page.modelTerms.splice(0, page.modelTerms.length);
-  page.placedSims.splice(0, page.placedSims.length);
-  page.placedThens.splice(0, page.placedThens.length);
-  for (const key of Object.keys(page.actionText)) delete page.actionText[key];
-  for (const key of Object.keys(page.pathOpen)) delete page.pathOpen[key];
-  for (const block of page.BLOCKS.then) {
-    if (block.field?.kind === "path") page.actionText[block.id] = block.field.default;
+  page.state.selection.state = null;
+  page.state.selection.model = null;
+  page.state.selection.simulator = null;
+  page.state.selection.backend = null;
+  page.state.selection.measure = null;
+  page.state.selection.then = null;
+  page.state.settings.qubits = "";
+  page.state.settings.total = "";
+  for (const key of Object.keys(page.state.stateText)) delete page.state.stateText[key];
+  page.state.qubitsSource = null;
+  page.state.preexistingId = null;
+  page.state.factoryText = {};
+  page.state.modelTerms.splice(0, page.state.modelTerms.length);
+  page.state.placedSims.splice(0, page.state.placedSims.length);
+  page.state.placedThens.splice(0, page.state.placedThens.length);
+  for (const key of Object.keys(page.state.actionText)) delete page.state.actionText[key];
+  for (const key of Object.keys(page.state.pathOpen)) delete page.state.pathOpen[key];
+  for (const block of page.state.blocks.then) {
+    if (block.field?.kind === "path") page.state.actionText[block.id] = block.field.default;
   }
-  page.measureSites = null;
-  for (const key of Object.keys(page.expressionText)) delete page.expressionText[key];
-  page.stateOpen = false;
-  page.measureOpen = false;
-  page.preexistingOpen = false;
-  page.boardReady = false;
+  page.state.measureSites = null;
+  for (const key of Object.keys(page.state.expressionText)) delete page.state.expressionText[key];
+  page.state.stateOpen = false;
+  page.state.measureOpen = false;
+  page.state.preexistingOpen = false;
+  page.state.boardReady = false;
 }
 
 function fillIsing(page) {
   resetPage(page);
-  page.BLOCKS.simulator = [
+  page.state.blocks.simulator = [
     {
       id: "qutip",
       title: "QuTiP",
@@ -79,35 +79,35 @@ function fillIsing(page) {
           kind: "integer",
           default: "11",
           minimum: 1,
-          maximum: page.limits.timeSteps,
+          maximum: page.state.limits.timeSteps,
         },
       ],
     },
   ];
-  page.BLOCKS.model = [
+  page.state.blocks.model = [
     { id: "preexisting", title: "Preexisting model", detail: "Choose a built-in model" },
   ];
-  page.modelFactories = [
+  page.state.modelFactories = [
     { id: "ising", title: "Ising", qubits: true, setup: "model = ising(n_qubits={qubits})" },
   ];
-  page.preexistingId = "ising";
-  page.selection.state = "basis";
-  page.selection.model = "preexisting";
-  page.selection.simulator = "qutip";
-  page.selection.then = "plot";
-  page.stateText.basis = "01";
-  page.settings.qubits = "2";
-  page.settings.total = "1";
-  page.qubitsSource = "state";
-  page.actionText.save = "results/kept";
-  page.placedSims.push({ id: "qutip", key: 3, open: true, params: { time_steps: "11" } });
-  page.placedThens.push("plot");
+  page.state.preexistingId = "ising";
+  page.state.selection.state = "basis";
+  page.state.selection.model = "preexisting";
+  page.state.selection.simulator = "qutip";
+  page.state.selection.then = "plot";
+  page.state.stateText.basis = "01";
+  page.state.settings.qubits = "2";
+  page.state.settings.total = "1";
+  page.state.qubitsSource = "state";
+  page.state.actionText.save = "results/kept";
+  page.state.placedSims.push({ id: "qutip", key: 3, open: true, params: { time_steps: "11" } });
+  page.state.placedThens.push("plot");
   page.useFactoryMeasure();
 }
 
 function fillCircuit(page) {
   fillIsing(page);
-  page.BLOCKS.simulator = [
+  page.state.blocks.simulator = [
     {
       id: "trotterization",
       title: "Trotterization",
@@ -121,7 +121,7 @@ function fillCircuit(page) {
           kind: "integer",
           default: "11",
           minimum: 1,
-          maximum: page.limits.timeSteps,
+          maximum: page.state.limits.timeSteps,
         },
         {
           name: "num_steps",
@@ -129,7 +129,7 @@ function fillCircuit(page) {
           kind: "integer",
           default: "4",
           minimum: 1,
-          maximum: page.limits.numSteps,
+          maximum: page.state.limits.numSteps,
         },
         {
           name: "trotter_depth",
@@ -137,14 +137,14 @@ function fillCircuit(page) {
           kind: "integer",
           default: "1",
           minimum: 1,
-          maximum: page.limits.trotterDepth,
+          maximum: page.state.limits.trotterDepth,
         },
         { name: "order", label: "Order", kind: "choice", default: "1", choices: ["1", "2"] },
         { name: "seed", label: "Seed", kind: "integer", default: "0" },
       ],
     },
   ];
-  page.BLOCKS.backend = [
+  page.state.blocks.backend = [
     {
       id: "aer",
       phrase: "Aer",
@@ -152,12 +152,12 @@ function fillCircuit(page) {
       setup: "circuit_backend = AerCircuitBackend(shots={shots})",
     },
   ];
-  page.BLOCKS.model = [
+  page.state.blocks.model = [
     { id: "preexisting", title: "Preexisting model", detail: "" },
     { id: "hamiltonian", title: "Hamiltonian", adds: true, detail: "" },
   ];
-  page.selection.simulator = "trotterization";
-  page.placedSims.splice(0, page.placedSims.length, {
+  page.state.selection.simulator = "trotterization";
+  page.state.placedSims.splice(0, page.state.placedSims.length, {
     id: "trotterization",
     key: 1,
     params: { time_steps: "11", num_steps: "4", trotter_depth: "1", seed: "0", order: "1" },

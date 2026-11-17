@@ -38,72 +38,69 @@ const LANES = [
   },
 ];
 
-const BLOCKS = {
-  state: [],
-  model: [],
-  simulator: [],
-  backend: [],
-  measure: [],
-  then: [],
-};
-
-let limits = null;
-
-const selection = {
-  state: null,
-  model: null,
-  simulator: null,
-  backend: null,
-  measure: null,
-  then: null,
-};
-
-const modelTerms = [];
-let modelTermKey = 0;
-let modelFactories = [];
-let preexistingId = null;
-let preexistingOpen = false;
-let factoryText = {};
-
-const settings = { qubits: "", total: "" };
-const stateText = {};
-let qubitsSource = null;
-const placedSims = [];
-let simKey = 0;
-const placedThens = [];
-const actionText = {};
-const pathOpen = {};
-let stateOpen = false;
-let measureOpen = false;
-let measureSites = null;
-let catalogMeasures = [];
-let modelMeasurements = [];
-const expressionText = {};
 const DEFAULT_SHOTS = "256";
-
-let dragging = null;
-let running = false;
 const BOARD_KEY = "shadowsim.builder.board";
-let boardReady = false;
-let copyTimer = 0;
-let copiedButton = null;
-let copiedLabel = "Copy";
-let statusHold = null;
-let runStartedAt = 0;
-let runTimer = null;
-let shownRun = null;
-let acceptedBody = null;
-let acceptedQubits = null;
-let rejectedBody = null;
-let checkError = null;
-let checkTimer = null;
-let checkSerial = 0;
-let pendingBody = null;
-let checkInFlight = false;
 const CHECK_DELAY = 200;
-const laneNotes = { model: "", simulator: "", backend: "" };
-
 const CURVE_COLORS = ["#4c4cb8", "#1f7a6c", "#a67c1a", "#b66880", "#6a4ca8"];
+
+const state = {
+  blocks: {
+    state: [],
+    model: [],
+    simulator: [],
+    backend: [],
+    measure: [],
+    then: [],
+  },
+  limits: null,
+  selection: {
+    state: null,
+    model: null,
+    simulator: null,
+    backend: null,
+    measure: null,
+    then: null,
+  },
+  modelTerms: [],
+  modelTermKey: 0,
+  modelFactories: [],
+  preexistingId: null,
+  preexistingOpen: false,
+  factoryText: {},
+  settings: { qubits: "", total: "" },
+  stateText: {},
+  qubitsSource: null,
+  placedSims: [],
+  simKey: 0,
+  placedThens: [],
+  actionText: {},
+  pathOpen: {},
+  stateOpen: false,
+  measureOpen: false,
+  measureSites: null,
+  catalogMeasures: [],
+  modelMeasurements: [],
+  expressionText: {},
+  dragging: null,
+  running: false,
+  boardReady: false,
+  copyTimer: 0,
+  copiedButton: null,
+  copiedLabel: "Copy",
+  statusHold: null,
+  runStartedAt: 0,
+  runTimer: null,
+  shownRun: null,
+  acceptedBody: null,
+  acceptedQubits: null,
+  rejectedBody: null,
+  checkError: null,
+  checkTimer: null,
+  checkSerial: 0,
+  pendingBody: null,
+  checkInFlight: false,
+  laneNotes: { model: "", simulator: "", backend: "" },
+};
 
 function el(tag, props, ...children) {
   const node = document.createElement(tag);
@@ -123,27 +120,28 @@ function el(tag, props, ...children) {
 function currentPage() {
   return {
     lanes: LANES,
-    blocks: BLOCKS,
-    selection,
-    settings,
-    modelTerms,
-    modelFactories,
-    preexistingId,
-    factoryText,
-    stateText,
-    placedSims,
-    placedThens,
-    actionText,
-    measureSites,
-    expressionText,
-    qubitsSource,
-    stateLimits: limits.states,
-    maxOperatorQubits: limits.operatorQubits,
-    maxTimeSteps: limits.timeSteps,
-    maxNumSteps: limits.numSteps,
-    maxTrotterDepth: limits.trotterDepth,
-    maxShots: limits.shots,
-    checkedQubits: checkError == null && acceptedBody != null ? acceptedQubits : null,
+    blocks: state.blocks,
+    selection: state.selection,
+    settings: state.settings,
+    modelTerms: state.modelTerms,
+    modelFactories: state.modelFactories,
+    preexistingId: state.preexistingId,
+    factoryText: state.factoryText,
+    stateText: state.stateText,
+    placedSims: state.placedSims,
+    placedThens: state.placedThens,
+    actionText: state.actionText,
+    measureSites: state.measureSites,
+    expressionText: state.expressionText,
+    qubitsSource: state.qubitsSource,
+    stateLimits: state.limits.states,
+    maxOperatorQubits: state.limits.operatorQubits,
+    maxTimeSteps: state.limits.timeSteps,
+    maxNumSteps: state.limits.numSteps,
+    maxTrotterDepth: state.limits.trotterDepth,
+    maxShots: state.limits.shots,
+    checkedQubits:
+      state.checkError == null && state.acceptedBody != null ? state.acceptedQubits : null,
   };
 }
 
@@ -154,7 +152,9 @@ function freshParams(block) {
 }
 
 function accepted() {
-  return acceptedBody != null && acceptedBody === documentBody() && checkError == null;
+  return (
+    state.acceptedBody != null && state.acceptedBody === documentBody() && state.checkError == null
+  );
 }
 
 function runAllowed() {
@@ -168,8 +168,8 @@ function previewText() {
 
 function modelChoiceBlocked(block) {
   if (!block) return false;
-  if (block.id === "preexisting") return modelTerms.length > 0;
-  if (block.adds) return selection.model === "preexisting";
+  if (block.id === "preexisting") return state.modelTerms.length > 0;
+  if (block.adds) return state.selection.model === "preexisting";
   return false;
 }
 
@@ -209,12 +209,12 @@ function blockCard(lane, block, { inSlot, onPlace, onRemove, blocked }) {
           event.preventDefault();
           return;
         }
-        dragging = { lane: lane.id, id: block.id };
+        state.dragging = { lane: lane.id, id: block.id };
         event.dataTransfer.setData("text/plain", `${lane.id}:${block.id}`);
         event.dataTransfer.effectAllowed = "copy";
       },
       ondragend: () => {
-        dragging = null;
+        state.dragging = null;
       },
       onclick: () => {
         if (!blocked) onPlace();
@@ -226,8 +226,13 @@ function blockCard(lane, block, { inSlot, onPlace, onRemove, blocked }) {
 }
 
 function acceptedLayoutQubits() {
-  if (acceptedBody == null || acceptedBody !== documentBody() || checkError != null) return null;
-  return acceptedQubits;
+  if (
+    state.acceptedBody == null ||
+    state.acceptedBody !== documentBody() ||
+    state.checkError != null
+  )
+    return null;
+  return state.acceptedQubits;
 }
 
 function qubitDetail(count) {
@@ -249,7 +254,7 @@ function factoryParams() {
 }
 
 function paramText(param) {
-  const stored = factoryText[param.name];
+  const stored = state.factoryText[param.name];
   return typeof stored === "string" ? stored : String(param.default ?? "");
 }
 
@@ -267,16 +272,15 @@ function fieldLocked(param) {
   );
 }
 
-function refreshFactoryLocks(chip) {
-  if (!chip) return;
+function paintFactoryLocks() {
   for (const param of factoryParams()) {
-    const control = chip.querySelector(`[data-param="${param.name}"]`);
+    const control = document.querySelector(`[data-param="${param.name}"]`);
     if (control) control.disabled = fieldLocked(param);
   }
 }
 
 function rememberFactoryText(name, value) {
-  factoryText[name] = value;
+  state.factoryText[name] = value;
 }
 
 function factoryField(param) {
@@ -294,9 +298,11 @@ function factoryField(param) {
           "data-param": param.name,
           disabled: locked || null,
           onchange: (event) => {
-            rememberFactoryText(param.name, event.target.value);
-            refreshFactoryLocks(event.target.closest(".chip"));
-            refreshCavityModel();
+            update(() => {
+              rememberFactoryText(param.name, event.target.value);
+              deriveModelQubits();
+              if (state.selection.state) deriveStateQubits();
+            });
           },
         },
         ...(Array.isArray(param.choices) ? param.choices : []).map((choice) =>
@@ -323,16 +329,18 @@ function factoryField(param) {
       oninput: (event) => {
         const next = integer ? event.target.value.replace(/\D/g, "") : event.target.value.trim();
         if (integer && event.target.value !== next) event.target.value = next;
-        rememberFactoryText(param.name, next);
-        refreshFactoryLocks(event.target.closest(".chip"));
-        refreshCavityModel();
+        update(() => {
+          rememberFactoryText(param.name, next);
+          deriveModelQubits();
+          if (state.selection.state) deriveStateQubits();
+        });
       },
     }),
   );
 }
 
 function postedFactory() {
-  if (selection.model !== "preexisting") return null;
+  if (state.selection.model !== "preexisting") return null;
   const params = factoryParams();
   if (!params.length) return null;
   const body = {};
@@ -341,16 +349,16 @@ function postedFactory() {
 }
 
 function modelAlert() {
-  if (checkError) return checkError;
+  if (state.checkError) return state.checkError;
   return checks.factoryAlert(currentPage());
 }
 
-function syncFactoryDetail() {
+function paintFactoryDetail() {
   const detail = document.querySelector(".preexisting-detail");
   if (detail) detail.textContent = preexistingDetail();
 }
 
-function syncModelAlert() {
+function paintModelAlert() {
   const alert = document.querySelector(".preexisting-alert");
   if (!alert) return;
   const text = modelAlert();
@@ -360,18 +368,6 @@ function syncModelAlert() {
   alert.title = text;
 }
 
-function refreshCavityModel() {
-  syncModelQubits();
-  syncFactoryDetail();
-  if (selection.state) refreshStateChip(selection.state);
-  else refreshSummaryAndPreview();
-  syncModelAlert();
-}
-
-function replaceChip(node, next) {
-  node.closest(".chip").replaceWith(next);
-}
-
 function preexistingChip() {
   const factory = checks.chosenFactory(currentPage());
   const select = el(
@@ -379,20 +375,24 @@ function preexistingChip() {
     {
       "aria-label": "Model",
       onchange: (event) => {
-        preexistingId = event.target.value;
-        syncModelQubits();
-        releaseStatusHold();
-        commitLane("model", true);
+        update(
+          () => {
+            state.preexistingId = event.target.value;
+            deriveModelQubits();
+            releaseStatusHold();
+          },
+          { lanes: ["model"], palettes: ["model"], clearResults: true },
+        );
       },
     },
-    ...modelFactories.map((item) =>
+    ...state.modelFactories.map((item) =>
       el("option", { value: item.id, selected: item.id === factory?.id }, item.title),
     ),
   );
   const alertText = modelAlert() ?? "Check the model arguments";
   return el(
     "div",
-    { className: `chip tone-teal preexisting${preexistingOpen ? " is-editing" : ""}` },
+    { className: `chip tone-teal preexisting${state.preexistingOpen ? " is-editing" : ""}` },
     el(
       "div",
       { className: "preexisting-head" },
@@ -400,10 +400,14 @@ function preexistingChip() {
         "button",
         {
           type: "button",
-          onclick: (event) => {
-            if (preexistingOpen) return;
-            preexistingOpen = true;
-            replaceChip(event.currentTarget, preexistingChip());
+          onclick: () => {
+            if (state.preexistingOpen) return;
+            update(
+              () => {
+                state.preexistingOpen = true;
+              },
+              { lanes: ["model"], chrome: false },
+            );
           },
         },
         el("strong", {}, "Preexisting model"),
@@ -423,15 +427,19 @@ function preexistingChip() {
           },
           "!",
         ),
-        preexistingOpen
+        state.preexistingOpen
           ? el(
               "button",
               {
                 className: "done",
                 type: "button",
-                onclick: (event) => {
-                  preexistingOpen = false;
-                  replaceChip(event.currentTarget, preexistingChip());
+                onclick: () => {
+                  update(
+                    () => {
+                      state.preexistingOpen = false;
+                    },
+                    { lanes: ["model"], chrome: false },
+                  );
                 },
               },
               "Done",
@@ -452,8 +460,8 @@ function preexistingChip() {
         ),
       ),
     ),
-    preexistingOpen ? el("label", { className: "preexisting-field" }, "Model", select) : null,
-    ...(preexistingOpen ? factoryParams().map(factoryField) : []),
+    state.preexistingOpen ? el("label", { className: "preexisting-field" }, "Model", select) : null,
+    ...(state.preexistingOpen ? factoryParams().map(factoryField) : []),
   );
 }
 
@@ -468,7 +476,7 @@ function stateField(id) {
 }
 
 function stateTextOf(id) {
-  return stateText[id] ?? "";
+  return state.stateText[id] ?? "";
 }
 
 function blankDetail(field) {
@@ -490,40 +498,27 @@ function stateReady(id) {
   return checks.readState(currentPage(), id)?.filled === true;
 }
 
-function writeQubitField() {
-  const qubitsInput = document.querySelector('input[aria-label="Qubits"]');
-  if (!qubitsInput) return;
-  qubitsInput.readOnly =
-    checks.stateOwnsQubits(currentPage()) || checks.factorySetsQubits(currentPage());
-  if (qubitsInput.value !== settings.qubits) qubitsInput.value = settings.qubits;
-}
-
-function syncStateQubits() {
+function deriveStateQubits() {
   if (!checks.stateOwnsQubits(currentPage()) || checks.factorySetsQubits(currentPage())) return;
   const count = checks.stateImpliedQubits(currentPage());
-  settings.qubits = count == null ? "" : String(count);
-  qubitsSource = count == null ? null : "state";
-  syncMeasureChip();
-  writeQubitField();
+  state.settings.qubits = count == null ? "" : String(count);
+  state.qubitsSource = count == null ? null : "state";
+  if (count == null) state.measureOpen = false;
 }
 
-function syncModelQubits() {
+function deriveModelQubits() {
   if (!checks.factorySetsQubits(currentPage())) {
-    if (qubitsSource !== "model") return;
+    if (state.qubitsSource !== "model") return;
     if (checks.stateOwnsQubits(currentPage())) {
-      qubitsSource = null;
-      syncStateQubits();
-    } else {
-      qubitsSource = settings.qubits === "" ? null : "user";
-      writeQubitField();
-    }
+      state.qubitsSource = null;
+      deriveStateQubits();
+    } else state.qubitsSource = state.settings.qubits === "" ? null : "user";
     return;
   }
   const fixed = acceptedLayoutQubits();
-  settings.qubits = fixed == null ? "" : String(fixed);
-  qubitsSource = "model";
-  syncMeasureChip();
-  writeQubitField();
+  state.settings.qubits = fixed == null ? "" : String(fixed);
+  state.qubitsSource = "model";
+  if (fixed == null) state.measureOpen = false;
 }
 
 function stateAlertLabel(id) {
@@ -534,24 +529,20 @@ function stateAlertLabel(id) {
   return field.empty ?? "";
 }
 
-function refreshStateChip(id) {
-  if (selection.state === id) syncStateQubits();
+function paintStateChip() {
   const detail = document.querySelector(".basis-detail");
-  if (detail) detail.textContent = stateDetail(id);
+  if (detail && state.selection.state) detail.textContent = stateDetail(state.selection.state);
   const alert = document.querySelector(".chip.tone-gold .basis-alert");
-  if (alert) {
-    const label = stateAlertLabel(id);
-    alert.hidden = stateReady(id) && checks.stateSizeProblem(currentPage()) == null;
-    alert.title = label;
-    alert.setAttribute("aria-label", label);
-  }
-  refreshHamiltonianChips();
-  refreshLocalHamiltonianChips();
-  refreshSummaryAndPreview();
+  if (!alert || !state.selection.state) return;
+  const label = stateAlertLabel(state.selection.state);
+  alert.hidden =
+    stateReady(state.selection.state) && checks.stateSizeProblem(currentPage()) == null;
+  alert.title = label;
+  alert.setAttribute("aria-label", label);
 }
 
 function stateChip(options) {
-  const open = stateOpen;
+  const open = state.stateOpen;
   const input = el("input", {
     type: "text",
     inputmode: options.bits ? "numeric" : "decimal",
@@ -572,10 +563,14 @@ function stateChip(options) {
         "button",
         {
           type: "button",
-          onclick: (event) => {
-            if (stateOpen) return;
-            stateOpen = true;
-            replaceChip(event.currentTarget, stateChip(options));
+          onclick: () => {
+            if (state.stateOpen) return;
+            update(
+              () => {
+                state.stateOpen = true;
+              },
+              { lanes: ["state"], chrome: false },
+            );
           },
         },
         el("strong", {}, options.title),
@@ -601,9 +596,13 @@ function stateChip(options) {
               {
                 className: "done",
                 type: "button",
-                onclick: (event) => {
-                  stateOpen = false;
-                  replaceChip(event.currentTarget, stateChip(options));
+                onclick: () => {
+                  update(
+                    () => {
+                      state.stateOpen = false;
+                    },
+                    { lanes: ["state"], chrome: false },
+                  );
                 },
               },
               "Done",
@@ -645,8 +644,10 @@ function stateFieldChip(block) {
         ? raw.replace(/[^01]/g, "").slice(0, field.cap)
         : raw.replace(/[^\d.,\s-]/g, "");
       if (event.target.value !== next) event.target.value = next;
-      stateText[block.id] = next;
-      refreshStateChip(block.id);
+      update(() => {
+        state.stateText[block.id] = next;
+        deriveStateQubits();
+      });
     },
   });
 }
@@ -667,8 +668,9 @@ function simField(params, key, label, seed) {
           ? event.target.value.replace(/[^\d-]/g, "").replace(/(?!^)-/g, "")
           : event.target.value.replace(/\D/g, "");
         if (event.target.value !== next) event.target.value = next;
-        params[key] = next;
-        refreshSummaryAndPreview();
+        update(() => {
+          params[key] = next;
+        });
       },
     }),
   );
@@ -687,8 +689,9 @@ function simulatorControl(params, field) {
         {
           "aria-label": field.label,
           onchange: (event) => {
-            params[field.name] = event.target.value;
-            refreshSummaryAndPreview();
+            update(() => {
+              params[field.name] = event.target.value;
+            });
           },
         },
         ...choices.map((choice) =>
@@ -715,10 +718,14 @@ function simulatorChip(entry) {
         "button",
         {
           type: "button",
-          onclick: (event) => {
+          onclick: () => {
             if (entry.open) return;
-            entry.open = true;
-            replaceChip(event.currentTarget, simulatorChip(entry));
+            update(
+              () => {
+                entry.open = true;
+              },
+              { lanes: ["simulator"], chrome: false },
+            );
           },
         },
         el("strong", {}, block.title),
@@ -733,9 +740,13 @@ function simulatorChip(entry) {
               {
                 className: "done",
                 type: "button",
-                onclick: (event) => {
-                  entry.open = false;
-                  replaceChip(event.currentTarget, simulatorChip(entry));
+                onclick: () => {
+                  update(
+                    () => {
+                      entry.open = false;
+                    },
+                    { lanes: ["simulator"], chrome: false },
+                  );
                 },
               },
               "Done",
@@ -761,16 +772,15 @@ function simulatorChip(entry) {
 }
 
 function pathValue(id) {
-  if (Object.hasOwn(actionText, id)) return actionText[id];
+  if (Object.hasOwn(state.actionText, id)) return state.actionText[id];
   return checks.blockById(currentPage(), "then", id)?.field?.default ?? "";
 }
 
 function pathChip(block) {
   const field = block.field ?? {};
-  const open = Boolean(pathOpen[block.id]);
+  const open = Boolean(state.pathOpen[block.id]);
   const path = pathValue(block.id);
   const shown = path.trim();
-  const refresh = (event) => replaceChip(event.currentTarget, pathChip(block));
   return el(
     "div",
     { className: `chip tone-rose path ${block.id}${open ? " is-editing" : ""}` },
@@ -781,10 +791,14 @@ function pathChip(block) {
         "button",
         {
           type: "button",
-          onclick: (event) => {
+          onclick: () => {
             if (open) return;
-            pathOpen[block.id] = true;
-            refresh(event);
+            update(
+              () => {
+                state.pathOpen[block.id] = true;
+              },
+              { lanes: ["then"], chrome: false },
+            );
           },
         },
         el("strong", {}, block.title),
@@ -799,9 +813,13 @@ function pathChip(block) {
               {
                 className: "done",
                 type: "button",
-                onclick: (event) => {
-                  pathOpen[block.id] = false;
-                  refresh(event);
+                onclick: () => {
+                  update(
+                    () => {
+                      state.pathOpen[block.id] = false;
+                    },
+                    { lanes: ["then"], chrome: false },
+                  );
                 },
               },
               "Done",
@@ -833,10 +851,9 @@ function pathChip(block) {
             value: path,
             spellcheck: "false",
             oninput: (event) => {
-              actionText[block.id] = event.target.value;
-              const detail = event.target.closest(".chip")?.querySelector("span");
-              if (detail) detail.textContent = event.target.value.trim() || block.detail;
-              refreshSummaryAndPreview();
+              update(() => {
+                state.actionText[block.id] = event.target.value;
+              });
             },
           }),
         )
@@ -890,11 +907,15 @@ function backendChip(entry) {
         "button",
         {
           type: "button",
-          onclick: (event) => {
+          onclick: () => {
             if (!configurable || editing) return;
-            if (samples) entry.shotsOpen = true;
-            else entry.backendOpen = true;
-            replaceChip(event.currentTarget, backendChip(entry));
+            update(
+              () => {
+                if (samples) entry.shotsOpen = true;
+                else entry.backendOpen = true;
+              },
+              { lanes: ["simulator"], chrome: false },
+            );
           },
         },
         el("strong", {}, block.title),
@@ -909,10 +930,14 @@ function backendChip(entry) {
               {
                 className: "done",
                 type: "button",
-                onclick: (event) => {
-                  entry.shotsOpen = false;
-                  entry.backendOpen = false;
-                  replaceChip(event.currentTarget, backendChip(entry));
+                onclick: () => {
+                  update(
+                    () => {
+                      entry.shotsOpen = false;
+                      entry.backendOpen = false;
+                    },
+                    { lanes: ["simulator"], chrome: false },
+                  );
                 },
               },
               "Done",
@@ -947,10 +972,9 @@ function backendChip(entry) {
             oninput: (event) => {
               const next = event.target.value.replace(/\D/g, "");
               if (event.target.value !== next) event.target.value = next;
-              entry.shots = next;
-              const detail = event.target.closest(".chip")?.querySelector(".backend-detail");
-              if (detail) detail.textContent = backendSummary(block, entry);
-              refreshSummaryAndPreview();
+              update(() => {
+                entry.shots = next;
+              });
             },
           }),
         )
@@ -977,11 +1001,10 @@ function backendChip(entry) {
                     ? event.target.value.toLowerCase().replace(/[^a-z0-9_,\s]/g, "")
                     : event.target.value.replace(/[^0-9.eE+\-infity]/gi, "");
                   if (event.target.value !== next) event.target.value = next;
-                  entry.backendFields = entry.backendFields ?? {};
-                  entry.backendFields[field.name] = next;
-                  const detail = event.target.closest(".chip")?.querySelector(".backend-detail");
-                  if (detail) detail.textContent = backendSummary(block, entry);
-                  refreshSummaryAndPreview();
+                  update(() => {
+                    entry.backendFields = entry.backendFields ?? {};
+                    entry.backendFields[field.name] = next;
+                  });
                 },
               }),
             ),
@@ -998,17 +1021,17 @@ function backendSocket(entry) {
       className: "socket",
       "data-socket": String(entry.key),
       ondragover: (event) => {
-        if (dragging?.lane !== "backend") return;
+        if (state.dragging?.lane !== "backend") return;
         event.preventDefault();
         event.stopPropagation();
         event.currentTarget.classList.add("is-over");
       },
       ondragleave: (event) => event.currentTarget.classList.remove("is-over"),
       ondrop: (event) => {
-        if (dragging?.lane !== "backend") return;
+        if (state.dragging?.lane !== "backend") return;
         event.preventDefault();
         event.stopPropagation();
-        attachBackend(dragging.id, entry.key);
+        attachBackend(state.dragging.id, entry.key);
       },
     },
     "Add a backend",
@@ -1032,28 +1055,26 @@ function hamiltonianDetail(term) {
   return `${size}×${size}`;
 }
 
-function syncHamiltonianQubits() {
-  if (checks.stateOwnsQubits(currentPage()) || qubitsSource === "user") return;
+function deriveHamiltonianQubits() {
+  if (checks.stateOwnsQubits(currentPage()) || state.qubitsSource === "user") return;
   const counts = [...new Set(checks.validHamiltonianQubits(currentPage()))];
   if (counts.length === 1) {
-    settings.qubits = String(counts[0]);
-    qubitsSource = "hamiltonian";
-  } else if (qubitsSource === "hamiltonian") {
-    settings.qubits = "";
-    qubitsSource = null;
+    state.settings.qubits = String(counts[0]);
+    state.qubitsSource = "hamiltonian";
+  } else if (state.qubitsSource === "hamiltonian") {
+    state.settings.qubits = "";
+    state.qubitsSource = null;
   }
-  syncMeasureChip();
-  writeQubitField();
-  refreshLocalHamiltonianChips();
+  if (checks.qubitCount(currentPage()) == null) state.measureOpen = false;
 }
 
-function refreshHamiltonianChips() {
+function paintHamiltonianChips() {
   document.querySelectorAll(".chip.hamiltonian").forEach((chip) => {
-    const term = modelTerms.find((item) => item.key === Number(chip.dataset.key));
+    const term = state.modelTerms.find((item) => item.key === Number(chip.dataset.key));
     if (!term) return;
     const detail = chip.querySelector(".hamiltonian-detail");
     if (detail) detail.textContent = hamiltonianDetail(term);
-    syncOperatorAlert(chip, term);
+    paintOperatorAlert(chip, term);
   });
 }
 
@@ -1063,10 +1084,10 @@ function hamiltonianChip(term) {
     spellcheck: "false",
     rows: "4",
     oninput: (event) => {
-      term.matrix = event.target.value;
-      syncHamiltonianQubits();
-      refreshHamiltonianChips();
-      refreshSummaryAndPreview();
+      update(() => {
+        term.matrix = event.target.value;
+        deriveHamiltonianQubits();
+      });
     },
   });
   input.value = term.matrix;
@@ -1103,7 +1124,7 @@ function hamiltonianChip(term) {
     ),
     el("label", { className: "basis-field" }, "Matrix", input),
   );
-  syncOperatorAlert(chip, term);
+  paintOperatorAlert(chip, term);
   return chip;
 }
 
@@ -1146,9 +1167,9 @@ function localSiteFields(term) {
           "aria-label": `${term.id === "lindblad" ? "Lindblad" : "Local"} qubit ${site}`,
           checked: chosen.has(site),
           onchange: (event) => {
-            toggleLocalSite(term, site, event.target.checked);
-            refreshLocalHamiltonianChips();
-            refreshSummaryAndPreview();
+            update(() => {
+              toggleLocalSite(term, site, event.target.checked);
+            });
           },
         }),
         String(site),
@@ -1164,9 +1185,9 @@ function localFields(term) {
     spellcheck: "false",
     rows: "4",
     oninput: (event) => {
-      term.matrix = event.target.value;
-      refreshLocalHamiltonianChips();
-      refreshSummaryAndPreview();
+      update(() => {
+        term.matrix = event.target.value;
+      });
     },
   });
   input.value = term.matrix;
@@ -1184,7 +1205,7 @@ function operatorProblem(term) {
   return checks.hamiltonianProblem(currentPage(), term);
 }
 
-function syncOperatorAlert(chip, term) {
+function paintOperatorAlert(chip, term) {
   const problem = operatorProblem(term);
   const shown =
     Boolean(problem) && (term.id === "hamiltonian" || checks.qubitCount(currentPage()) != null);
@@ -1205,9 +1226,9 @@ function syncOperatorAlert(chip, term) {
   else field.removeAttribute("aria-describedby");
 }
 
-function refreshLocalHamiltonianChips() {
+function paintLocalHamiltonianChips() {
   document.querySelectorAll(".chip.local-hamiltonian, .chip.lindblad").forEach((chip) => {
-    const term = modelTerms.find((item) => item.key === Number(chip.dataset.key));
+    const term = state.modelTerms.find((item) => item.key === Number(chip.dataset.key));
     if (!term) return;
     const count = checks.qubitCount(currentPage());
     if (count != null) term.sites = checks.localSites(currentPage(), term, count);
@@ -1219,7 +1240,7 @@ function refreshLocalHamiltonianChips() {
     if (!open) fields?.remove();
     else if (!fields) chip.append(localFields(term));
     else fields.querySelector(".measure-fields")?.replaceWith(localSiteFields(term));
-    syncOperatorAlert(chip, term);
+    paintOperatorAlert(chip, term);
   });
 }
 
@@ -1263,13 +1284,13 @@ function actedQubitChip(term) {
     ),
     open ? localFields(term) : null,
   );
-  syncOperatorAlert(chip, term);
+  paintOperatorAlert(chip, term);
   return chip;
 }
 
 function slotChips(lane) {
   const chips = [];
-  const chosen = checks.blockById(currentPage(), lane.id, selection[lane.id]);
+  const chosen = checks.blockById(currentPage(), lane.id, state.selection[lane.id]);
   if (chosen && !chosen.adds && lane.id !== "then") {
     if (chosen.id === "preexisting") chips.push(preexistingChip());
     else if (lane.id === "state") chips.push(stateFieldChip(chosen));
@@ -1279,7 +1300,7 @@ function slotChips(lane) {
     }
   }
   if (lane.id === "then") {
-    for (const id of placedThens) {
+    for (const id of state.placedThens) {
       const block = checks.blockById(currentPage(), "then", id);
       if (!block) continue;
       if (block.field?.kind === "path") chips.push(pathChip(block));
@@ -1288,14 +1309,14 @@ function slotChips(lane) {
     return chips;
   }
   if (lane.id === "simulator") {
-    for (const entry of placedSims) {
+    for (const entry of state.placedSims) {
       const row = methodRow(entry);
       if (row) chips.push(row);
     }
     return chips;
   }
   if (lane.id !== "model") return chips;
-  for (const term of modelTerms) {
+  for (const term of state.modelTerms) {
     const block = checks.blockById(currentPage(), "model", term.id);
     if (!block) continue;
     if (term.id === "hamiltonian") chips.push(hamiltonianChip(term));
@@ -1317,9 +1338,9 @@ function placeOnGrid(node, lane, row) {
 }
 
 function slotAcceptsDrag(laneId) {
-  if (!dragging) return false;
-  if (dragging.lane === laneId) return true;
-  return laneId === "simulator" && dragging.lane === "backend";
+  if (!state.dragging) return false;
+  if (state.dragging.lane === laneId) return true;
+  return laneId === "simulator" && state.dragging.lane === "backend";
 }
 
 function slotComponent(lane) {
@@ -1337,8 +1358,8 @@ function slotComponent(lane) {
       ondrop: (event) => {
         if (!slotAcceptsDrag(lane.id)) return;
         event.preventDefault();
-        if (dragging.lane === "backend") attachBackend(dragging.id);
-        else place(lane.id, dragging.id);
+        if (state.dragging.lane === "backend") attachBackend(state.dragging.id);
+        else place(lane.id, state.dragging.id);
       },
     },
     el("h2", {}, lane.title),
@@ -1349,12 +1370,12 @@ function slotComponent(lane) {
 }
 
 function methodPalette(lane, onPlace) {
-  const noteText = laneNotes.simulator || laneNotes.backend;
+  const noteText = state.laneNotes.simulator || state.laneNotes.backend;
   const note = noteText ? el("p", { className: "hint" }, noteText) : null;
   const groups = [
-    ["Classical references", BLOCKS.simulator.filter((block) => block.observables), lane],
-    ["Simulators", BLOCKS.simulator.filter((block) => !block.observables), lane],
-    ["Backends", BLOCKS.backend, { id: "backend", tone: "violet" }],
+    ["Classical references", state.blocks.simulator.filter((block) => block.observables), lane],
+    ["Simulators", state.blocks.simulator.filter((block) => !block.observables), lane],
+    ["Backends", state.blocks.backend, { id: "backend", tone: "violet" }],
   ];
   return placeOnGrid(
     el(
@@ -1391,7 +1412,9 @@ function methodPalette(lane, onPlace) {
 
 function paletteComponent(lane, onPlace) {
   if (lane.id === "simulator") return methodPalette(lane, onPlace);
-  const note = laneNotes[lane.id] ? el("p", { className: "hint" }, laneNotes[lane.id]) : null;
+  const note = state.laneNotes[lane.id]
+    ? el("p", { className: "hint" }, state.laneNotes[lane.id])
+    : null;
   return placeOnGrid(
     el(
       "section",
@@ -1401,7 +1424,7 @@ function paletteComponent(lane, onPlace) {
       el(
         "div",
         { className: "cards" },
-        ...BLOCKS[lane.id].map((block) =>
+        ...state.blocks[lane.id].map((block) =>
           blockCard(lane, block, {
             inSlot: false,
             blocked: lane.id === "model" && modelChoiceBlocked(block),
@@ -1419,8 +1442,9 @@ function summaryComponent() {
   if (!checks.isComplete(currentPage())) {
     return el("p", { className: "summary" }, "Place a block in each slot, then run.");
   }
-  const state = checks.blockById(currentPage(), "state", selection.state);
-  const model = selection.model === "preexisting" ? checks.chosenFactory(currentPage()) : null;
+  const initial = checks.blockById(currentPage(), "state", state.selection.state);
+  const model =
+    state.selection.model === "preexisting" ? checks.chosenFactory(currentPage()) : null;
   const actions = thenSummary();
   const qubits = checks.qubitPhrase(currentPage());
   const total = checks.formatSetting(currentPage(), "total");
@@ -1431,7 +1455,7 @@ function summaryComponent() {
     "p",
     { className: "summary" },
     "Start from ",
-    el("strong", {}, state.title),
+    el("strong", {}, initial.title),
     ", evolve the ",
     ...modelPhrase,
     " with ",
@@ -1449,8 +1473,8 @@ function summaryComponent() {
 }
 
 function downloadBoard() {
-  if (running || !accepted()) return;
-  const blob = new Blob([acceptedBody], { type: "application/json" });
+  if (state.running || !accepted()) return;
+  const blob = new Blob([state.acceptedBody], { type: "application/json" });
   const url = URL.createObjectURL(blob);
   const link = el("a", { href: url, download: "shadowsim-board.json" });
   document.body.append(link);
@@ -1460,7 +1484,7 @@ function downloadBoard() {
 }
 
 async function importBoardFile(file) {
-  if (running || !file || typeof file.text !== "function") return;
+  if (state.running || !file || typeof file.text !== "function") return;
   let raw = "";
   try {
     raw = await file.text();
@@ -1494,7 +1518,7 @@ function importBoardButton() {
       {
         className: "board-file import-board",
         type: "button",
-        disabled: running,
+        disabled: state.running,
         onclick: () => file.click(),
       },
       "Import board",
@@ -1511,7 +1535,7 @@ function settingsComponent() {
       el("input", {
         type: "text",
         inputmode: inputMode,
-        value: settings[key],
+        value: state.settings[key],
         "aria-label": label,
         readonly:
           key === "qubits" &&
@@ -1522,15 +1546,13 @@ function settingsComponent() {
             (checks.stateOwnsQubits(currentPage()) || checks.factorySetsQubits(currentPage()))
           )
             return;
-          settings[key] = event.target.value.trim();
-          if (key === "qubits") {
-            qubitsSource = settings.qubits === "" ? null : "user";
-            syncMeasureChip();
-            syncHamiltonianQubits();
-            refreshHamiltonianChips();
-            refreshLocalHamiltonianChips();
-          }
-          refreshSummaryAndPreview();
+          update(() => {
+            state.settings[key] = event.target.value.trim();
+            if (key !== "qubits") return;
+            state.qubitsSource = state.settings.qubits === "" ? null : "user";
+            if (checks.qubitCount(currentPage()) == null) state.measureOpen = false;
+            deriveHamiltonianQubits();
+          });
         },
       }),
     );
@@ -1552,7 +1574,7 @@ function settingsComponent() {
         {
           className: "board-file export-board",
           type: "button",
-          disabled: running || !accepted(),
+          disabled: state.running || !accepted(),
           onclick: () => downloadBoard(),
         },
         "Export board",
@@ -1563,7 +1585,7 @@ function settingsComponent() {
         {
           className: "clear",
           type: "button",
-          disabled: running,
+          disabled: state.running,
           onclick: () => emptyBoard(),
         },
         "Clear",
@@ -1573,17 +1595,17 @@ function settingsComponent() {
         {
           className: "run",
           type: "button",
-          disabled: !running && !runAllowed(),
-          onclick: () => void (running ? cancelRun() : startRun()),
+          disabled: !state.running && !runAllowed(),
+          onclick: () => void (state.running ? cancelRun() : startRun()),
         },
-        running ? "Cancel" : "Run simulation",
+        state.running ? "Cancel" : "Run simulation",
       ),
     ),
   );
 }
 
 function releaseStatusHold() {
-  statusHold = null;
+  state.statusHold = null;
 }
 
 function documentBody() {
@@ -1591,61 +1613,61 @@ function documentBody() {
 }
 
 function cancelScheduledCheck() {
-  if (checkTimer != null) clearTimeout(checkTimer);
-  checkTimer = null;
+  if (state.checkTimer != null) clearTimeout(state.checkTimer);
+  state.checkTimer = null;
 }
 
 function dropAcceptance() {
-  acceptedBody = null;
-  acceptedQubits = null;
-  rejectedBody = null;
-  checkError = null;
-  checkInFlight = false;
-  pendingBody = null;
+  state.acceptedBody = null;
+  state.acceptedQubits = null;
+  state.rejectedBody = null;
+  state.checkError = null;
+  state.checkInFlight = false;
+  state.pendingBody = null;
 }
 
 function scheduleCheck() {
   if (!checks.runAllowed(currentPage())) {
     cancelScheduledCheck();
-    checkSerial += 1;
+    state.checkSerial += 1;
     dropAcceptance();
     return;
   }
   const requested = documentBody();
-  if (acceptedBody === requested && checkError == null) {
+  if (state.acceptedBody === requested && state.checkError == null) {
     cancelScheduledCheck();
-    pendingBody = null;
+    state.pendingBody = null;
     return;
   }
-  if (checkError != null && rejectedBody === requested) {
+  if (state.checkError != null && state.rejectedBody === requested) {
     cancelScheduledCheck();
-    pendingBody = null;
+    state.pendingBody = null;
     return;
   }
-  if (pendingBody === requested) return;
+  if (state.pendingBody === requested) return;
   cancelScheduledCheck();
-  checkSerial += 1;
-  const serial = checkSerial;
-  pendingBody = requested;
-  acceptedBody = null;
-  acceptedQubits = null;
-  rejectedBody = null;
-  checkError = null;
-  checkInFlight = false;
+  state.checkSerial += 1;
+  const serial = state.checkSerial;
+  state.pendingBody = requested;
+  state.acceptedBody = null;
+  state.acceptedQubits = null;
+  state.rejectedBody = null;
+  state.checkError = null;
+  state.checkInFlight = false;
   if (typeof fetch !== "function" || typeof setTimeout !== "function") {
-    pendingBody = null;
+    state.pendingBody = null;
     return;
   }
-  checkTimer = setTimeout(() => {
-    checkTimer = null;
+  state.checkTimer = setTimeout(() => {
+    state.checkTimer = null;
     void postCheck(requested, serial);
   }, CHECK_DELAY);
 }
 
 function applyAcceptedQubits() {
-  if (!checks.factorySetsQubits(currentPage()) || acceptedQubits == null) return;
-  settings.qubits = String(acceptedQubits);
-  qubitsSource = "model";
+  if (!checks.factorySetsQubits(currentPage()) || state.acceptedQubits == null) return;
+  state.settings.qubits = String(state.acceptedQubits);
+  state.qubitsSource = "model";
 }
 
 async function requestCheck(body) {
@@ -1671,43 +1693,53 @@ async function requestCheck(body) {
 }
 
 async function postCheck(requested, serial) {
-  if (serial !== checkSerial || requested !== documentBody()) return;
-  checkInFlight = true;
-  showCheckStatus();
+  if (serial !== state.checkSerial || requested !== documentBody()) return;
+  let refreshMeasure = false;
+  update(
+    () => {
+      state.checkInFlight = true;
+    },
+    { checking: true },
+  );
   try {
     const result = await requestCheck(requested);
-    if (serial !== checkSerial || requested !== documentBody()) return;
+    if (serial !== state.checkSerial || requested !== documentBody()) return;
     if (!result.ok) {
-      checkError = result.error;
-      rejectedBody = requested;
-      acceptedBody = null;
-      acceptedQubits = null;
+      state.checkError = result.error;
+      state.rejectedBody = requested;
+      state.acceptedBody = null;
+      state.acceptedQubits = null;
       return;
     }
-    acceptedQubits = result.qubits;
+    state.acceptedQubits = result.qubits;
     applyAcceptedQubits();
-    if (selection.model === "preexisting") {
-      modelMeasurements = result.measurements ?? [];
-      refreshModelMeasureBlock();
+    if (state.selection.model === "preexisting") {
+      state.modelMeasurements = result.measurements ?? [];
+      installFactoryMeasure();
+      refreshMeasure = true;
     }
     if (documentBody() !== requested) {
-      acceptedQubits = null;
+      state.acceptedQubits = null;
       return;
     }
-    checkError = null;
-    rejectedBody = null;
-    acceptedBody = requested;
+    state.checkError = null;
+    state.rejectedBody = null;
+    state.acceptedBody = requested;
   } catch {
-    if (serial !== checkSerial || requested !== documentBody()) return;
-    checkError = "The selection could not be checked.";
-    rejectedBody = requested;
-    acceptedBody = null;
-    acceptedQubits = null;
+    if (serial !== state.checkSerial || requested !== documentBody()) return;
+    state.checkError = "The selection could not be checked.";
+    state.rejectedBody = requested;
+    state.acceptedBody = null;
+    state.acceptedQubits = null;
   } finally {
-    if (serial === checkSerial) {
-      checkInFlight = false;
-      pendingBody = null;
-      refreshSummaryAndPreview();
+    if (serial === state.checkSerial) {
+      update(
+        () => {
+          state.checkInFlight = false;
+          state.pendingBody = null;
+        },
+        refreshMeasure ? { lanes: ["measure"], palettes: ["measure"] } : {},
+      );
     }
   }
 }
@@ -1715,61 +1747,195 @@ async function postCheck(requested, serial) {
 // biome-ignore lint/correctness/noUnusedVariables: the page tests call this
 function applyCheck(qubits) {
   if (!checks.runAllowed(currentPage())) return false;
-  cancelScheduledCheck();
-  checkSerial += 1;
-  checkError = null;
-  rejectedBody = null;
-  checkInFlight = false;
-  pendingBody = null;
-  acceptedQubits = qubits == null ? null : Number(qubits);
-  applyAcceptedQubits();
-  acceptedBody = documentBody();
-  refreshSummaryAndPreview();
+  update(() => {
+    cancelScheduledCheck();
+    state.checkSerial += 1;
+    state.checkError = null;
+    state.rejectedBody = null;
+    state.checkInFlight = false;
+    state.pendingBody = null;
+    state.acceptedQubits = qubits == null ? null : Number(qubits);
+    applyAcceptedQubits();
+    state.acceptedBody = documentBody();
+  });
   return true;
 }
 
-function showCheckStatus() {
-  if (running) return;
-  const status = document.querySelector(".status");
-  if (status) status.replaceWith(statusComponent());
-  const panel = document.querySelector('.panel[aria-label="Code preview"]');
-  const body = panel?.querySelector("pre.script, p.placeholder");
-  if (body) body.replaceWith(codeBody());
-  syncBoardJson(panel);
-  syncCopyButton();
-  syncRunButton();
+function update(mutate, scope = {}) {
+  if (typeof mutate === "function") mutate(state);
+  if (scope.deriveState) deriveStateQubits();
+  render(scope);
 }
 
-function refreshSummaryAndPreview() {
+function render(scope = {}) {
+  if (scope.board) {
+    const board = scope.root ?? document.querySelector(".board");
+    if (board) draw(board);
+    return;
+  }
+  for (const laneId of scope.lanes ?? []) renderLane(laneId);
+  for (const laneId of scope.palettes ?? []) renderPalette(laneId);
+  if (scope.chrome === false) return;
+  renderChrome(scope);
+}
+
+function renderLane(laneId) {
+  const current = document.querySelector(`.slot[data-slot="${laneId}"]`);
+  const lane = laneById(laneId);
+  if (current && lane) current.replaceWith(slotComponent(lane));
+}
+
+function renderPalette(laneId) {
+  const current = document.querySelector(`.lane[data-palette="${laneId}"]`);
+  const lane = laneById(laneId);
+  if (!current || !lane) return;
+  current.replaceWith(paletteComponent(lane, (blockId) => place(lane.id, blockId)));
+}
+
+function renderChrome(scope) {
+  if (scope.statusOnly) {
+    const status = document.querySelector(".status");
+    if (status) status.replaceWith(statusComponent());
+    return;
+  }
+  if (scope.checking) {
+    paintChecking();
+    return;
+  }
   scheduleCheck();
-  syncModelQubits();
-  syncFactoryDetail();
-  syncModelAlert();
+  deriveModelQubits();
+  paintDerived();
   const summary = document.querySelector(".summary");
   if (summary) summary.replaceWith(summaryComponent());
-  if (!running) {
+  if (!state.running) {
     releaseStatusHold();
     const status = document.querySelector(".status");
     if (status) status.replaceWith(statusComponent());
   }
+  paintPreview();
+  paintButtons();
+  rememberBoard();
+  if (scope.clearResults) clearResults();
+  else clearStaleResults();
+}
+
+function paintChecking() {
+  if (state.running) return;
+  const status = document.querySelector(".status");
+  if (status) status.replaceWith(statusComponent());
+  paintPreview();
+  paintButtons();
+}
+
+function paintPreview() {
   const panel = document.querySelector('.panel[aria-label="Code preview"]');
   const body = panel?.querySelector("pre.script, p.placeholder");
   if (body) body.replaceWith(codeBody());
-  syncBoardJson(panel);
-  syncCopyButton();
-  syncRunButton();
-  rememberBoard();
-  clearStaleResults();
+  const json = panel?.querySelector("pre.board-json");
+  if (!json) return;
+  const text = boardFileText();
+  json.textContent = text;
+  json.replaceChildren(document.createTextNode(text));
+}
+
+function paintButtons() {
+  setButtonDisabled(document.querySelector(".export-board"), state.running || !accepted());
+  setButtonDisabled(document.querySelector(".import-board"), state.running);
+  const copy = document.querySelector('.panel[aria-label="Code preview"] .copy');
+  if (copy) {
+    const enabled = Boolean(previewText());
+    copy.disabled = !enabled;
+    if (enabled) copy.removeAttribute("disabled");
+    else {
+      copy.setAttribute("disabled", "");
+      copy.textContent = "Copy";
+    }
+  }
+  const run = document.querySelector(".run");
+  if (run && !state.running) run.disabled = !runAllowed();
+}
+
+function paintQubitField() {
+  const qubitsInput = document.querySelector('input[aria-label="Qubits"]');
+  if (!qubitsInput) return;
+  qubitsInput.readOnly =
+    checks.stateOwnsQubits(currentPage()) || checks.factorySetsQubits(currentPage());
+  if (qubitsInput.value !== state.settings.qubits) qubitsInput.value = state.settings.qubits;
+}
+
+function paintPathDetails() {
+  for (const id of state.placedThens) {
+    const block = checks.blockById(currentPage(), "then", id);
+    if (block?.field?.kind !== "path") continue;
+    const chip = document.querySelector(`.chip.path.${id}`);
+    const detail = chip?.querySelector(".path-head span");
+    if (!detail) continue;
+    const shown = pathValue(id).trim();
+    detail.textContent = shown || block.detail;
+  }
+}
+
+function paintBackendDetails() {
+  const rows = document.querySelectorAll(".method-row");
+  state.placedSims.forEach((entry, index) => {
+    const detail = rows[index]?.querySelector(".backend-detail");
+    if (!detail || !entry.backend) return;
+    const block = checks.blockById(currentPage(), "backend", entry.backend);
+    if (block) detail.textContent = backendSummary(block, entry);
+  });
+}
+
+function paintMeasureChip() {
+  const chip = document.querySelector(".chip.measure");
+  if (!chip) return;
+  const count = checks.qubitCount(currentPage());
+  const detail = chip.querySelector(".measure-detail");
+  if (detail) detail.textContent = measureDetail(count);
+  if (count == null) {
+    chip.classList.remove("is-editing");
+    chip.querySelector(".done")?.remove();
+    chip.querySelector(".measure-fields")?.remove();
+    chip.querySelector(".counts-field")?.remove();
+    return;
+  }
+  if (!state.measureOpen) return;
+  const fields = chip.querySelector(".measure-fields");
+  const next = measureFields();
+  if (fields) fields.replaceWith(next);
+  else chip.append(next);
+  if (
+    checks.blockById(currentPage(), "measure", state.selection.measure)?.field?.kind !==
+    "expression"
+  )
+    return;
+  const hint = chip.querySelector(".counts-hint");
+  if (hint) hint.textContent = countsHint();
+  else chip.append(countsField());
+  const input = chip.querySelector(".counts-field input");
+  if (input) input.placeholder = countsPlaceholder();
+}
+
+function paintDerived() {
+  paintFactoryLocks();
+  paintFactoryDetail();
+  paintModelAlert();
+  paintStateChip();
+  paintHamiltonianChips();
+  paintLocalHamiltonianChips();
+  paintBackendDetails();
+  paintPathDetails();
+  paintMeasureChip();
+  paintQubitField();
 }
 
 function stateEntryMessage(preview) {
-  const field = stateField(selection.state);
+  const field = stateField(state.selection.state);
   const ending = preview ? " and total time to preview the script." : " and total time.";
   return `${field?.empty || "Enter an initial state"}${ending}`;
 }
 
 function statusMessage() {
-  if (statusHold) return statusHold;
+  if (state.statusHold) return state.statusHold;
   if (!checks.isComplete(currentPage()))
     return (
       checks.operatorStatus(currentPage(), false) ??
@@ -1794,42 +1960,29 @@ function statusMessage() {
   if (!checks.backendFieldsReady(currentPage()))
     return checks.backendFieldStatus(currentPage(), false);
   if (!checks.savePathReady(currentPage())) return pathMessage(false);
-  if (checkError) return `${checkError.replace(/[.!?]$/, "")}.`;
-  if (checkInFlight || !accepted()) return "Checking the selection.";
+  if (state.checkError) return `${state.checkError.replace(/[.!?]$/, "")}.`;
+  if (state.checkInFlight || !accepted()) return "Checking the selection.";
   return "Ready to run.";
 }
 
 function statusComponent() {
-  const ready = !statusHold && runAllowed();
+  const ready = !state.statusHold && runAllowed();
   return el("p", { className: ready ? "status ready" : "status", role: "status" }, statusMessage());
 }
 
-function syncCopyButton() {
-  const copy = document.querySelector('.panel[aria-label="Code preview"] .copy');
-  if (!copy) return;
-  const enabled = Boolean(previewText());
-  copy.disabled = !enabled;
-  if (enabled) {
-    copy.removeAttribute("disabled");
-    return;
-  }
-  copy.setAttribute("disabled", "");
-  copy.textContent = "Copy";
-}
-
 function showCopied(button, label = "Copy") {
-  if (copiedButton && copiedButton !== button && copiedButton.isConnected) {
-    copiedButton.textContent = copiedLabel;
+  if (state.copiedButton && state.copiedButton !== button && state.copiedButton.isConnected) {
+    state.copiedButton.textContent = state.copiedLabel;
   }
-  copiedButton = button;
-  copiedLabel = label;
+  state.copiedButton = button;
+  state.copiedLabel = label;
   button.textContent = "Copied";
-  if (copyTimer) clearTimeout(copyTimer);
-  copyTimer = setTimeout(() => {
-    copyTimer = 0;
+  if (state.copyTimer) clearTimeout(state.copyTimer);
+  state.copyTimer = setTimeout(() => {
+    state.copyTimer = 0;
     if (!button.isConnected) return;
     button.textContent = label;
-    if (copiedButton === button) copiedButton = null;
+    if (state.copiedButton === button) state.copiedButton = null;
   }, 1500);
 }
 
@@ -1861,7 +2014,7 @@ function copyButton() {
 }
 
 function boardFileText() {
-  if (accepted()) return acceptedBody;
+  if (accepted()) return state.acceptedBody;
   const file = runRequest();
   delete file.server;
   return JSON.stringify(file);
@@ -1890,14 +2043,6 @@ function copyBoardButton() {
     },
     "Copy board",
   );
-}
-
-function syncBoardJson(panel) {
-  const node = panel?.querySelector("pre.board-json");
-  if (!node) return;
-  const text = boardFileText();
-  node.textContent = text;
-  node.replaceChildren(document.createTextNode(text));
 }
 
 function codeBody() {
@@ -1932,7 +2077,8 @@ function codeBody() {
     else if (!checks.backendFieldsReady(currentPage()))
       message = checks.backendFieldStatus(currentPage(), true);
     else if (!checks.savePathReady(currentPage())) message = pathMessage(true);
-    else if (checkError) message = `${checkError.replace(/[.!?]$/, "")} to preview the script.`;
+    else if (state.checkError)
+      message = `${state.checkError.replace(/[.!?]$/, "")} to preview the script.`;
     else message = "Checking the selection.";
   }
   return el("p", { className: "placeholder" }, message);
@@ -1957,13 +2103,13 @@ function resultsPlaceholder() {
 }
 
 function clearResults() {
-  shownRun = null;
+  state.shownRun = null;
   setResults(resultsPlaceholder());
 }
 
 function clearStaleResults() {
-  if (shownRun == null) return;
-  if (shownRun === JSON.stringify(runRequest())) return;
+  if (state.shownRun == null) return;
+  if (state.shownRun === JSON.stringify(runRequest())) return;
   clearResults();
 }
 
@@ -2462,18 +2608,18 @@ function runningLabel(elapsedMs) {
 }
 
 function showRunningClock() {
-  if (!running) return;
+  if (!state.running) return;
   const status = document.querySelector(".status");
   if (!status) return;
   status.className = "status";
   status.setAttribute("aria-live", "off");
-  status.textContent = runningLabel(Date.now() - runStartedAt);
+  status.textContent = runningLabel(Date.now() - state.runStartedAt);
 }
 
 function stopRunClock() {
-  if (runTimer == null) return;
-  clearInterval(runTimer);
-  runTimer = null;
+  if (state.runTimer == null) return;
+  clearInterval(state.runTimer);
+  state.runTimer = null;
 }
 
 function setButtonDisabled(button, disabled) {
@@ -2486,18 +2632,6 @@ function setButtonDisabled(button, disabled) {
   button.removeAttribute("disabled");
 }
 
-function syncBoardFileButtons() {
-  setButtonDisabled(document.querySelector(".export-board"), running || !accepted());
-  setButtonDisabled(document.querySelector(".import-board"), running);
-}
-
-function syncRunButton() {
-  syncBoardFileButtons();
-  const button = document.querySelector(".run");
-  if (!button || running) return;
-  button.disabled = !runAllowed();
-}
-
 function setRunButton(label) {
   const button = document.querySelector(".run");
   if (!button) return;
@@ -2505,11 +2639,11 @@ function setRunButton(label) {
   button.disabled = label !== "Cancel" && !runAllowed();
   const clear = document.querySelector(".clear");
   if (clear) clear.disabled = label === "Cancel";
-  syncBoardFileButtons();
+  paintButtons();
 }
 
 async function cancelRun() {
-  if (!running) return;
+  if (!state.running) return;
   try {
     await fetch("/runs/cancel", { method: "POST" });
   } catch {
@@ -2524,7 +2658,7 @@ function stateValue() {
 }
 
 function modelMeasureBlock() {
-  const labels = modelMeasurements
+  const labels = state.modelMeasurements
     .map((item) => item.label)
     .filter((label) => typeof label === "string" && label);
   const detail = labels.length ? labels.join("; ") : "The model's measurements";
@@ -2538,33 +2672,26 @@ function modelMeasureBlock() {
 }
 
 function rememberCatalogMeasures() {
-  if (BLOCKS.measure.some((block) => block.kind === "model")) return;
-  catalogMeasures = BLOCKS.measure.slice();
+  if (state.blocks.measure.some((block) => block.kind === "model")) return;
+  state.catalogMeasures = state.blocks.measure.slice();
 }
 
 function installFactoryMeasure() {
   rememberCatalogMeasures();
-  BLOCKS.measure = [modelMeasureBlock()];
+  state.blocks.measure = [modelMeasureBlock()];
 }
 
 function installCatalogMeasure() {
-  if (catalogMeasures.length) BLOCKS.measure = catalogMeasures.slice();
-  modelMeasurements = [];
+  if (state.catalogMeasures.length) state.blocks.measure = state.catalogMeasures.slice();
+  state.modelMeasurements = [];
 }
 
 function useFactoryMeasure() {
-  modelMeasurements = [];
+  state.modelMeasurements = [];
   installFactoryMeasure();
-  selection.measure = "model";
-  measureOpen = false;
-  measureSites = null;
-}
-
-function refreshModelMeasureBlock() {
-  if (selection.model !== "preexisting") return;
-  installFactoryMeasure();
-  repaintSlot("measure");
-  repaintPalette("measure");
+  state.selection.measure = "model";
+  state.measureOpen = false;
+  state.measureSites = null;
 }
 
 function readModelMeasurements(payload) {
@@ -2586,17 +2713,17 @@ function postedBoard(saved) {
 }
 
 function postedMeasure() {
-  if (selection.measure === "model") return { id: "model" };
-  const measure = { id: selection.measure, sites: explicitSites() };
-  const field = checks.blockById(currentPage(), "measure", selection.measure)?.field;
+  if (state.selection.measure === "model") return { id: "model" };
+  const measure = { id: state.selection.measure, sites: explicitSites() };
+  const field = checks.blockById(currentPage(), "measure", state.selection.measure)?.field;
   if (field?.kind === "expression")
-    measure.expression = (expressionText[selection.measure] ?? "").trim();
+    measure.expression = (state.expressionText[state.selection.measure] ?? "").trim();
   return measure;
 }
 
 function postedActions() {
-  const actions = { ids: [...placedThens] };
-  for (const block of BLOCKS.then) {
+  const actions = { ids: [...state.placedThens] };
+  for (const block of state.blocks.then) {
     if (block.field?.kind !== "path") continue;
     actions[block.field.key] = pathValue(block.id).trim();
   }
@@ -2604,17 +2731,17 @@ function postedActions() {
 }
 
 function modelArguments() {
-  if (selection.model !== "preexisting") return {};
+  if (state.selection.model !== "preexisting") return {};
   const body = { ...(postedFactory() ?? {}) };
-  if (checks.chosenFactory(currentPage())?.qubits) body.n_qubits = settings.qubits;
+  if (checks.chosenFactory(currentPage())?.qubits) body.n_qubits = state.settings.qubits;
   return body;
 }
 
 function postedModel() {
   const terms = checks.postedTerms(currentPage());
-  if (Array.isArray(terms) && terms.length) return { terms, qubits: settings.qubits };
+  if (Array.isArray(terms) && terms.length) return { terms, qubits: state.settings.qubits };
   return {
-    id: selection.model === "preexisting" ? preexistingId : selection.model,
+    id: state.selection.model === "preexisting" ? state.preexistingId : state.selection.model,
     arguments: modelArguments(),
   };
 }
@@ -2622,10 +2749,10 @@ function postedModel() {
 function runRequest() {
   return {
     version: 1,
-    total: settings.total,
-    state: { id: selection.state, value: stateValue() },
+    total: state.settings.total,
+    state: { id: state.selection.state, value: stateValue() },
     model: postedModel(),
-    simulators: placedSims.map((entry) => checks.entryBody(currentPage(), entry)),
+    simulators: state.placedSims.map((entry) => checks.entryBody(currentPage(), entry)),
     measure: postedMeasure(),
     actions: postedActions(),
   };
@@ -2636,21 +2763,21 @@ function showRunResult(requested, node) {
     clearResults();
     return false;
   }
-  shownRun = requested;
+  state.shownRun = requested;
   setResults(node);
   return true;
 }
 
 async function startRun() {
-  if (running || !runAllowed()) return;
-  running = true;
+  if (state.running || !runAllowed()) return;
+  state.running = true;
   releaseStatusHold();
-  runStartedAt = Date.now();
+  state.runStartedAt = Date.now();
   setRunButton("Cancel");
   showRunningClock();
-  runTimer = setInterval(showRunningClock, 1000);
+  state.runTimer = setInterval(showRunningClock, 1000);
   const requested = JSON.stringify(runRequest());
-  shownRun = requested;
+  state.shownRun = requested;
   setResults(el("p", { className: "placeholder" }, "Running."));
   try {
     const response = await fetch("/runs", {
@@ -2661,27 +2788,27 @@ async function startRun() {
     const payload = await response.json();
     if (payload.cancelled) {
       if (showRunResult(requested, el("p", { className: "placeholder" }, "Cancelled."))) {
-        statusHold = "Cancelled.";
+        state.statusHold = "Cancelled.";
       }
       return;
     }
     if (!response.ok) {
       const message = payload.error || "The run failed.";
       if (showRunResult(requested, el("p", { className: "placeholder" }, message)))
-        statusHold = message;
+        state.statusHold = message;
       return;
     }
     releaseStatusHold();
     showRunResult(requested, resultsComponent(payload));
   } catch {
     if (showRunResult(requested, el("p", { className: "placeholder" }, "The run failed."))) {
-      statusHold = "The run failed.";
+      state.statusHold = "The run failed.";
     }
   } finally {
     stopRunClock();
-    running = false;
+    state.running = false;
     setRunButton("Run simulation");
-    if (statusHold) setStatus(statusHold);
+    if (state.statusHold) setStatus(state.statusHold);
     else setStatus(statusMessage(), runAllowed());
   }
 }
@@ -2727,7 +2854,7 @@ function layoutComponent() {
 }
 
 function draw(board) {
-  shownRun = null;
+  state.shownRun = null;
   board.replaceChildren(
     layoutComponent(),
     settingsComponent(),
@@ -2741,7 +2868,7 @@ function draw(board) {
 
 function termSummary() {
   const nodes = [];
-  modelTerms.forEach((term, index) => {
+  state.modelTerms.forEach((term, index) => {
     const block = checks.blockById(currentPage(), "model", term.id);
     if (!block) return;
     nodes.push(index === 0 ? ", plus " : ", ");
@@ -2751,7 +2878,7 @@ function termSummary() {
 }
 
 function measureDetail(count) {
-  const block = checks.blockById(currentPage(), "measure", selection.measure);
+  const block = checks.blockById(currentPage(), "measure", state.selection.measure);
   if (block?.kind === "model") return block.detail ?? "";
   if (count == null) return block?.detail ?? "";
   const sites = checks.selectedSites(currentPage(), count);
@@ -2761,7 +2888,7 @@ function measureDetail(count) {
 }
 
 function measurePhrase() {
-  const block = checks.blockById(currentPage(), "measure", selection.measure);
+  const block = checks.blockById(currentPage(), "measure", state.selection.measure);
   if (!block) return "";
   if (block.kind === "model") return block.phrase ?? "";
   const count = checks.qubitCount(currentPage());
@@ -2773,7 +2900,7 @@ function measurePhrase() {
 
 function explicitSites() {
   const count = checks.qubitCount(currentPage());
-  if (measureSites == null || count == null) return null;
+  if (state.measureSites == null || count == null) return null;
   const sites = checks.selectedSites(currentPage(), count);
   return sites.length === count ? null : sites;
 }
@@ -2784,7 +2911,7 @@ function toggleMeasureSite(site, checked) {
   const next = checks.selectedSites(currentPage(), count).filter((index) => index !== site);
   if (checked) next.push(site);
   next.sort((left, right) => left - right);
-  measureSites = next.length === count ? null : next;
+  state.measureSites = next.length === count ? null : next;
 }
 
 function measureFields() {
@@ -2801,15 +2928,9 @@ function measureFields() {
           "aria-label": `Qubit ${site}`,
           checked: chosen.has(site),
           onchange: (event) => {
-            toggleMeasureSite(site, event.target.checked);
-            const chip = event.target.closest(".chip");
-            const detail = chip?.querySelector(".measure-detail");
-            if (detail) detail.textContent = measureDetail(checks.qubitCount(currentPage()));
-            const hint = chip?.querySelector(".counts-hint");
-            if (hint) hint.textContent = countsHint();
-            const input = chip?.querySelector(".counts-field input");
-            if (input) input.placeholder = countsPlaceholder();
-            refreshSummaryAndPreview();
+            update(() => {
+              toggleMeasureSite(site, event.target.checked);
+            });
           },
         }),
         String(site),
@@ -2842,42 +2963,17 @@ function countsField() {
     el("input", {
       type: "text",
       "aria-label": "Counts expression",
-      value: expressionText[selection.measure] ?? "",
+      value: state.expressionText[state.selection.measure] ?? "",
       placeholder: countsPlaceholder(),
       spellcheck: "false",
       oninput: (event) => {
-        expressionText[selection.measure] = event.target.value;
-        refreshSummaryAndPreview();
+        update(() => {
+          state.expressionText[state.selection.measure] = event.target.value;
+        });
       },
     }),
     el("span", { className: "counts-hint" }, countsHint()),
   );
-}
-
-function syncMeasureChip() {
-  const chip = document.querySelector(".chip.measure");
-  if (!chip) return;
-  const count = checks.qubitCount(currentPage());
-  const detail = chip.querySelector(".measure-detail");
-  if (detail) detail.textContent = measureDetail(count);
-  if (count == null) {
-    measureOpen = false;
-    chip.classList.remove("is-editing");
-    chip.querySelector(".done")?.remove();
-    chip.querySelector(".measure-fields")?.remove();
-    chip.querySelector(".counts-field")?.remove();
-    return;
-  }
-  if (!measureOpen) return;
-  const fields = chip.querySelector(".measure-fields");
-  const next = measureFields();
-  if (fields) fields.replaceWith(next);
-  else chip.append(next);
-  if (checks.blockById(currentPage(), "measure", selection.measure)?.field?.kind !== "expression")
-    return;
-  const hint = chip.querySelector(".counts-hint");
-  if (hint) hint.textContent = countsHint();
-  else chip.append(countsField());
 }
 
 function measureChip(block) {
@@ -2911,7 +3007,7 @@ function measureChip(block) {
     );
   }
   const count = checks.qubitCount(currentPage());
-  const open = measureOpen && count != null;
+  const open = state.measureOpen && count != null;
   return el(
     "div",
     { className: `chip tone-green measure${open ? " is-editing" : ""}` },
@@ -2922,10 +3018,14 @@ function measureChip(block) {
         "button",
         {
           type: "button",
-          onclick: (event) => {
+          onclick: () => {
             if (open || checks.qubitCount(currentPage()) == null) return;
-            measureOpen = true;
-            replaceChip(event.currentTarget, measureChip(block));
+            update(
+              () => {
+                state.measureOpen = true;
+              },
+              { lanes: ["measure"], chrome: false },
+            );
           },
         },
         el("strong", {}, block.title),
@@ -2940,9 +3040,13 @@ function measureChip(block) {
               {
                 className: "done",
                 type: "button",
-                onclick: (event) => {
-                  measureOpen = false;
-                  replaceChip(event.currentTarget, measureChip(block));
+                onclick: () => {
+                  update(
+                    () => {
+                      state.measureOpen = false;
+                    },
+                    { lanes: ["measure"], chrome: false },
+                  );
                 },
               },
               "Done",
@@ -2980,7 +3084,7 @@ function pathMessage(preview) {
 }
 
 function thenSummary() {
-  const phrases = placedThens
+  const phrases = state.placedThens
     .map((id) => checks.blockById(currentPage(), "then", id)?.phrase)
     .filter(Boolean);
   const nodes = [];
@@ -3000,7 +3104,7 @@ function methodPhrase(entry) {
 }
 
 function simulatorSummary() {
-  const titles = placedSims.map(methodPhrase).filter(Boolean);
+  const titles = state.placedSims.map(methodPhrase).filter(Boolean);
   if (!titles.length) return [];
   if (titles.length === 1) return [el("strong", {}, titles[0])];
   const nodes = [el("strong", {}, titles[0]), ", benchmarked against "];
@@ -3015,101 +3119,85 @@ function laneById(laneId) {
   return LANES.find((lane) => lane.id === laneId);
 }
 
-function repaintSlot(laneId) {
-  const current = document.querySelector(`.slot[data-slot="${laneId}"]`);
-  const lane = laneById(laneId);
-  if (current && lane) current.replaceWith(slotComponent(lane));
-}
-
-function repaintPalette(laneId) {
-  const current = document.querySelector(`.lane[data-palette="${laneId}"]`);
-  const lane = laneById(laneId);
-  if (!current || !lane) return;
-  current.replaceWith(paletteComponent(lane, (blockId) => place(lane.id, blockId)));
-}
-
-function commitLane(laneId, palette) {
-  repaintSlot(laneId);
-  if (palette) repaintPalette(laneId);
-  refreshHamiltonianChips();
-  refreshLocalHamiltonianChips();
-  refreshSummaryAndPreview();
-  clearResults();
-}
-
 function place(laneId, blockId) {
-  if (running) return;
+  if (state.running) return;
   const block = checks.blockById(currentPage(), laneId, blockId);
   if (laneId === "model" && modelChoiceBlocked(block)) return;
   if (laneId === "simulator") {
-    placedSims.push({
+    state.placedSims.push({
       id: blockId,
-      key: ++simKey,
+      key: ++state.simKey,
       params: freshParams(block),
       open: true,
       backend: null,
       shots: DEFAULT_SHOTS,
       shotsOpen: false,
     });
-    selection.simulator = placedSims[0].id;
+    state.selection.simulator = state.placedSims[0].id;
   } else if (laneId === "model" && block?.adds) {
-    modelTerms.push({ id: blockId, key: ++modelTermKey, matrix: "", sites: [] });
+    state.modelTerms.push({ id: blockId, key: ++state.modelTermKey, matrix: "", sites: [] });
   } else if (laneId === "model" && blockId === "preexisting") {
-    selection.model = "preexisting";
-    if (!preexistingId) preexistingId = modelFactories[0]?.id ?? null;
-    preexistingOpen = true;
+    state.selection.model = "preexisting";
+    if (!state.preexistingId) state.preexistingId = state.modelFactories[0]?.id ?? null;
+    state.preexistingOpen = true;
     useFactoryMeasure();
   } else if (laneId === "state") {
-    selection.state = blockId;
-    stateOpen = true;
+    state.selection.state = blockId;
+    state.stateOpen = true;
   } else if (laneId === "measure") {
-    selection.measure = blockId;
-    measureOpen = block?.kind !== "model" && checks.qubitCount(currentPage()) != null;
-    if (block?.kind === "model") measureSites = null;
+    state.selection.measure = blockId;
+    state.measureOpen = block?.kind !== "model" && checks.qubitCount(currentPage()) != null;
+    if (block?.kind === "model") state.measureSites = null;
   } else if (laneId === "then") {
-    if (!placedThens.includes(blockId)) placedThens.push(blockId);
-    selection.then = placedThens[0] ?? null;
-    if (block?.field?.kind === "path") pathOpen[blockId] = true;
-  } else selection[laneId] = blockId;
-  syncModelQubits();
-  syncStateQubits();
-  dragging = null;
+    if (!state.placedThens.includes(blockId)) state.placedThens.push(blockId);
+    state.selection.then = state.placedThens[0] ?? null;
+    if (block?.field?.kind === "path") state.pathOpen[blockId] = true;
+  } else state.selection[laneId] = blockId;
+  deriveModelQubits();
+  deriveStateQubits();
+  state.dragging = null;
   releaseStatusHold();
-  commitLane(laneId, laneId === "model");
+  const lanes = [laneId];
+  const palettes = laneId === "model" ? ["model"] : [];
   if (laneId === "model" && blockId === "preexisting") {
-    repaintSlot("measure");
-    repaintPalette("measure");
+    lanes.push("measure");
+    palettes.push("measure");
   }
+  update(null, { lanes, palettes, clearResults: true });
 }
 
 function removeThen(id) {
-  if (running) return;
-  const index = placedThens.indexOf(id);
-  if (index >= 0) placedThens.splice(index, 1);
-  selection.then = placedThens[0] ?? null;
-  releaseStatusHold();
-  commitLane("then");
+  if (state.running) return;
+  update(
+    () => {
+      const index = state.placedThens.indexOf(id);
+      if (index >= 0) state.placedThens.splice(index, 1);
+      state.selection.then = state.placedThens[0] ?? null;
+      releaseStatusHold();
+    },
+    { lanes: ["then"], clearResults: true },
+  );
 }
 
 function attachBackend(backendId, key) {
-  if (running) return;
+  if (state.running) return;
   const backend = checks.blockById(currentPage(), "backend", backendId);
   if (!backend) return;
   const target =
     key == null
-      ? placedSims.find(
+      ? state.placedSims.find(
           (entry) =>
             !checks.isReference(currentPage(), entry) &&
             !entry.backend &&
             checks.backendFits(currentPage(), entry, backendId),
         )
-      : placedSims.find((entry) => entry.key === key);
+      : state.placedSims.find((entry) => entry.key === key);
   if (
     !target ||
     checks.isReference(currentPage(), target) ||
     !checks.backendFits(currentPage(), target, backendId)
   ) {
-    const open = placedSims.filter(
+    const open = state.placedSims.filter(
       (entry) =>
         !checks.isReference(currentPage(), entry) &&
         (key == null ? !entry.backend : entry.key === key),
@@ -3118,15 +3206,15 @@ function attachBackend(backendId, key) {
       (entry) => checks.blockById(currentPage(), "simulator", entry.id)?.samples && !backend.shots,
     );
     const title = blocked ? checks.blockById(currentPage(), "simulator", blocked.id)?.title : null;
-    if (title) statusHold = `${title} needs a backend with a shot budget.`;
-    else if (!placedSims.some((entry) => !checks.isReference(currentPage(), entry)))
-      statusHold = "Place a simulator before its backend.";
-    else statusHold = "Snap a backend onto an open simulator.";
-    dragging = null;
+    if (title) state.statusHold = `${title} needs a backend with a shot budget.`;
+    else if (!state.placedSims.some((entry) => !checks.isReference(currentPage(), entry)))
+      state.statusHold = "Place a simulator before its backend.";
+    else state.statusHold = "Snap a backend onto an open simulator.";
+    state.dragging = null;
     document.querySelectorAll(".is-over").forEach((node) => {
       node.classList.remove("is-over");
     });
-    setStatus(statusHold);
+    setStatus(state.statusHold);
     return;
   }
   target.backend = backendId;
@@ -3149,82 +3237,105 @@ function attachBackend(backendId, key) {
     target.shotsOpen = false;
     target.backendOpen = false;
   }
-  dragging = null;
-  releaseStatusHold();
-  commitLane("simulator");
+  update(
+    () => {
+      state.dragging = null;
+      releaseStatusHold();
+    },
+    { lanes: ["simulator"], clearResults: true },
+  );
 }
 
 function removeBackend(key) {
-  if (running) return;
-  const entry = placedSims.find((item) => item.key === key);
+  if (state.running) return;
+  const entry = state.placedSims.find((item) => item.key === key);
   if (!entry) return;
-  entry.backend = null;
-  entry.shotsOpen = false;
-  entry.backendOpen = false;
-  releaseStatusHold();
-  commitLane("simulator");
+  update(
+    () => {
+      entry.backend = null;
+      entry.shotsOpen = false;
+      entry.backendOpen = false;
+      releaseStatusHold();
+    },
+    { lanes: ["simulator"], clearResults: true },
+  );
 }
 
 function removeSimulator(key) {
-  if (running) return;
-  const index = placedSims.findIndex((entry) => entry.key === key);
-  if (index >= 0) placedSims.splice(index, 1);
-  selection.simulator = placedSims[0]?.id ?? null;
-  releaseStatusHold();
-  commitLane("simulator");
+  if (state.running) return;
+  update(
+    () => {
+      const index = state.placedSims.findIndex((entry) => entry.key === key);
+      if (index >= 0) state.placedSims.splice(index, 1);
+      state.selection.simulator = state.placedSims[0]?.id ?? null;
+      releaseStatusHold();
+    },
+    { lanes: ["simulator"], clearResults: true },
+  );
 }
 
 function removeTerm(key) {
-  if (running) return;
-  const index = modelTerms.findIndex((term) => term.key === key);
-  if (index >= 0) modelTerms.splice(index, 1);
-  if (!modelTerms.some((term) => term.id === "hamiltonian") && qubitsSource === "hamiltonian") {
-    settings.qubits = "";
-    qubitsSource = null;
-    syncMeasureChip();
-    writeQubitField();
-  } else syncHamiltonianQubits();
-  releaseStatusHold();
-  commitLane("model", true);
+  if (state.running) return;
+  update(
+    () => {
+      const index = state.modelTerms.findIndex((term) => term.key === key);
+      if (index >= 0) state.modelTerms.splice(index, 1);
+      if (
+        !state.modelTerms.some((term) => term.id === "hamiltonian") &&
+        state.qubitsSource === "hamiltonian"
+      ) {
+        state.settings.qubits = "";
+        state.qubitsSource = null;
+        if (checks.qubitCount(currentPage()) == null) state.measureOpen = false;
+      } else deriveHamiltonianQubits();
+      releaseStatusHold();
+    },
+    { lanes: ["model"], palettes: ["model"], clearResults: true },
+  );
 }
 
 function clearLane(laneId) {
-  if (running) return;
-  const leavingFactory = laneId === "model" && selection.model === "preexisting";
-  if (laneId === "simulator") placedSims.splice(0, placedSims.length);
-  if (laneId === "then") placedThens.splice(0, placedThens.length);
-  if (laneId === "state") stateOpen = false;
-  if (laneId === "measure") {
-    measureOpen = false;
-    measureSites = null;
-  }
+  if (state.running) return;
+  const leavingFactory = laneId === "model" && state.selection.model === "preexisting";
+  const lanes = [laneId];
+  const palettes = laneId === "model" ? ["model"] : [];
   if (leavingFactory) {
-    installCatalogMeasure();
-    if (selection.measure === "model") {
-      selection.measure = null;
-      measureOpen = false;
-      measureSites = null;
-    }
+    lanes.push("measure");
+    palettes.push("measure");
   }
-  if (laneId === "state" && qubitsSource === "state" && settings.qubits !== "")
-    qubitsSource = "user";
-  if (laneId === "model" && qubitsSource === "hamiltonian") {
-    settings.qubits = "";
-    qubitsSource = null;
-    syncMeasureChip();
-    writeQubitField();
-  }
-  if (laneId === "model" && qubitsSource === "model") {
-    selection.model = null;
-    syncModelQubits();
-  }
-  selection[laneId] = null;
-  releaseStatusHold();
-  commitLane(laneId, laneId === "model");
-  if (leavingFactory) {
-    repaintSlot("measure");
-    repaintPalette("measure");
-  }
+  update(
+    () => {
+      if (laneId === "simulator") state.placedSims.splice(0, state.placedSims.length);
+      if (laneId === "then") state.placedThens.splice(0, state.placedThens.length);
+      if (laneId === "state") state.stateOpen = false;
+      if (laneId === "measure") {
+        state.measureOpen = false;
+        state.measureSites = null;
+      }
+      if (leavingFactory) {
+        installCatalogMeasure();
+        if (state.selection.measure === "model") {
+          state.selection.measure = null;
+          state.measureOpen = false;
+          state.measureSites = null;
+        }
+      }
+      if (laneId === "state" && state.qubitsSource === "state" && state.settings.qubits !== "")
+        state.qubitsSource = "user";
+      if (laneId === "model" && state.qubitsSource === "hamiltonian") {
+        state.settings.qubits = "";
+        state.qubitsSource = null;
+        if (checks.qubitCount(currentPage()) == null) state.measureOpen = false;
+      }
+      if (laneId === "model" && state.qubitsSource === "model") {
+        state.selection.model = null;
+        deriveModelQubits();
+      }
+      state.selection[laneId] = null;
+      releaseStatusHold();
+    },
+    { lanes, palettes, clearResults: true },
+  );
 }
 
 function knownBlock(laneId, blockId) {
@@ -3264,43 +3375,43 @@ function matrixText(matrix) {
 }
 
 function resetBoard() {
-  selection.state = null;
-  selection.model = null;
-  selection.simulator = null;
-  selection.backend = null;
-  selection.measure = null;
-  selection.then = null;
-  settings.qubits = "";
-  settings.total = "";
-  for (const key of Object.keys(stateText)) delete stateText[key];
-  qubitsSource = null;
-  preexistingId = null;
-  factoryText = {};
-  modelTerms.splice(0, modelTerms.length);
-  placedSims.splice(0, placedSims.length);
-  placedThens.splice(0, placedThens.length);
-  for (const key of Object.keys(actionText)) delete actionText[key];
-  for (const key of Object.keys(pathOpen)) delete pathOpen[key];
-  for (const block of BLOCKS.then) {
-    if (block.field?.kind === "path") actionText[block.id] = block.field.default ?? "";
+  state.selection.state = null;
+  state.selection.model = null;
+  state.selection.simulator = null;
+  state.selection.backend = null;
+  state.selection.measure = null;
+  state.selection.then = null;
+  state.settings.qubits = "";
+  state.settings.total = "";
+  for (const key of Object.keys(state.stateText)) delete state.stateText[key];
+  state.qubitsSource = null;
+  state.preexistingId = null;
+  state.factoryText = {};
+  state.modelTerms.splice(0, state.modelTerms.length);
+  state.placedSims.splice(0, state.placedSims.length);
+  state.placedThens.splice(0, state.placedThens.length);
+  for (const key of Object.keys(state.actionText)) delete state.actionText[key];
+  for (const key of Object.keys(state.pathOpen)) delete state.pathOpen[key];
+  for (const block of state.blocks.then) {
+    if (block.field?.kind === "path") state.actionText[block.id] = block.field.default ?? "";
   }
-  measureSites = null;
-  for (const key of Object.keys(expressionText)) delete expressionText[key];
-  stateOpen = false;
-  measureOpen = false;
-  preexistingOpen = false;
-  modelMeasurements = [];
-  if (catalogMeasures.length) BLOCKS.measure = catalogMeasures.slice();
+  state.measureSites = null;
+  for (const key of Object.keys(state.expressionText)) delete state.expressionText[key];
+  state.stateOpen = false;
+  state.measureOpen = false;
+  state.preexistingOpen = false;
+  state.modelMeasurements = [];
+  if (state.catalogMeasures.length) state.blocks.measure = state.catalogMeasures.slice();
 }
 
-function applyState(state) {
-  if (!plainObject(state)) return;
-  const id = knownBlock("state", state.id) ? state.id : null;
-  selection.state = id;
+function applyState(saved) {
+  if (!plainObject(saved)) return;
+  const id = knownBlock("state", saved.id) ? saved.id : null;
+  state.selection.state = id;
   if (!id) return;
   const field = stateField(id);
-  if (field?.kind === "bits" && typeof state.value === "string") stateText[id] = state.value;
-  else if (field?.kind === "numbers") stateText[id] = numberListText(state.value);
+  if (field?.kind === "bits" && typeof saved.value === "string") state.stateText[id] = saved.value;
+  else if (field?.kind === "numbers") state.stateText[id] = numberListText(saved.value);
 }
 
 function applyModel(model) {
@@ -3308,8 +3419,8 @@ function applyModel(model) {
   const terms = Array.isArray(model.terms) ? model.terms : [];
   if (terms.length) {
     installCatalogMeasure();
-    settings.qubits = textNumber(model.qubits);
-    qubitsSource = "user";
+    state.settings.qubits = textNumber(model.qubits);
+    state.qubitsSource = "user";
     const next = [];
     for (const term of terms) {
       if (
@@ -3324,34 +3435,34 @@ function applyModel(model) {
         sites: Array.isArray(term.sites) ? term.sites.filter((site) => Number.isInteger(site)) : [],
       });
     }
-    modelTerms.splice(
+    state.modelTerms.splice(
       0,
-      modelTerms.length,
-      ...next.map((term) => ({ ...term, key: ++modelTermKey })),
+      state.modelTerms.length,
+      ...next.map((term) => ({ ...term, key: ++state.modelTermKey })),
     );
     return;
   }
   const id =
-    typeof model.id === "string" && modelFactories.some((item) => item.id === model.id)
+    typeof model.id === "string" && state.modelFactories.some((item) => item.id === model.id)
       ? model.id
       : null;
   if (!id) return;
-  selection.model = "preexisting";
-  preexistingId = id;
+  state.selection.model = "preexisting";
+  state.preexistingId = id;
   const args = plainObject(model.arguments) ? model.arguments : {};
   if ("n_qubits" in args) {
-    settings.qubits = textNumber(args.n_qubits);
-    qubitsSource = "user";
+    state.settings.qubits = textNumber(args.n_qubits);
+    state.qubitsSource = "user";
   }
   for (const [key, value] of Object.entries(args)) {
     if (key === "n_qubits") continue;
     if (typeof value === "string" || typeof value === "number")
-      factoryText[key] = textNumber(value);
+      state.factoryText[key] = textNumber(value);
   }
   installFactoryMeasure();
-  selection.measure = "model";
-  measureOpen = false;
-  measureSites = null;
+  state.selection.measure = "model";
+  state.measureOpen = false;
+  state.measureSites = null;
 }
 
 function simParams(block, args) {
@@ -3398,26 +3509,30 @@ function applySims(entries) {
     }
     next.push(row);
   }
-  placedSims.splice(0, placedSims.length, ...next.map((entry) => ({ ...entry, key: ++simKey })));
-  selection.simulator = placedSims[0]?.id ?? null;
+  state.placedSims.splice(
+    0,
+    state.placedSims.length,
+    ...next.map((entry) => ({ ...entry, key: ++state.simKey })),
+  );
+  state.selection.simulator = state.placedSims[0]?.id ?? null;
 }
 
 function applyMeasure(measure) {
   if (!plainObject(measure)) return;
-  if (selection.model === "preexisting") {
+  if (state.selection.model === "preexisting") {
     installFactoryMeasure();
-    selection.measure = "model";
-    measureOpen = false;
-    measureSites = null;
+    state.selection.measure = "model";
+    state.measureOpen = false;
+    state.measureSites = null;
     return;
   }
-  selection.measure = knownBlock("measure", measure.id) ? measure.id : null;
-  measureSites = Array.isArray(measure.sites)
+  state.selection.measure = knownBlock("measure", measure.id) ? measure.id : null;
+  state.measureSites = Array.isArray(measure.sites)
     ? measure.sites.filter((site) => Number.isInteger(site))
     : null;
-  const field = checks.blockById(currentPage(), "measure", selection.measure)?.field;
+  const field = checks.blockById(currentPage(), "measure", state.selection.measure)?.field;
   if (field?.kind === "expression" && typeof measure.expression === "string") {
-    expressionText[selection.measure] = measure.expression;
+    state.expressionText[state.selection.measure] = measure.expression;
   }
 }
 
@@ -3427,12 +3542,12 @@ function applyActions(actions) {
   for (const id of Array.isArray(actions.ids) ? actions.ids : []) {
     if (knownBlock("then", id) && !next.includes(id)) next.push(id);
   }
-  placedThens.splice(0, placedThens.length, ...next);
-  selection.then = next[0] ?? null;
-  for (const block of BLOCKS.then) {
+  state.placedThens.splice(0, state.placedThens.length, ...next);
+  state.selection.then = next[0] ?? null;
+  for (const block of state.blocks.then) {
     const field = block.field;
     if (field?.kind === "path" && typeof actions[field.key] === "string")
-      actionText[block.id] = actions[field.key];
+      state.actionText[block.id] = actions[field.key];
   }
 }
 
@@ -3440,7 +3555,7 @@ function applyDocument(saved) {
   if (!plainObject(saved)) return;
   resetBoard();
   if (typeof saved.total === "string" || typeof saved.total === "number")
-    settings.total = textNumber(saved.total);
+    state.settings.total = textNumber(saved.total);
   applyState(saved.state);
   applyModel(saved.model);
   applySims(saved.simulators);
@@ -3490,50 +3605,53 @@ async function restoreBoard() {
       payload = {};
     }
   } catch {
-    statusHold = "The selection could not be checked.";
+    state.statusHold = "The selection could not be checked.";
     return;
   }
   if (!response.ok || !Number.isInteger(payload.qubits) || payload.qubits < 1) {
-    statusHold =
+    state.statusHold =
       typeof payload.error === "string" && payload.error
         ? payload.error
         : "The selection was rejected.";
     return;
   }
   applyDocument(JSON.parse(body));
-  acceptedQubits = payload.qubits;
+  state.acceptedQubits = payload.qubits;
   applyAcceptedQubits();
-  if (selection.model === "preexisting") {
-    modelMeasurements = readModelMeasurements(payload);
+  if (state.selection.model === "preexisting") {
+    state.modelMeasurements = readModelMeasurements(payload);
     installFactoryMeasure();
   }
-  checkError = null;
-  rejectedBody = null;
-  checkInFlight = false;
-  pendingBody = null;
+  state.checkError = null;
+  state.rejectedBody = null;
+  state.checkInFlight = false;
+  state.pendingBody = null;
   if (documentBody() === body) {
-    acceptedBody = body;
+    state.acceptedBody = body;
     releaseStatusHold();
-  } else acceptedBody = null;
+  } else state.acceptedBody = null;
 }
 
 function rememberBoard() {
-  if (!boardReady || !accepted()) return;
+  if (!state.boardReady || !accepted()) return;
   try {
-    localStorage.setItem(BOARD_KEY, acceptedBody);
+    localStorage.setItem(BOARD_KEY, state.acceptedBody);
   } catch {
     // Storage can be unavailable. The page still runs.
   }
 }
 
 function holdImportStatus(message) {
-  statusHold = message;
-  const status = document.querySelector(".status");
-  if (status) status.replaceWith(statusComponent());
+  update(
+    () => {
+      state.statusHold = message;
+    },
+    { statusOnly: true },
+  );
 }
 
 async function importBoardText(raw) {
-  if (running) return;
+  if (state.running) return;
   let saved = null;
   try {
     saved = JSON.parse(raw);
@@ -3550,41 +3668,44 @@ async function importBoardText(raw) {
   try {
     result = await requestCheck(body);
   } catch {
-    if (!running) holdImportStatus("The selection could not be checked.");
+    if (!state.running) holdImportStatus("The selection could not be checked.");
     return;
   }
-  if (running || !result.ok) {
-    if (!running) holdImportStatus(result?.error ? result.error : "The selection was rejected.");
+  if (state.running || !result.ok) {
+    if (!state.running)
+      holdImportStatus(result?.error ? result.error : "The selection was rejected.");
     return;
   }
   cancelScheduledCheck();
-  checkSerial += 1;
+  state.checkSerial += 1;
   applyDocument(JSON.parse(body));
-  acceptedQubits = result.qubits;
+  state.acceptedQubits = result.qubits;
   applyAcceptedQubits();
-  if (selection.model === "preexisting") {
-    modelMeasurements = result.measurements ?? [];
+  if (state.selection.model === "preexisting") {
+    state.modelMeasurements = result.measurements ?? [];
     installFactoryMeasure();
   }
-  checkError = null;
-  rejectedBody = null;
-  checkInFlight = false;
-  pendingBody = null;
+  state.checkError = null;
+  state.rejectedBody = null;
+  state.checkInFlight = false;
+  state.pendingBody = null;
   if (documentBody() === body) {
-    acceptedBody = body;
+    state.acceptedBody = body;
     releaseStatusHold();
-  } else acceptedBody = null;
-  const board = document.querySelector(".board");
-  if (board) draw(board);
+  } else state.acceptedBody = null;
+  update(null, { board: true });
 }
 
 function emptyBoard() {
-  if (running) return;
-  resetBoard();
-  forgetBoard();
-  releaseStatusHold();
-  const board = document.querySelector(".board");
-  if (board) draw(board);
+  if (state.running) return;
+  update(
+    () => {
+      resetBoard();
+      forgetBoard();
+      releaseStatusHold();
+    },
+    { board: true },
+  );
 }
 
 function validLimits(payload) {
@@ -3605,7 +3726,7 @@ function validLimits(payload) {
 
 function applyLimits(payload) {
   if (!validLimits(payload)) return false;
-  limits = payload;
+  state.limits = payload;
   return true;
 }
 
@@ -3641,15 +3762,15 @@ async function loadLane(path, lane, key) {
     }
     const items = payload[key];
     if (!response.ok || !Array.isArray(items)) {
-      laneNotes[lane] = payload.error || `Could not load ${key}.`;
-      BLOCKS[lane] = [];
-      if (lane === "measure") catalogMeasures = [];
-      selection[lane] = null;
+      state.laneNotes[lane] = payload.error || `Could not load ${key}.`;
+      state.blocks[lane] = [];
+      if (lane === "measure") state.catalogMeasures = [];
+      state.selection[lane] = null;
       return;
     }
     if (lane === "model") {
-      modelFactories = items.filter((item) => !item.adds);
-      BLOCKS.model = [
+      state.modelFactories = items.filter((item) => !item.adds);
+      state.blocks.model = [
         {
           id: "preexisting",
           title: "Preexisting model",
@@ -3658,25 +3779,31 @@ async function loadLane(path, lane, key) {
         },
         ...items.filter((item) => item.adds),
       ];
-      if (preexistingId && !modelFactories.some((item) => item.id === preexistingId))
-        preexistingId = null;
-    } else BLOCKS[lane] = items;
-    if (lane === "measure") catalogMeasures = items.slice();
+      if (
+        state.preexistingId &&
+        !state.modelFactories.some((item) => item.id === state.preexistingId)
+      )
+        state.preexistingId = null;
+    } else state.blocks[lane] = items;
+    if (lane === "measure") state.catalogMeasures = items.slice();
     if (lane === "then") {
       for (const item of items) {
-        if (item.field?.kind === "path" && !Object.hasOwn(actionText, item.id)) {
-          actionText[item.id] = item.field.default ?? "";
+        if (item.field?.kind === "path" && !Object.hasOwn(state.actionText, item.id)) {
+          state.actionText[item.id] = item.field.default ?? "";
         }
       }
     }
-    laneNotes[lane] = "";
-    if (selection[lane] != null && !checks.blockById(currentPage(), lane, selection[lane]))
-      selection[lane] = null;
+    state.laneNotes[lane] = "";
+    if (
+      state.selection[lane] != null &&
+      !checks.blockById(currentPage(), lane, state.selection[lane])
+    )
+      state.selection[lane] = null;
   } catch {
-    laneNotes[lane] = `Could not load ${key}.`;
-    BLOCKS[lane] = [];
-    if (lane === "measure") catalogMeasures = [];
-    selection[lane] = null;
+    state.laneNotes[lane] = `Could not load ${key}.`;
+    state.blocks[lane] = [];
+    if (lane === "measure") state.catalogMeasures = [];
+    state.selection[lane] = null;
   }
 }
 
@@ -3696,7 +3823,7 @@ if (builder) {
       return;
     }
     await restoreBoard();
-    boardReady = true;
+    state.boardReady = true;
     mount(builder);
   });
 }

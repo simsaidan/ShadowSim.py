@@ -35,7 +35,7 @@ function cell(board, selector) {
 test("placed blocks keep their grid cells", () => {
   const { window, page } = prepare();
   resetPage(page);
-  page.BLOCKS.model = [
+  page.state.blocks.model = [
     { id: "preexisting", title: "Preexisting model", detail: "Choose a built-in model" },
   ];
   const board = mount(window);
@@ -54,10 +54,10 @@ test("placed blocks keep their grid cells", () => {
 test("factory fields keep edits and fall back to defaults", () => {
   const { window, page } = prepare();
   resetPage(page);
-  page.BLOCKS.model = [
+  page.state.blocks.model = [
     { id: "preexisting", title: "Preexisting model", detail: "Choose a built-in model" },
   ];
-  page.modelFactories = [
+  page.state.modelFactories = [
     {
       id: "ising",
       title: "Ising",
@@ -133,15 +133,15 @@ test("factory fields keep edits and fall back to defaults", () => {
   setChange(control("boundary"), "periodic");
   assert.equal(control("edges").disabled, true);
   const body = page.runRequest();
-  page.factoryText = { J: "9", h: "4" };
+  page.state.factoryText = { J: "9", h: "4" };
   page.applyDocument(body);
-  const hParam = page.modelFactories[0].params.find((param) => param.name === "h");
+  const hParam = page.state.modelFactories[0].params.find((param) => param.name === "h");
   assert.equal(body.model.arguments.J, "2");
   assert.equal(body.model.arguments.edges, "");
   assert.equal(body.model.arguments.boundary, "periodic");
   assert.equal(body.model.arguments.h, "0");
-  assert.equal(page.factoryText.J, "2");
-  assert.equal(page.factoryText.h, "0");
+  assert.equal(page.state.factoryText.J, "2");
+  assert.equal(page.state.factoryText.h, "0");
   assert.equal(page.paramText(hParam), "0");
   assert.deepEqual(plain(page.runRequest().model.arguments), {
     J: "2",
@@ -161,14 +161,14 @@ test("an accepted run is what gets stored", async () => {
   const surface = window.document.createElement("div");
   page.draw(surface);
   const storedEarly = window.localStorage.getItem("shadowsim.builder.board");
-  page.boardReady = true;
+  page.state.boardReady = true;
   page.draw(surface);
   const storedBeforeAccept = window.localStorage.getItem("shadowsim.builder.board");
   const accepted = page.applyCheck();
   const stored = window.localStorage.getItem("shadowsim.builder.board");
   const body = JSON.stringify(page.runRequest());
-  page.settings.total = "4";
-  page.refreshSummaryAndPreview();
+  page.state.settings.total = "4";
+  page.update(() => {});
   const duringEdit = window.localStorage.getItem("shadowsim.builder.board");
   const checks = [];
   window.fetch = async (url, options) => {
@@ -181,7 +181,7 @@ test("an accepted run is what gets stored", async () => {
     return { ok: true, json: async () => ({ qubits: 2 }) };
   };
   resetPage(page);
-  page.boardReady = true;
+  page.state.boardReady = true;
   await page.restoreBoard();
   assert.equal(storedEarly, null);
   assert.equal(storedBeforeAccept, null);
@@ -206,22 +206,22 @@ test("an accepted run is what gets stored", async () => {
     { url: "/runs/check", method: "POST", contentType: "application/json", body: stored },
   ]);
   assert.equal(JSON.stringify(page.runRequest()) === stored, true);
-  assert.equal(page.selection.state, "basis");
-  assert.equal(page.stateText.basis || "", "01");
+  assert.equal(page.state.selection.state, "basis");
+  assert.equal(page.state.stateText.basis || "", "01");
   window.close();
 });
 
 test("a preexisting model measures what the factory records", async () => {
   const { window, page } = prepare();
-  const measures = structuredClone(page.BLOCKS.measure);
+  const measures = structuredClone(page.state.blocks.measure);
   fillIsing(page);
-  page.BLOCKS.model = [
+  page.state.blocks.model = [
     { id: "preexisting", title: "Preexisting model", detail: "Choose a built-in model" },
     { id: "hamiltonian", title: "Hamiltonian", adds: true, symbol: "Operator" },
   ];
-  page.BLOCKS.measure = measures;
-  page.selection.measure = null;
-  page.measureSites = null;
+  page.state.blocks.measure = measures;
+  page.state.selection.measure = null;
+  page.state.measureSites = null;
   const board = mount(window);
   page.draw(board);
   const checks = [];
@@ -240,42 +240,42 @@ test("a preexisting model measures what the factory records", async () => {
   const chip = () => board.querySelector(".chip.measure");
   const detailOf = () => chip().querySelector(".measure-detail").textContent;
   const boxes = () => [...chip().querySelectorAll('input[type="checkbox"]')];
-  assert.deepEqual(plain(page.BLOCKS.measure.map((block) => block.id)), ["model"]);
+  assert.deepEqual(plain(page.state.blocks.measure.map((block) => block.id)), ["model"]);
   assert.deepEqual(plain(page.runRequest().measure), { id: "model" });
   assert.equal(detailOf(), "expectation on 0; expectation on 1");
   assert.equal(boxes().length, 0);
-  assert.equal(page.measureOpen, false);
+  assert.equal(page.state.measureOpen, false);
   assert.deepEqual(checks[0], { id: "model" });
 
-  page.settings.qubits = "3";
-  page.refreshSummaryAndPreview();
+  page.state.settings.qubits = "3";
+  page.update(() => {});
   await settle();
   assert.deepEqual(plain(page.runRequest().measure), { id: "model" });
   assert.equal(detailOf(), "expectation on 0; expectation on 1; expectation on 2");
   assert.equal(checks.length, 2);
 
   page.clearLane("measure");
-  assert.equal(page.selection.measure, null);
-  assert.deepEqual(plain(page.BLOCKS.measure.map((block) => block.id)), ["model"]);
+  assert.equal(page.state.selection.measure, null);
+  assert.deepEqual(plain(page.state.blocks.measure.map((block) => block.id)), ["model"]);
   assert.equal(Boolean(chip()), false);
 
   page.place("measure", "model");
-  assert.equal(page.selection.measure, "model");
-  assert.equal(page.measureOpen, false);
+  assert.equal(page.state.selection.measure, "model");
+  assert.equal(page.state.measureOpen, false);
   assert.equal(boxes().length, 0);
   assert.deepEqual(plain(page.runRequest().measure), { id: "model" });
 
   page.clearLane("model");
   const palette = catalog().measures.map((item) => item.id);
-  assert.equal(page.selection.model, null);
-  assert.equal(page.selection.measure, null);
-  assert.deepEqual(plain(page.BLOCKS.measure.map((block) => block.id)), palette);
+  assert.equal(page.state.selection.model, null);
+  assert.equal(page.state.selection.measure, null);
+  assert.deepEqual(plain(page.state.blocks.measure.map((block) => block.id)), palette);
   assert.equal(palette.includes("y"), true);
 
   page.place("model", "hamiltonian");
-  assert.equal(page.selection.measure, null);
-  assert.deepEqual(plain(page.BLOCKS.measure.map((block) => block.id)), palette);
-  assert.deepEqual(plain(page.modelTerms.map((term) => term.id)), ["hamiltonian"]);
+  assert.equal(page.state.selection.measure, null);
+  assert.deepEqual(plain(page.state.blocks.measure.map((block) => block.id)), palette);
+  assert.deepEqual(plain(page.state.modelTerms.map((term) => term.id)), ["hamiltonian"]);
   window.close();
 });
 
@@ -308,22 +308,22 @@ test("a saved catalog measurement is read as the model", async () => {
   window.localStorage.setItem("shadowsim.builder.board", JSON.stringify(legacy));
   await page.restoreBoard();
   assert.deepEqual(checks[0], { id: "model" });
-  assert.equal(page.selection.measure, "model");
+  assert.equal(page.state.selection.measure, "model");
   assert.deepEqual(plain(page.runRequest().measure), { id: "model" });
-  assert.equal(page.measureSites, null);
-  assert.equal(page.BLOCKS.measure[0]?.detail, "expectation on 0; expectation on 1");
-  assert.deepEqual(plain(page.BLOCKS.measure.map((block) => block.id)), ["model"]);
+  assert.equal(page.state.measureSites, null);
+  assert.equal(page.state.blocks.measure[0]?.detail, "expectation on 0; expectation on 1");
+  assert.deepEqual(plain(page.state.blocks.measure.map((block) => block.id)), ["model"]);
   window.close();
 });
 
 test("the counts chip edits the expression", async () => {
   const { window, page } = prepare();
   fillCircuit(page);
-  page.BLOCKS.measure = structuredClone(catalog().measures).filter(
+  page.state.blocks.measure = structuredClone(catalog().measures).filter(
     (block) => block.id === "counts",
   );
-  page.selection.measure = "counts";
-  page.measureSites = null;
+  page.state.selection.measure = "counts";
+  page.state.measureSites = null;
   const board = mount(window);
   page.draw(board);
   openChip(board, "measure");
@@ -340,12 +340,12 @@ test("the counts chip edits the expression", async () => {
   assert.equal(page.statusMessage(), "Counts keys must be 1 characters of 0 and 1.");
   assert.equal(hint(), "Keys list qubit 0 in that order. shots is the total.");
   assert.equal(input.placeholder, 'counts["0"] / shots');
-  page.selection.model = null;
-  page.BLOCKS.model = [
+  page.state.selection.model = null;
+  page.state.blocks.model = [
     { id: "preexisting", title: "Preexisting model", detail: "Choose a built-in model" },
     { id: "hamiltonian", title: "Hamiltonian", adds: true, symbol: "Operator" },
   ];
-  page.modelTerms.push({
+  page.state.modelTerms.push({
     id: "hamiltonian",
     key: 1,
     matrix: "[[1, 0, 0, 0], [0, 1, 0, 0], [0, 0, 1, 0], [0, 0, 0, 1]]",
@@ -353,14 +353,14 @@ test("the counts chip edits the expression", async () => {
   });
   const body = JSON.stringify(page.runRequest());
   page.emptyBoard();
-  assert.equal(page.expressionText.counts ?? "", "");
+  assert.equal(page.state.expressionText.counts ?? "", "");
   window.fetch = async () => ({ ok: true, json: async () => ({ qubits: 2 }) });
   window.localStorage.setItem("shadowsim.builder.board", body);
   await page.restoreBoard();
   assert.equal(JSON.parse(body).measure.expression, typedRequest);
-  assert.equal(page.expressionText.counts ?? "", typedRequest);
+  assert.equal(page.state.expressionText.counts ?? "", typedRequest);
   assert.equal(JSON.stringify(page.runRequest()) === body, true);
-  page.selection.measure = "z";
+  page.state.selection.measure = "z";
   assert.equal(Object.hasOwn(page.runRequest().measure, "expression"), false);
   window.close();
 });
@@ -368,11 +368,11 @@ test("the counts chip edits the expression", async () => {
 test("a new server keeps the saved document", async () => {
   const { window, page } = prepare();
   fillIsing(page);
-  page.boardReady = true;
+  page.state.boardReady = true;
   page.applyCheck();
   const saved = window.localStorage.getItem("shadowsim.builder.board");
   resetPage(page);
-  page.boardReady = true;
+  page.state.boardReady = true;
   window.fetch = async () => ({ ok: true, json: async () => ({ qubits: 2 }) });
   await page.restoreBoard();
   const stored = window.localStorage.getItem("shadowsim.builder.board");
@@ -380,8 +380,8 @@ test("a new server keeps the saved document", async () => {
   assert.equal(stored, saved);
   assert.equal(JSON.parse(stored).version, 1);
   assert.equal("server" in JSON.parse(stored), false);
-  assert.equal(page.selection.state, "basis");
-  assert.equal(page.stateText.basis || "", "01");
+  assert.equal(page.state.selection.state, "basis");
+  assert.equal(page.state.stateText.basis || "", "01");
   assert.equal(JSON.stringify(page.runRequest()) === saved, true);
   window.close();
 });
@@ -389,25 +389,25 @@ test("a new server keeps the saved document", async () => {
 test("clear empties the board", () => {
   const { window, page } = prepare();
   fillIsing(page);
-  page.boardReady = true;
+  page.state.boardReady = true;
   page.applyCheck();
   const saved = window.localStorage.getItem("shadowsim.builder.board");
-  page.running = true;
+  page.state.running = true;
   page.emptyBoard();
-  assert.equal(page.selection.state, "basis");
+  assert.equal(page.state.selection.state, "basis");
   assert.equal(window.localStorage.getItem("shadowsim.builder.board"), saved);
-  page.running = false;
+  page.state.running = false;
   mount(window);
   const settings = page.settingsComponent();
   click(settings.querySelector(".clear"));
   assert.notEqual(saved, null);
-  assert.equal(page.selection.state, null);
-  assert.equal(page.settings.qubits, "");
-  assert.equal(page.stateText.basis || "", "");
-  assert.equal(page.placedSims.length, 0);
-  assert.equal(page.modelTerms.length, 0);
-  assert.equal(page.placedThens.length, 0);
-  assert.equal(page.preexistingId, null);
+  assert.equal(page.state.selection.state, null);
+  assert.equal(page.state.settings.qubits, "");
+  assert.equal(page.state.stateText.basis || "", "");
+  assert.equal(page.state.placedSims.length, 0);
+  assert.equal(page.state.modelTerms.length, 0);
+  assert.equal(page.state.placedThens.length, 0);
+  assert.equal(page.state.preexistingId, null);
   assert.equal(window.localStorage.getItem("shadowsim.builder.board"), null);
   window.close();
 });
@@ -415,7 +415,7 @@ test("clear empties the board", () => {
 test("a bad saved document does not fill the board", async () => {
   const { window, page } = prepare();
   fillIsing(page);
-  const before = page.selection.state;
+  const before = page.state.selection.state;
   const checks = [];
   window.fetch = async (url, options) => {
     checks.push({ url, body: options?.body });
@@ -424,7 +424,7 @@ test("a bad saved document does not fill the board", async () => {
   window.localStorage.setItem("shadowsim.builder.board", "{");
   await page.restoreBoard();
   const malformed = {
-    state: page.selection.state,
+    state: page.state.selection.state,
     stored: window.localStorage.getItem("shadowsim.builder.board"),
     checks: checks.length,
   };
@@ -434,9 +434,9 @@ test("a bad saved document does not fill the board", async () => {
   await page.restoreBoard();
   assert.equal(before, "basis");
   assert.deepEqual(malformed, { state: "basis", stored: null, checks: 0 });
-  assert.equal(page.statusHold, "unknown version 2");
-  assert.equal(page.selection.state, null);
-  assert.equal(page.stateText.basis || "", "");
+  assert.equal(page.state.statusHold, "unknown version 2");
+  assert.equal(page.state.selection.state, null);
+  assert.equal(page.state.stateText.basis || "", "");
   assert.deepEqual(JSON.parse(window.localStorage.getItem("shadowsim.builder.board")), {
     version: 2,
   });
@@ -457,9 +457,9 @@ test("a rejected check leaves the board", async () => {
     json: async () => ({ error: "unknown simulator missing" }),
   });
   await page.restoreBoard();
-  assert.equal(page.selection.state, "basis");
+  assert.equal(page.state.selection.state, "basis");
   assert.equal(JSON.stringify(page.runRequest()) === before, true);
-  assert.equal(page.statusHold, "unknown simulator missing");
+  assert.equal(page.state.statusHold, "unknown simulator missing");
   assert.deepEqual(JSON.parse(window.localStorage.getItem("shadowsim.builder.board")).simulators, [
     { id: "missing" },
   ]);
@@ -469,15 +469,15 @@ test("a rejected check leaves the board", async () => {
 test("operator alerts name the current problem", () => {
   const { window, page } = prepare();
   resetPage(page);
-  page.BLOCKS.model = [
+  page.state.blocks.model = [
     { id: "hamiltonian", title: "Hamiltonian", adds: true, detail: "" },
     { id: "local_hamiltonian", title: "Local Hamiltonian", adds: true, detail: "" },
     { id: "lindblad", title: "Lindblad", adds: true, detail: "" },
   ];
-  page.selection.state = "basis";
-  page.stateText.basis = "00";
-  page.settings.qubits = "2";
-  page.qubitsSource = "state";
+  page.state.selection.state = "basis";
+  page.state.stateText.basis = "00";
+  page.state.settings.qubits = "2";
+  page.state.qubitsSource = "state";
   const board = mount(window);
   page.draw(board);
   page.place("model", "hamiltonian");
@@ -486,12 +486,12 @@ test("operator alerts name the current problem", () => {
   const nonhermitian = operatorAlert(board.querySelector(".chip.hamiltonian"));
   typeInto(matrix, "[[1, 0], [0, -1]]");
   const wrongSize = operatorAlert(board.querySelector(".chip.hamiltonian"));
-  page.stateText.basis = "0";
-  page.syncStateQubits();
+  page.state.stateText.basis = "0";
+  page.update(() => {}, { deriveState: true });
   typeInto(matrix, "[[1, 0], [0, -1]]");
   const validHamiltonian = operatorAlert(board.querySelector(".chip.hamiltonian"));
-  page.stateText.basis = "000";
-  page.syncStateQubits();
+  page.state.stateText.basis = "000";
+  page.update(() => {}, { deriveState: true });
   page.place("model", "local_hamiltonian");
   page.place("model", "lindblad");
   const local = () => board.querySelector(".chip.local-hamiltonian");
@@ -531,9 +531,9 @@ test("operator alerts name the current problem", () => {
 test("the Aer card edits gates beside shots", () => {
   const { window, page } = prepare();
   fillCircuit(page);
-  page.BLOCKS.backend[0].setup =
+  page.state.blocks.backend[0].setup =
     "circuit_backend = AerCircuitBackend(shots={shots}, basis_gates={basis_gates})";
-  page.BLOCKS.backend[0].fields = [
+  page.state.blocks.backend[0].fields = [
     {
       name: "basis_gates",
       label: "Gates",
@@ -553,7 +553,7 @@ test("the Aer card edits gates beside shots", () => {
   assert.equal(page.previewText().includes("basis_gates=None"), true);
   typeInto(gates, "RX, ry, RX");
   page.applyCheck();
-  assert.equal(page.placedSims[0].backendFields.basis_gates, "rx, ry, rx");
+  assert.equal(page.state.placedSims[0].backendFields.basis_gates, "rx, ry, rx");
   assert.equal(chip.querySelector(".backend-detail").textContent, "256 shots, rx, ry");
   assert.equal(page.previewText().includes('basis_gates=["rx", "ry"]'), true);
   typeInto(gates, "foo");
@@ -573,7 +573,7 @@ test("edits keep the chart until the run changes", () => {
   let chart = window.document.createElement("div");
   chart.className = "chart";
   page.setResults(chart);
-  page.shownRun = JSON.stringify(page.runRequest());
+  page.state.shownRun = JSON.stringify(page.runRequest());
   openChip(board, "basis");
   assert.equal(resultsNode(window) === chart, true);
   assert.equal(labeled(board, "Total time") === total, true);
@@ -583,41 +583,41 @@ test("edits keep the chart until the run changes", () => {
   typeInto(total, "4");
   assert.equal(showingPlaceholder(window), true);
   assert.equal(labeled(board, "Total time") === total, true);
-  assert.equal(page.settings.total, "4");
+  assert.equal(page.state.settings.total, "4");
 
   chart = window.document.createElement("div");
   chart.className = "chart";
   page.setResults(chart);
-  page.shownRun = JSON.stringify(page.runRequest());
+  page.state.shownRun = JSON.stringify(page.runRequest());
   openChip(board, "backend");
   const shots = labeled(board, "Shots");
   assert.equal(resultsNode(window) === chart, true);
   typeInto(shots, "128");
   assert.equal(showingPlaceholder(window), true);
   assert.equal(labeled(board, "Shots") === shots, true);
-  assert.equal(page.placedSims[0].shots, "128");
+  assert.equal(page.state.placedSims[0].shots, "128");
 
   chart = window.document.createElement("div");
   chart.className = "chart";
   page.setResults(chart);
-  page.shownRun = JSON.stringify(page.runRequest());
+  page.state.shownRun = JSON.stringify(page.runRequest());
   page.place("then", "save");
   assert.equal(showingPlaceholder(window), true);
   assert.equal(labeled(board, "Total time") === total, true);
-  assert.equal(page.placedThens.includes("save"), true);
+  assert.equal(page.state.placedThens.includes("save"), true);
 
   chart = window.document.createElement("div");
   chart.className = "chart";
   page.setResults(chart);
-  page.shownRun = JSON.stringify(page.runRequest());
+  page.state.shownRun = JSON.stringify(page.runRequest());
   page.removeThen("save");
   assert.equal(showingPlaceholder(window), true);
-  assert.equal(page.placedThens.includes("save"), false);
+  assert.equal(page.state.placedThens.includes("save"), false);
 
   chart = window.document.createElement("div");
   chart.className = "chart";
   page.setResults(chart);
-  page.shownRun = JSON.stringify(page.runRequest());
+  page.state.shownRun = JSON.stringify(page.runRequest());
   page.attachBackend("aer");
   assert.equal(resultsNode(window) === chart, true);
   window.close();
@@ -670,7 +670,7 @@ test("copy board writes the document while the script is empty", () => {
   const acceptedWrite = writes[before] ?? null;
   assert.equal(scriptButton().hasAttribute("disabled"), false);
   assert.equal(acceptedWrite, shown());
-  assert.equal(acceptedWrite, page.acceptedBody);
+  assert.equal(acceptedWrite, page.state.acceptedBody);
   const accepted = JSON.parse(acceptedWrite);
   assert.equal("server" in accepted, false);
   assert.deepEqual(accepted.state, { id: "basis", value: "01" });
@@ -681,7 +681,7 @@ test("export and import round-trip the board", async () => {
   const { window, page } = prepare();
   const downloads = installDownloads(window);
   fillIsing(page);
-  page.boardReady = true;
+  page.state.boardReady = true;
   const board = mount(window);
   page.draw(board);
   const exportButton = () => board.querySelector(".export-board");
@@ -694,11 +694,11 @@ test("export and import round-trip the board", async () => {
   const link = downloads.find((item) => item.name != null);
   resetPage(page);
   fillIsing(page);
-  page.settings.total = "9";
+  page.state.settings.total = "9";
   page.draw(board);
   const kept = window.localStorage.getItem("shadowsim.builder.board");
-  const keptState = page.selection.state;
-  const keptTotal = page.settings.total;
+  const keptState = page.state.selection.state;
+  const keptTotal = page.state.settings.total;
   async function choose(text) {
     const input = window.document.querySelector(".board-file-input");
     Object.defineProperty(input, "files", {
@@ -711,16 +711,16 @@ test("export and import round-trip the board", async () => {
   window.fetch = async () => ({ ok: false, json: async () => ({ error: "unknown version 2" }) });
   await choose("{");
   const malformed = {
-    status: page.statusHold,
-    state: page.selection.state,
-    total: page.settings.total,
+    status: page.state.statusHold,
+    state: page.state.selection.state,
+    total: page.state.settings.total,
     stored: window.localStorage.getItem("shadowsim.builder.board") === kept,
   };
   await choose(JSON.stringify({ version: 2 }));
   const rejected = {
-    status: page.statusHold,
-    state: page.selection.state,
-    total: page.settings.total,
+    status: page.state.statusHold,
+    state: page.state.selection.state,
+    total: page.state.settings.total,
     stored: window.localStorage.getItem("shadowsim.builder.board") === kept,
     present: window.localStorage.getItem("shadowsim.builder.board") != null,
   };
@@ -736,8 +736,8 @@ test("export and import round-trip the board", async () => {
   assert.equal(link.name, "shadowsim-board.json");
   assert.equal(posted === file, true);
   assert.equal(JSON.stringify(page.runRequest()) === file, true);
-  assert.equal(page.selection.state, "basis");
-  assert.equal(page.stateText.basis || "", "01");
+  assert.equal(page.state.selection.state, "basis");
+  assert.equal(page.state.stateText.basis || "", "01");
   assert.equal(JSON.parse(file).total, "1");
   assert.equal(keptState, "basis");
   assert.equal(keptTotal, "9");
