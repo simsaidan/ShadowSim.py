@@ -70,7 +70,7 @@ function pageState({ complete, qubits = "", total = "", accept = false }) {
   const button = settings.querySelector(".run");
   const state = {
     status: page.statusMessage(),
-    ready: page.settingsReady(),
+    ready: window.checks.settingsReady(page.currentPage()),
     label: button.textContent,
     renderedDisabled: button.hasAttribute("disabled"),
     syncedDisabled: button.disabled === true,

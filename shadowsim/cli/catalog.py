@@ -22,8 +22,9 @@ from shadowsim.encoding.gray import GrayEncoding
 from shadowsim.encoding.state_encoder import StateEncoder
 from shadowsim.simulators.reducers import Measurement
 
-# Basis, Gray, and angle entries share the page qubit cap. Amplitude lists are
-# typed only up to ``_PAGE_AMPLITUDE_CAP``; a longer posted list is still prepared.
+# Basis, Gray, angle, and a posted factory share the page qubit cap. Amplitude
+# lists are typed only up to ``_PAGE_AMPLITUDE_CAP``; a longer posted list is
+# still prepared.
 _PAGE_QUBIT_CAP = 15
 _PAGE_AMPLITUDE_CAP = 16
 

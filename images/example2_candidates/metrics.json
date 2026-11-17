@@ -1,0 +1,40 @@
+{
+  "errors": [
+    {
+      "challenger_id": "split_jmatrix_simulator",
+      "observables": [
+        {
+          "index": 0,
+          "linf": 0.0283337065244188,
+          "l2": 0.14590888003430857,
+          "mae": 0.0067109040900083326,
+          "rmse": 0.008410048030973222
+        },
+        {
+          "index": 1,
+          "linf": 0.017958835521431515,
+          "l2": 0.126286985756928,
+          "mae": 0.005994600358511897,
+          "rmse": 0.00727906084710445
+        }
+      ]
+    }
+  ],
+  "resources": [
+    {
+      "simulator_id": "qutip_simulator",
+      "wall_time_s": 0.010414334014058113,
+      "shots_per_job": null,
+      "num_jobs": null,
+      "total_shots": null
+    },
+    {
+      "simulator_id": "split_jmatrix_simulator",
+      "wall_time_s": 2241.577843250241,
+      "shots_per_job": 10000,
+      "num_jobs": 301,
+      "total_shots": 3010000
+    }
+  ],
+  "wall_time_s": 2241.5882615828887
+}

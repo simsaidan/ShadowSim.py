@@ -178,11 +178,6 @@
     return selectedState()?.field ?? null;
   }
 
-  function stateTextValue() {
-    const stored = page.stateText?.[page.selection.state];
-    return typeof stored === "string" ? stored : "";
-  }
-
   function actionTextValue(id) {
     const stored = page.actionText?.[id];
     if (typeof stored === "string") return stored;
@@ -333,18 +328,26 @@
     return factoryAlert() != null;
   }
 
-  function stateImpliedQubits() {
-    const field = stateField();
+  function readState(stateId = page.selection.state) {
+    const field = blockById("state", stateId)?.field ?? null;
     if (!field) return null;
-    const text = stateTextValue();
-    if (field.kind === "bits") return text ? text.length : null;
-    const values = numberList(text, field.cap);
-    if (!values) return null;
-    if (field.match === "padded") {
-      if (field.nonzero && !values.some((value) => value !== 0)) return null;
-      return amplitudeQubits(values.length);
+    const stored = page.stateText?.[stateId];
+    const text = typeof stored === "string" ? stored : "";
+    if (field.kind === "bits") {
+      const filled = text !== "";
+      return { field, text, values: null, filled, count: filled ? text.length : null };
     }
-    return values.length;
+    const values = numberList(text, field.cap);
+    const filled = values != null && (!field.nonzero || values.some((value) => value !== 0));
+    let count = null;
+    if (values && (field.match !== "padded" || filled)) {
+      count = field.match === "padded" ? amplitudeQubits(values.length) : values.length;
+    }
+    return { field, text, values, filled, count };
+  }
+
+  function stateImpliedQubits() {
+    return readState()?.count ?? null;
   }
 
   function stateSizeProblem() {
@@ -364,14 +367,10 @@
   }
 
   function stateInputProblem() {
-    const field = stateField();
-    if (!field) return null;
+    const read = readState();
+    if (!read) return null;
     if (stateSizeProblem() != null) return "size";
-    const text = stateTextValue();
-    if (field.kind === "bits") return text === "" ? "empty" : null;
-    const values = numberList(text, field.cap);
-    if (!values || (field.nonzero && values.every((value) => value === 0))) return "empty";
-    return null;
+    return read.filled ? null : "empty";
   }
 
   function entryParamsReady(entry) {
@@ -703,16 +702,14 @@
   }
 
   function stateLine() {
-    const field = stateField();
-    if (!field?.encode) return "";
-    if (field.kind === "bits") {
-      const bits = stateTextValue();
-      if (!bits) return "";
-      return `state = ${field.encode}(${bits.length}).encode([${[...bits].join(", ")}])`;
+    const read = readState();
+    if (!read?.field.encode) return "";
+    if (read.field.kind === "bits") {
+      if (!read.text) return "";
+      return `state = ${read.field.encode}(${read.text.length}).encode([${[...read.text].join(", ")}])`;
     }
-    const values = numberList(stateTextValue(), field.cap);
-    if (!values) return "";
-    return `state = ${field.encode}().encode([${values.map(pyFloat).join(", ")}])`;
+    if (!read.values) return "";
+    return `state = ${read.field.encode}().encode([${read.values.map(pyFloat).join(", ")}])`;
   }
 
   function fillSetup(block, name, shots = "", fields = {}) {
@@ -1339,6 +1336,7 @@
     qubitCount: bind(qubitCount),
     qubitPhrase: bind(qubitPhrase),
     qubitProblem: bind(qubitProblem),
+    readState: bind(readState),
     runAllowed: bind(runAllowed),
     sameTimeGrid: bind(sameTimeGrid),
     savePathReady: bind(savePathReady),
