@@ -3,26 +3,26 @@ const { test } = require("node:test");
 const { catalog, loadPage } = require("./load-page");
 
 function resetPage(page) {
-  page.selection.state = null;
-  page.selection.model = null;
-  page.selection.simulator = null;
-  page.selection.backend = null;
-  page.selection.measure = null;
-  page.selection.then = null;
-  page.settings.qubits = "";
-  page.settings.total = "";
-  for (const key of Object.keys(page.stateText)) delete page.stateText[key];
-  page.preexistingId = null;
-  page.modelFactories = [];
-  page.modelTerms.splice(0, page.modelTerms.length);
-  page.placedSims.splice(0, page.placedSims.length);
-  page.placedThens.splice(0, page.placedThens.length);
-  page.running = false;
+  page.state.selection.state = null;
+  page.state.selection.model = null;
+  page.state.selection.simulator = null;
+  page.state.selection.backend = null;
+  page.state.selection.measure = null;
+  page.state.selection.then = null;
+  page.state.settings.qubits = "";
+  page.state.settings.total = "";
+  for (const key of Object.keys(page.state.stateText)) delete page.state.stateText[key];
+  page.state.preexistingId = null;
+  page.state.modelFactories = [];
+  page.state.modelTerms.splice(0, page.state.modelTerms.length);
+  page.state.placedSims.splice(0, page.state.placedSims.length);
+  page.state.placedThens.splice(0, page.state.placedThens.length);
+  page.state.running = false;
 }
 
 function fillIsing(page, qubits, total) {
   resetPage(page);
-  page.BLOCKS.simulator = [
+  page.state.blocks.simulator = [
     {
       id: "qutip",
       observables: true,
@@ -33,40 +33,40 @@ function fillIsing(page, qubits, total) {
           kind: "integer",
           default: "11",
           minimum: 1,
-          maximum: page.limits.timeSteps,
+          maximum: page.state.limits.timeSteps,
         },
       ],
     },
   ];
-  page.modelFactories = [
+  page.state.modelFactories = [
     { id: "ising", title: "Ising", qubits: true, setup: "model = ising(n_qubits={qubits})" },
   ];
-  page.preexistingId = "ising";
-  page.selection.state = "basis";
-  page.selection.model = "preexisting";
-  page.selection.simulator = "qutip";
-  page.selection.measure = "z";
-  page.selection.then = "plot";
-  page.stateText.basis = "00";
-  page.settings.qubits = qubits;
-  page.settings.total = total;
-  page.placedSims.push({ id: "qutip", key: 1, params: { time_steps: "11" } });
-  page.placedThens.push("plot");
+  page.state.preexistingId = "ising";
+  page.state.selection.state = "basis";
+  page.state.selection.model = "preexisting";
+  page.state.selection.simulator = "qutip";
+  page.state.selection.measure = "z";
+  page.state.selection.then = "plot";
+  page.state.stateText.basis = "00";
+  page.state.settings.qubits = qubits;
+  page.state.settings.total = total;
+  page.state.placedSims.push({ id: "qutip", key: 1, params: { time_steps: "11" } });
+  page.state.placedThens.push("plot");
 }
 
 function pageState({ complete, qubits = "", total = "", accept = false }) {
   const { window, page } = loadPage();
   const exported = catalog();
   assert.equal(page.applyLimits(exported.limits), true);
-  page.BLOCKS.state = structuredClone(exported.states);
-  page.BLOCKS.measure = structuredClone(exported.measures);
-  page.BLOCKS.then = structuredClone(exported.actions);
+  page.state.blocks.state = structuredClone(exported.states);
+  page.state.blocks.measure = structuredClone(exported.measures);
+  page.state.blocks.then = structuredClone(exported.actions);
   if (complete) fillIsing(page, qubits, total);
   else resetPage(page);
   if (accept) page.applyCheck();
   const settings = page.settingsComponent();
   window.document.body.append(settings);
-  page.syncRunButton();
+  page.update(() => {});
   const button = settings.querySelector(".run");
   const state = {
     status: page.statusMessage(),

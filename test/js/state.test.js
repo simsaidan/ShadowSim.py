@@ -22,13 +22,15 @@ test("the basis state card closes from Done", () => {
   const { window, page } = loadPage();
   const exported = catalog();
   assert.equal(page.applyLimits(exported.limits), true);
-  page.BLOCKS.state = structuredClone(exported.states);
-  page.stateText.basis = "10";
-  page.stateOpen = true;
-  const holder = window.document.createElement("div");
-  const basis = page.BLOCKS.state.find((block) => block.id === "basis");
-  holder.append(page.stateFieldChip(basis));
-  const open = describe(holder.children[0]);
+  page.state.blocks.state = structuredClone(exported.states);
+  page.state.selection.state = "basis";
+  page.state.stateText.basis = "10";
+  page.state.stateOpen = true;
+  const board = window.document.createElement("section");
+  board.className = "board";
+  window.document.body.append(board);
+  page.draw(board);
+  const open = describe(board.querySelector(".chip.state"));
   assert.deepEqual(
     { editing: open.editing, done: open.done, field: open.field, detail: open.detail },
     { editing: true, done: "Done", field: true, detail: "Start in |10>" },
@@ -39,7 +41,7 @@ test("the basis state card closes from Done", () => {
     redraws += 1;
   };
   click(open.doneNode);
-  const closed = describe(holder.children[0]);
+  const closed = describe(board.querySelector(".chip.state"));
   click(closed.head);
   assert.equal(closed.editing, false);
   assert.equal(closed.done, null);
@@ -49,19 +51,22 @@ test("the basis state card closes from Done", () => {
   assert.equal(closed.headerType, "button");
   assert.equal(redraws, 0);
 
-  const again = describe(holder.children[0]);
-  assert.equal(page.stateOpen === true && again.editing === true && again.field === true, true);
+  const again = describe(board.querySelector(".chip.state"));
+  assert.equal(
+    page.state.stateOpen === true && again.editing === true && again.field === true,
+    true,
+  );
 
-  page.stateOpen = false;
+  page.state.stateOpen = false;
   page.place("state", "basis");
-  assert.equal(page.selection.state === "basis" && page.stateOpen === true, true);
+  assert.equal(page.state.selection.state === "basis" && page.state.stateOpen === true, true);
   page.clearLane("state");
-  assert.equal(page.selection.state === null && page.stateOpen === false, true);
+  assert.equal(page.state.selection.state === null && page.state.stateOpen === false, true);
 
-  page.stateOpen = true;
+  page.state.stateOpen = true;
   const siblings = ["gray", "angle", "amplitude"].map((id) => {
-    page.selection.state = id;
-    const block = page.BLOCKS.state.find((item) => item.id === id);
+    page.state.selection.state = id;
+    const block = page.state.blocks.state.find((item) => item.id === id);
     return describe(page.stateFieldChip(block)).done;
   });
   assert.deepEqual(siblings, ["Done", "Done", "Done"]);
