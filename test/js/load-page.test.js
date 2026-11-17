@@ -31,5 +31,14 @@ test("loadPage runs the builder against a document", () => {
   window.clearTimeout(id);
   window.navigator.clipboard.writeText("script");
   assert.deepEqual(writes, ["script"]);
+  for (const name of [
+    "chartComponent",
+    "resultsComponent",
+    "plotFraction",
+    "hoverReadout",
+    "nearestTimeIndex",
+  ]) {
+    assert.equal(typeof page[name], "function");
+  }
   window.close();
 });
