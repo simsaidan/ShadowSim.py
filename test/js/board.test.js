@@ -525,6 +525,10 @@ test("operator alerts name the current problem", () => {
     assert.equal(alert.linked, false);
     assert.equal(alert.describedby, null);
   }
+  const removeLabel = (chip) => chip.querySelector("button.remove").getAttribute("aria-label");
+  assert.equal(removeLabel(board.querySelector(".chip.hamiltonian")), "Remove Hamiltonian");
+  assert.equal(removeLabel(local()), "Remove local Hamiltonian");
+  assert.equal(removeLabel(lindblad()), "Remove Lindblad operator");
   window.close();
 });
 

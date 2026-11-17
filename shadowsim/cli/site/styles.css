@@ -5,8 +5,12 @@
   --muted: #667085;
   --faint: #98a2b3;
   --line: #e6ebf2;
-  --card: #ffffff;
+  --white: #ffffff;
+  --card: var(--white);
+  --board-line: #e7edf4;
+  --chevron: #c5cdd8;
   --navy: #1c1830;
+  --navy-hover: #2a2444;
   --gold: #a67c1a;
   --gold-ink: #a67c1a;
   --gold-soft: #fbf3e8;
@@ -27,6 +31,11 @@
   --green-soft: #eef8f0;
   --ready: #e7f6ee;
   --ready-ink: #1f7a4d;
+  --alert: #f5c518;
+  --alert-ink: #3d3208;
+  --input: #e7edf6;
+  --status: #f3f5f8;
+  --code: #243044;
   font-family: Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
   font-synthesis: none;
 }
@@ -63,7 +72,7 @@ body {
 .board {
   margin-top: 18px;
   background: var(--card);
-  border: 1px solid #e7edf4;
+  border: 1px solid var(--board-line);
   border-radius: 16px;
   box-shadow: 0 8px 24px rgba(28, 39, 62, 0.04);
   padding: 16px 14px 18px;
@@ -88,7 +97,7 @@ body {
 .lane { align-self: start; }
 
 .chevron {
-  color: #c5cdd8;
+  color: var(--chevron);
   font-size: 18px;
   font-weight: 600;
   text-align: center;
@@ -98,7 +107,7 @@ body {
 .slot {
   border: 1.5px dashed var(--tone);
   border-radius: 14px;
-  background: #fff;
+  background: var(--white);
   padding: 12px 12px 14px;
   min-height: 0;
 }
@@ -192,43 +201,21 @@ body {
 }
 
 .chip.is-editing {
-  background: #fff;
+  background: var(--white);
 }
 
-.preexisting-head,
-.basis-head,
-.simulator-head,
-.path-head,
-.save-head,
-.export-head,
-.measure-head,
-.backend-head {
+.chip-head {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
   gap: 8px;
 }
 
-.preexisting-head > button,
-.basis-head > button,
-.simulator-head > button,
-.path-head > button,
-.save-head > button,
-.export-head > button,
-.measure-head > button,
-.backend-head > button,
-.basis-head > div:first-child {
+.chip-head > :first-child {
   min-width: 0;
 }
 
-.preexisting-head > button,
-.basis-head > button,
-.simulator-head > button,
-.path-head > button,
-.save-head > button,
-.export-head > button,
-.measure-head > button,
-.backend-head > button {
+.chip-head > button {
   appearance: none;
   border: 0;
   background: transparent;
@@ -239,40 +226,33 @@ body {
   cursor: pointer;
 }
 
-.preexisting-actions,
-.basis-actions,
-.simulator-actions,
-.path-actions,
-.save-actions,
-.export-actions,
-.measure-actions,
-.backend-actions {
+.chip-actions {
   display: flex;
   flex-shrink: 0;
   align-items: center;
   gap: 4px;
 }
 
-.chip .basis-alert {
+.chip .chip-alert {
   width: 18px;
   height: 18px;
   margin-top: 0;
   border-radius: 999px;
-  background: #f5c518;
-  color: #3d3208;
+  background: var(--alert);
+  color: var(--alert-ink);
   font-size: 13px;
   font-weight: 800;
   line-height: 18px;
   text-align: center;
 }
 
-.chip .basis-alert[hidden] {
+.chip .chip-alert[hidden] {
   display: none !important;
 }
 
 .done {
   border: 1px solid var(--line);
-  background: #fff;
+  background: var(--white);
   color: var(--ink);
   border-radius: 999px;
   padding: 4px 10px;
@@ -282,13 +262,7 @@ body {
   cursor: pointer;
 }
 
-.preexisting-field,
-.basis-field,
-.path-field,
-.save-field,
-.export-field,
-.counts-field,
-.backend-field {
+.chip-field {
   display: flex;
   flex-direction: column;
   gap: 6px;
@@ -325,7 +299,7 @@ body {
   border-top: 1px solid var(--line);
 }
 
-.measure-fields {
+.qubit-picker {
   display: flex;
   flex-wrap: wrap;
   gap: 8px 12px;
@@ -334,7 +308,7 @@ body {
   border-top: 1px solid var(--line);
 }
 
-.measure-fields label {
+.qubit-picker label {
   display: flex;
   align-items: center;
   gap: 4px;
@@ -350,15 +324,9 @@ body {
   font-size: 12.5px;
 }
 
-.preexisting-field select,
-.preexisting-field input,
-.basis-field input,
-.basis-field textarea,
-.path-field input,
-.save-field input,
-.export-field input,
-.counts-field input,
-.backend-field input,
+.chip-field select,
+.chip-field input,
+.chip-field textarea,
 .backend-fields input,
 .sim-fields input,
 .sim-fields select {
@@ -370,10 +338,10 @@ body {
   padding: 8px 10px;
   border-radius: 10px;
   border: 1.5px solid var(--tone);
-  background: #fff;
+  background: var(--white);
 }
 
-.basis-field textarea {
+.chip-field textarea {
   min-height: 76px;
   resize: vertical;
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
@@ -417,7 +385,7 @@ body {
   appearance: none;
   border: 0;
   background: var(--navy);
-  color: #fff;
+  color: var(--white);
   border-radius: 999px;
   padding: 14px 22px;
   font: inherit;
@@ -428,7 +396,7 @@ body {
   cursor: pointer;
 }
 
-.run:hover { background: #2a2444; }
+.run:hover { background: var(--navy-hover); }
 
 .run:disabled {
   background: var(--navy);
@@ -446,7 +414,7 @@ body {
 .board-file {
   appearance: none;
   border: 1px solid var(--line);
-  background: #fff;
+  background: var(--white);
   color: var(--ink);
   border-radius: 999px;
   padding: 14px 18px;
@@ -474,27 +442,11 @@ body {
 .block:focus-visible,
 .remove:focus-visible,
 .done:focus-visible,
-.preexisting-head > button:focus-visible,
-.basis-head > button:focus-visible,
-.simulator-head > button:focus-visible,
-.path-head > button:focus-visible,
-.save-head > button:focus-visible,
-.export-head > button:focus-visible,
-.measure-head > button:focus-visible,
-.backend-head > button:focus-visible,
-.preexisting-field select:focus-visible,
-.preexisting-field input:focus-visible,
-.basis-field input:focus-visible,
-.basis-field textarea:focus-visible,
-.path-field input:focus-visible,
-.save-field input:focus-visible,
-.export-field input:focus-visible,
-.counts-field input:focus-visible,
-.backend-field input:focus-visible,
+.chip-head > button:focus-visible,
+.chip-field :is(select, input, textarea):focus-visible,
 .backend-fields input:focus-visible,
-.sim-fields input:focus-visible,
-.sim-fields select:focus-visible,
-.measure-fields input:focus-visible {
+.sim-fields :is(input, select):focus-visible,
+.qubit-picker input:focus-visible {
   outline: 2px solid var(--blue-ink);
   outline-offset: 2px;
 }
@@ -565,7 +517,7 @@ body {
 }
 
 .method-row:not(.reference) .simulator.is-editing::after {
-  background: #fff;
+  background: var(--white);
 }
 
 .method-row .backend,
@@ -581,7 +533,7 @@ body {
   justify-content: center;
   border: 1.5px dashed var(--violet);
   border-radius: 10px;
-  background: #fff;
+  background: var(--white);
   color: var(--faint);
   font-size: 12.5px;
   line-height: 1.35;
@@ -634,7 +586,7 @@ body {
   width: 96px;
   border: 0;
   border-radius: 10px;
-  background: #e7edf6;
+  background: var(--input);
   color: var(--ink);
   font: inherit;
   font-size: 15px;
@@ -658,7 +610,7 @@ body {
 .status {
   margin: 0 0 16px;
   border-radius: 10px;
-  background: #f3f5f8;
+  background: var(--status);
   color: var(--muted);
   padding: 12px 14px;
   font-size: 14.5px;
@@ -678,7 +630,7 @@ body {
 .panel {
   border: 1px solid var(--line);
   border-radius: 14px;
-  background: #fff;
+  background: var(--white);
   padding: 16px 16px 18px;
   min-height: 240px;
 }
@@ -702,7 +654,7 @@ body {
 .copy-board {
   appearance: none;
   border: 1px solid var(--line);
-  background: #fff;
+  background: var(--white);
   color: var(--ink);
   border-radius: 999px;
   padding: 4px 10px;
@@ -731,7 +683,7 @@ body {
 
 .panel pre {
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  color: #243044;
+  color: var(--code);
   white-space: pre-wrap;
 }
 
@@ -748,7 +700,7 @@ body {
 .chart-switch button {
   appearance: none;
   border: 1px solid var(--line);
-  background: #fff;
+  background: var(--white);
   color: var(--ink);
   border-radius: 999px;
   padding: 4px 10px;
@@ -760,7 +712,7 @@ body {
 .chart-switch button[aria-pressed="true"] {
   background: var(--navy);
   border-color: var(--navy);
-  color: #fff;
+  color: var(--white);
 }
 
 .chart-switch button:focus-visible {
