@@ -429,21 +429,21 @@ function preexistingChip() {
         ),
         state.preexistingOpen
           ? el(
-            "button",
-            {
-              className: "done",
-              type: "button",
-              onclick: () => {
-                update(
-                  () => {
-                    state.preexistingOpen = false;
-                  },
-                  { lanes: ["model"], chrome: false },
-                );
+              "button",
+              {
+                className: "done",
+                type: "button",
+                onclick: () => {
+                  update(
+                    () => {
+                      state.preexistingOpen = false;
+                    },
+                    { lanes: ["model"], chrome: false },
+                  );
+                },
               },
-            },
-            "Done",
-          )
+              "Done",
+            )
           : null,
         el(
           "button",
@@ -592,21 +592,21 @@ function stateChip(options) {
         ),
         open
           ? el(
-            "button",
-            {
-              className: "done",
-              type: "button",
-              onclick: () => {
-                update(
-                  () => {
-                    state.stateOpen = false;
-                  },
-                  { lanes: ["state"], chrome: false },
-                );
+              "button",
+              {
+                className: "done",
+                type: "button",
+                onclick: () => {
+                  update(
+                    () => {
+                      state.stateOpen = false;
+                    },
+                    { lanes: ["state"], chrome: false },
+                  );
+                },
               },
-            },
-            "Done",
-          )
+              "Done",
+            )
           : null,
         el(
           "button",
@@ -736,21 +736,21 @@ function simulatorChip(entry) {
         { className: "simulator-actions" },
         entry.open
           ? el(
-            "button",
-            {
-              className: "done",
-              type: "button",
-              onclick: () => {
-                update(
-                  () => {
-                    entry.open = false;
-                  },
-                  { lanes: ["simulator"], chrome: false },
-                );
+              "button",
+              {
+                className: "done",
+                type: "button",
+                onclick: () => {
+                  update(
+                    () => {
+                      entry.open = false;
+                    },
+                    { lanes: ["simulator"], chrome: false },
+                  );
+                },
               },
-            },
-            "Done",
-          )
+              "Done",
+            )
           : null,
         el(
           "button",
@@ -809,21 +809,21 @@ function pathChip(block) {
         { className: "path-actions" },
         open
           ? el(
-            "button",
-            {
-              className: "done",
-              type: "button",
-              onclick: () => {
-                update(
-                  () => {
-                    state.pathOpen[block.id] = false;
-                  },
-                  { lanes: ["then"], chrome: false },
-                );
+              "button",
+              {
+                className: "done",
+                type: "button",
+                onclick: () => {
+                  update(
+                    () => {
+                      state.pathOpen[block.id] = false;
+                    },
+                    { lanes: ["then"], chrome: false },
+                  );
+                },
               },
-            },
-            "Done",
-          )
+              "Done",
+            )
           : null,
         el(
           "button",
@@ -842,21 +842,21 @@ function pathChip(block) {
     ),
     open
       ? el(
-        "label",
-        { className: "path-field" },
-        field.label || "Path",
-        el("input", {
-          type: "text",
-          "aria-label": field.aria || "Path",
-          value: path,
-          spellcheck: "false",
-          oninput: (event) => {
-            update(() => {
-              state.actionText[block.id] = event.target.value;
-            });
-          },
-        }),
-      )
+          "label",
+          { className: "path-field" },
+          field.label || "Path",
+          el("input", {
+            type: "text",
+            "aria-label": field.aria || "Path",
+            value: path,
+            spellcheck: "false",
+            oninput: (event) => {
+              update(() => {
+                state.actionText[block.id] = event.target.value;
+              });
+            },
+          }),
+        )
       : null,
   );
 }
@@ -926,22 +926,22 @@ function backendChip(entry) {
         { className: "backend-actions" },
         editing
           ? el(
-            "button",
-            {
-              className: "done",
-              type: "button",
-              onclick: () => {
-                update(
-                  () => {
-                    entry.shotsOpen = false;
-                    entry.backendOpen = false;
-                  },
-                  { lanes: ["simulator"], chrome: false },
-                );
+              "button",
+              {
+                className: "done",
+                type: "button",
+                onclick: () => {
+                  update(
+                    () => {
+                      entry.shotsOpen = false;
+                      entry.backendOpen = false;
+                    },
+                    { lanes: ["simulator"], chrome: false },
+                  );
+                },
               },
-            },
-            "Done",
-          )
+              "Done",
+            )
           : null,
         el(
           "button",
@@ -960,56 +960,56 @@ function backendChip(entry) {
     ),
     editing && samples
       ? el(
-        "label",
-        { className: "backend-field" },
-        "Shots",
-        el("input", {
-          type: "text",
-          inputmode: "numeric",
-          "aria-label": "Shots",
-          value: String(entry.shots ?? ""),
-          spellcheck: "false",
-          oninput: (event) => {
-            const next = event.target.value.replace(/\D/g, "");
-            if (event.target.value !== next) event.target.value = next;
-            update(() => {
-              entry.shots = next;
-            });
-          },
-        }),
-      )
+          "label",
+          { className: "backend-field" },
+          "Shots",
+          el("input", {
+            type: "text",
+            inputmode: "numeric",
+            "aria-label": "Shots",
+            value: String(entry.shots ?? ""),
+            spellcheck: "false",
+            oninput: (event) => {
+              const next = event.target.value.replace(/\D/g, "");
+              if (event.target.value !== next) event.target.value = next;
+              update(() => {
+                entry.shots = next;
+              });
+            },
+          }),
+        )
       : null,
     editing && fields.length
       ? el(
-        "div",
-        { className: "backend-fields" },
-        ...fields.map((field) =>
-          el(
-            "label",
-            {},
-            field.label,
-            el("input", {
-              type: "text",
-              inputmode: field.kind === "gates" ? "text" : "decimal",
-              "aria-label": field.label,
-              value: String(entry.backendFields?.[field.name] ?? ""),
-              spellcheck: "false",
-              autocomplete: "off",
-              oninput: (event) => {
-                const gates = field.kind === "gates";
-                const next = gates
-                  ? event.target.value.toLowerCase().replace(/[^a-z0-9_,\s]/g, "")
-                  : event.target.value.replace(/[^0-9.eE+\-infity]/gi, "");
-                if (event.target.value !== next) event.target.value = next;
-                update(() => {
-                  entry.backendFields = entry.backendFields ?? {};
-                  entry.backendFields[field.name] = next;
-                });
-              },
-            }),
+          "div",
+          { className: "backend-fields" },
+          ...fields.map((field) =>
+            el(
+              "label",
+              {},
+              field.label,
+              el("input", {
+                type: "text",
+                inputmode: field.kind === "gates" ? "text" : "decimal",
+                "aria-label": field.label,
+                value: String(entry.backendFields?.[field.name] ?? ""),
+                spellcheck: "false",
+                autocomplete: "off",
+                oninput: (event) => {
+                  const gates = field.kind === "gates";
+                  const next = gates
+                    ? event.target.value.toLowerCase().replace(/[^a-z0-9_,\s]/g, "")
+                    : event.target.value.replace(/[^0-9.eE+\-infity]/gi, "");
+                  if (event.target.value !== next) event.target.value = next;
+                  update(() => {
+                    entry.backendFields = entry.backendFields ?? {};
+                    entry.backendFields[field.name] = next;
+                  });
+                },
+              }),
+            ),
           ),
-        ),
-      )
+        )
       : null,
   );
 }
@@ -1996,7 +1996,7 @@ function copyPreview(event) {
     () => {
       if (button) showCopied(button);
     },
-    () => { },
+    () => {},
   );
 }
 
@@ -2028,7 +2028,7 @@ function copyBoard(event) {
     () => {
       if (button) showCopied(button, "Copy board");
     },
-    () => { },
+    () => {},
   );
 }
 
@@ -2432,17 +2432,17 @@ function resultsComponent(payload) {
   const resources = line ? el("p", { className: "resources" }, line) : null;
   const observableSwitcher = observableButtons.length
     ? el(
-      "div",
-      { className: "chart-switch", role: "tablist", "aria-label": "Observable" },
-      ...observableButtons,
-    )
+        "div",
+        { className: "chart-switch", role: "tablist", "aria-label": "Observable" },
+        ...observableButtons,
+      )
     : null;
   const viewSwitcher = viewButtons.length
     ? el(
-      "div",
-      { className: "chart-switch", role: "tablist", "aria-label": "Chart" },
-      ...viewButtons,
-    )
+        "div",
+        { className: "chart-switch", role: "tablist", "aria-label": "Chart" },
+        ...viewButtons,
+      )
     : null;
   if (!note && !observableSwitcher && !viewSwitcher && !resources) return host.children[0];
   return el(
@@ -3036,21 +3036,21 @@ function measureChip(block) {
         { className: "measure-actions" },
         open
           ? el(
-            "button",
-            {
-              className: "done",
-              type: "button",
-              onclick: () => {
-                update(
-                  () => {
-                    state.measureOpen = false;
-                  },
-                  { lanes: ["measure"], chrome: false },
-                );
+              "button",
+              {
+                className: "done",
+                type: "button",
+                onclick: () => {
+                  update(
+                    () => {
+                      state.measureOpen = false;
+                    },
+                    { lanes: ["measure"], chrome: false },
+                  );
+                },
               },
-            },
-            "Done",
-          )
+              "Done",
+            )
           : null,
         el(
           "button",
@@ -3186,11 +3186,11 @@ function attachBackend(backendId, key) {
   const target =
     key == null
       ? state.placedSims.find(
-        (entry) =>
-          !checks.isReference(currentPage(), entry) &&
-          !entry.backend &&
-          checks.backendFits(currentPage(), entry, backendId),
-      )
+          (entry) =>
+            !checks.isReference(currentPage(), entry) &&
+            !entry.backend &&
+            checks.backendFits(currentPage(), entry, backendId),
+        )
       : state.placedSims.find((entry) => entry.key === key);
   if (
     !target ||
