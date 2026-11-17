@@ -817,8 +817,8 @@ test("firstProblem reports each problem in order", () => {
   page.selection.state = null;
   expectProblem(
     page,
-    "Place a block in each slot.",
-    "Place a block in each slot to preview the script.",
+    "Place a block in the Initial state slot.",
+    "Place a block in the Initial state slot to preview the script.",
   );
 
   page.selection.state = "basis";
@@ -884,4 +884,75 @@ test("firstProblem reports each problem in order", () => {
   page.actionText.save = "results/run1";
   assert.equal(checks.firstProblem(page), null);
   assert.equal(checks.runAllowed(page), true);
+});
+
+test("the status names the first empty slot", () => {
+  const page = qutipPage();
+  page.selection.measure = null;
+  expectProblem(
+    page,
+    "Place a block in the Measure slot.",
+    "Place a block in the Measure slot to preview the script.",
+  );
+
+  page.selection.simulator = null;
+  page.placedSims = [];
+  expectProblem(
+    page,
+    "Place a block in the Method slot.",
+    "Place a block in the Method slot to preview the script.",
+  );
+
+  page.selection.model = "hamiltonian";
+  page.preexistingId = null;
+  page.modelTerms = [{ id: "hamiltonian", matrix: "" }];
+  expectProblem(
+    page,
+    "Place a block in the Method slot.",
+    "Place a block in the Method slot to preview the script.",
+  );
+
+  page.selection.simulator = "qutip";
+  page.placedSims = [{ id: "qutip", params: { time_steps: "11" } }];
+  page.selection.measure = "z";
+  expectProblem(page, "Enter a valid operator.", "Enter a valid operator to preview the script.");
+});
+
+test("a time-step mismatch needs two filled values", () => {
+  const page = qutipPage();
+  assert.equal(checks.timeStepMismatch(page), null);
+  page.placedSims.push({ id: "trotterization", params: { time_steps: "11" } });
+  assert.equal(checks.timeStepMismatch(page), null);
+  page.placedSims[1].params.time_steps = "101";
+  assert.equal(
+    checks.timeStepMismatch(page),
+    "Use the same number of time steps for every simulator.",
+  );
+  page.placedSims[1].params.time_steps = "";
+  assert.equal(checks.timeStepMismatch(page), null);
+});
+
+test("the status asks only for the missing number", () => {
+  const page = qutipPage();
+  page.settings.qubits = "";
+  page.settings.total = "";
+  expectProblem(
+    page,
+    "Enter qubits and total time.",
+    "Enter qubits and total time to preview the script.",
+  );
+
+  page.settings.total = "1";
+  expectProblem(page, "Enter qubits.", "Enter qubits to preview the script.");
+
+  page.settings.qubits = "1";
+  page.settings.total = "";
+  expectProblem(
+    page,
+    "Qubits must be an integer of at least 2.",
+    "Qubits must be an integer of at least 2 to preview the script.",
+  );
+
+  page.settings.qubits = "2";
+  expectProblem(page, "Enter a total time.", "Enter a total time to preview the script.");
 });

@@ -341,6 +341,10 @@ body {
   background: var(--white);
 }
 
+.sim-fields input[aria-invalid="true"] {
+  border-color: var(--alert-ink);
+}
+
 .chip-field textarea {
   min-height: 76px;
   resize: vertical;
