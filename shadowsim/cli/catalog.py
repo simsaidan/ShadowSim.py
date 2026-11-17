@@ -1,8 +1,11 @@
 """List the builder page's initial states, measurements, and result actions.
 
 The page renders a lane from :func:`listed_states`, :func:`listed_measurements`,
-or :func:`listed_actions`. A posted id is prepared by the matching function in
-this module. An id that is not listed is an error from that function.
+or :func:`listed_actions`. :func:`listed_measurements` is the generic list an
+added Hamiltonian posts: ``z``, ``x``, ``y``, and ``counts``. A preexisting
+model posts ``model`` and records the measurements that factory defines. A
+posted catalog id is prepared by the matching function in this module. An id
+that is not listed is an error from that function.
 """
 
 import math
@@ -96,7 +99,8 @@ class ListedMeasurement(TypedDict):
 
     ``kind`` is ``pauli`` or ``counts``. A Pauli record has ``letter`` and
     ``rotate``. ``rotate`` is true when a circuit simulator reads those qubits
-    in the X basis. A counts record has ``field`` instead.
+    in this record's letter, ``X`` or ``Y``, and every other qubit in Z. A
+    counts record has ``field`` instead.
     """
 
     id: str
@@ -354,6 +358,7 @@ _STATES: tuple[_StateEntry, ...] = (
 _MEASUREMENTS: tuple[_MeasurementEntry, ...] = (
     _MeasurementEntry("z", "Z expectation", "On each qubit", "Z expectation on each qubit", "pauli", "Z", False),
     _MeasurementEntry("x", "X expectation", "On each qubit", "X expectation on each qubit", "pauli", "X", True),
+    _MeasurementEntry("y", "Y expectation", "On each qubit", "Y expectation on each qubit", "pauli", "Y", True),
     _MeasurementEntry("counts", "Counts", "Expression on all qubits", "Counts on all qubits", "counts"),
 )
 
@@ -400,10 +405,15 @@ def listed_states() -> list[ListedState]:
 
 
 def listed_measurements() -> list[ListedMeasurement]:
-    """Return the measurements in catalog order.
+    """Return the generic measurements in catalog order.
+
+    The ids are ``z``, ``x``, ``y``, and ``counts``. ``GET /measurements``
+    returns this list, and an added Hamiltonian posts one of these ids. A
+    preexisting model posts ``model`` and records the measurements that
+    factory defines.
 
     Returns:
-        Measurements the builder page can offer.
+        Measurements the builder page offers for an added Hamiltonian.
     """
     return [entry.listed() for entry in _MEASUREMENTS]
 

@@ -76,6 +76,8 @@ const pathOpen = {};
 let stateOpen = false;
 let measureOpen = false;
 let measureSites = null;
+let catalogMeasures = [];
+let modelMeasurements = [];
 const expressionText = {};
 const DEFAULT_SHOTS = "256";
 
@@ -1795,7 +1797,7 @@ async function requestCheck(body) {
     const error = typeof payload.error === "string" && payload.error ? payload.error : "The selection was rejected.";
     return { ok: false, error };
   }
-  return { ok: true, qubits: payload.qubits };
+  return { ok: true, qubits: payload.qubits, measurements: readModelMeasurements(payload) };
 }
 
 async function postCheck(requested, serial) {
@@ -1814,6 +1816,10 @@ async function postCheck(requested, serial) {
     }
     acceptedQubits = result.qubits;
     applyAcceptedQubits();
+    if (selection.model === "preexisting") {
+      modelMeasurements = result.measurements ?? [];
+      refreshModelMeasureBlock();
+    }
     if (documentBody() !== requested) {
       acceptedQubits = null;
       return;
@@ -2594,7 +2600,70 @@ function stateValue() {
   return numberList(text, field.cap);
 }
 
+function modelMeasureBlock() {
+  const labels = modelMeasurements
+    .map((item) => item.label)
+    .filter((label) => typeof label === "string" && label);
+  const detail = labels.length ? labels.join("; ") : "The model's measurements";
+  return {
+    id: "model",
+    title: "Model measurements",
+    detail,
+    phrase: detail,
+    kind: "model",
+  };
+}
+
+function rememberCatalogMeasures() {
+  if (BLOCKS.measure.some((block) => block.kind === "model")) return;
+  catalogMeasures = BLOCKS.measure.slice();
+}
+
+function installFactoryMeasure() {
+  rememberCatalogMeasures();
+  BLOCKS.measure = [modelMeasureBlock()];
+}
+
+function installCatalogMeasure() {
+  if (catalogMeasures.length) BLOCKS.measure = catalogMeasures.slice();
+  modelMeasurements = [];
+}
+
+function useFactoryMeasure() {
+  modelMeasurements = [];
+  installFactoryMeasure();
+  selection.measure = "model";
+  measureOpen = false;
+  measureSites = null;
+}
+
+function refreshModelMeasureBlock() {
+  if (selection.model !== "preexisting") return;
+  installFactoryMeasure();
+  repaintSlot("measure");
+  repaintPalette("measure");
+}
+
+function readModelMeasurements(payload) {
+  if (!Array.isArray(payload?.measurements)) return [];
+  return payload.measurements.filter(
+    (item) => item && typeof item.label === "string" && Array.isArray(item.qubits),
+  );
+}
+
+function postedBoard(saved) {
+  if (!plainObject(saved)) return saved;
+  const model = saved.model;
+  const measure = saved.measure;
+  if (!plainObject(model) || !plainObject(measure)) return saved;
+  if (Array.isArray(model.terms) && model.terms.length) return saved;
+  if (typeof model.id !== "string" || !model.id) return saved;
+  if (measure.id === "model") return saved;
+  return { ...saved, measure: { id: "model" } };
+}
+
 function postedMeasure() {
+  if (selection.measure === "model") return { id: "model" };
   const measure = { id: selection.measure, sites: explicitSites() };
   const field = blockById("measure", selection.measure)?.field;
   if (field?.kind === "expression") measure.expression = (expressionText[selection.measure] ?? "").trim();
@@ -2758,6 +2827,7 @@ function termSummary() {
 
 function measureDetail(count) {
   const block = blockById("measure", selection.measure);
+  if (block?.kind === "model") return block.detail ?? "";
   if (count == null) return block?.detail ?? "";
   const sites = selectedSites(count);
   if (!sites.length) return "No qubits";
@@ -2768,6 +2838,7 @@ function measureDetail(count) {
 function measurePhrase() {
   const block = blockById("measure", selection.measure);
   if (!block) return "";
+  if (block.kind === "model") return block.phrase ?? "";
   const count = qubitCount();
   const sites = selectedSites(count);
   if (count == null || sites.length === count) return block.phrase;
@@ -2881,6 +2952,35 @@ function syncMeasureChip() {
 }
 
 function measureChip(block) {
+  if (block.kind === "model") {
+    return el(
+      "div",
+      { className: "chip tone-green measure" },
+      el(
+        "div",
+        { className: "measure-head" },
+        el("strong", {}, block.title),
+        el("span", { className: "measure-detail" }, block.detail ?? ""),
+        el(
+          "div",
+          { className: "measure-actions" },
+          el(
+            "button",
+            {
+              className: "remove",
+              type: "button",
+              "aria-label": `Remove ${block.title}`,
+              onclick: (event) => {
+                event.stopPropagation();
+                clearLane("measure");
+              },
+            },
+            "×",
+          ),
+        ),
+      ),
+    );
+  }
   const count = qubitCount();
   const open = measureOpen && count != null;
   return el(
@@ -3026,12 +3126,14 @@ function place(laneId, blockId) {
     selection.model = "preexisting";
     if (!preexistingId) preexistingId = modelFactories[0]?.id ?? null;
     preexistingOpen = true;
+    useFactoryMeasure();
   } else if (laneId === "state") {
     selection.state = blockId;
     stateOpen = true;
   } else if (laneId === "measure") {
     selection.measure = blockId;
-    measureOpen = qubitCount() != null;
+    measureOpen = block?.kind !== "model" && qubitCount() != null;
+    if (block?.kind === "model") measureSites = null;
   } else if (laneId === "then") {
     if (!placedThens.includes(blockId)) placedThens.push(blockId);
     selection.then = placedThens[0] ?? null;
@@ -3042,6 +3144,10 @@ function place(laneId, blockId) {
   dragging = null;
   releaseStatusHold();
   commitLane(laneId, laneId === "model");
+  if (laneId === "model" && blockId === "preexisting") {
+    repaintSlot("measure");
+    repaintPalette("measure");
+  }
 }
 
 function removeThen(id) {
@@ -3132,12 +3238,21 @@ function removeTerm(key) {
 
 function clearLane(laneId) {
   if (running) return;
+  const leavingFactory = laneId === "model" && selection.model === "preexisting";
   if (laneId === "simulator") placedSims.splice(0, placedSims.length);
   if (laneId === "then") placedThens.splice(0, placedThens.length);
   if (laneId === "state") stateOpen = false;
   if (laneId === "measure") {
     measureOpen = false;
     measureSites = null;
+  }
+  if (leavingFactory) {
+    installCatalogMeasure();
+    if (selection.measure === "model") {
+      selection.measure = null;
+      measureOpen = false;
+      measureSites = null;
+    }
   }
   if (laneId === "state" && qubitsSource === "state" && settings.qubits !== "") qubitsSource = "user";
   if (laneId === "model" && qubitsSource === "hamiltonian") {
@@ -3153,6 +3268,10 @@ function clearLane(laneId) {
   selection[laneId] = null;
   releaseStatusHold();
   commitLane(laneId, laneId === "model");
+  if (leavingFactory) {
+    repaintSlot("measure");
+    repaintPalette("measure");
+  }
 }
 
 function knownBlock(laneId, blockId) {
@@ -3215,6 +3334,8 @@ function resetBoard() {
   stateOpen = false;
   measureOpen = false;
   preexistingOpen = false;
+  modelMeasurements = [];
+  if (catalogMeasures.length) BLOCKS.measure = catalogMeasures.slice();
 }
 
 function applyState(state) {
@@ -3231,6 +3352,7 @@ function applyModel(model) {
   if (!plainObject(model)) return;
   const terms = Array.isArray(model.terms) ? model.terms : [];
   if (terms.length) {
+    installCatalogMeasure();
     settings.qubits = textNumber(model.qubits);
     qubitsSource = "user";
     const next = [];
@@ -3258,6 +3380,10 @@ function applyModel(model) {
     if (key === "n_qubits") continue;
     if (typeof value === "string" || typeof value === "number") factoryText[key] = textNumber(value);
   }
+  installFactoryMeasure();
+  selection.measure = "model";
+  measureOpen = false;
+  measureSites = null;
 }
 
 function simParams(block, args) {
@@ -3305,6 +3431,13 @@ function applySims(entries) {
 
 function applyMeasure(measure) {
   if (!plainObject(measure)) return;
+  if (selection.model === "preexisting") {
+    installFactoryMeasure();
+    selection.measure = "model";
+    measureOpen = false;
+    measureSites = null;
+    return;
+  }
   selection.measure = knownBlock("measure", measure.id) ? measure.id : null;
   measureSites = Array.isArray(measure.sites) ? measure.sites.filter((site) => Number.isInteger(site)) : null;
   const field = blockById("measure", selection.measure)?.field;
@@ -3365,13 +3498,14 @@ async function restoreBoard() {
     forgetBoard();
     return;
   }
+  const body = JSON.stringify(postedBoard(saved));
   let response = null;
   let payload = {};
   try {
     response = await fetch("/runs/check", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: raw,
+      body,
     });
     try {
       payload = await response.json();
@@ -3386,15 +3520,19 @@ async function restoreBoard() {
     statusHold = typeof payload.error === "string" && payload.error ? payload.error : "The selection was rejected.";
     return;
   }
-  applyDocument(saved);
+  applyDocument(JSON.parse(body));
   acceptedQubits = payload.qubits;
   applyAcceptedQubits();
+  if (selection.model === "preexisting") {
+    modelMeasurements = readModelMeasurements(payload);
+    installFactoryMeasure();
+  }
   checkError = null;
   rejectedBody = null;
   checkInFlight = false;
   pendingBody = null;
-  if (documentBody() === raw) {
-    acceptedBody = raw;
+  if (documentBody() === body) {
+    acceptedBody = body;
     releaseStatusHold();
   } else acceptedBody = null;
 }
@@ -3427,9 +3565,10 @@ async function importBoardText(raw) {
     holdImportStatus("The selection was rejected.");
     return;
   }
+  const body = JSON.stringify(postedBoard(saved));
   let result = null;
   try {
-    result = await requestCheck(raw);
+    result = await requestCheck(body);
   } catch {
     if (!running) holdImportStatus("The selection could not be checked.");
     return;
@@ -3440,15 +3579,19 @@ async function importBoardText(raw) {
   }
   cancelScheduledCheck();
   checkSerial += 1;
-  applyDocument(saved);
+  applyDocument(JSON.parse(body));
   acceptedQubits = result.qubits;
   applyAcceptedQubits();
+  if (selection.model === "preexisting") {
+    modelMeasurements = result.measurements ?? [];
+    installFactoryMeasure();
+  }
   checkError = null;
   rejectedBody = null;
   checkInFlight = false;
   pendingBody = null;
-  if (documentBody() === raw) {
-    acceptedBody = raw;
+  if (documentBody() === body) {
+    acceptedBody = body;
     releaseStatusHold();
   } else acceptedBody = null;
   const board = document.querySelector(".board");
@@ -3520,6 +3663,7 @@ async function loadLane(path, lane, key) {
     if (!response.ok || !Array.isArray(items)) {
       laneNotes[lane] = payload.error || `Could not load ${key}.`;
       BLOCKS[lane] = [];
+      if (lane === "measure") catalogMeasures = [];
       selection[lane] = null;
       return;
     }
@@ -3536,6 +3680,7 @@ async function loadLane(path, lane, key) {
       ];
       if (preexistingId && !modelFactories.some((item) => item.id === preexistingId)) preexistingId = null;
     } else BLOCKS[lane] = items;
+    if (lane === "measure") catalogMeasures = items.slice();
     if (lane === "then") {
       for (const item of items) {
         if (item.field?.kind === "path" && !Object.hasOwn(actionText, item.id)) {
@@ -3548,6 +3693,7 @@ async function loadLane(path, lane, key) {
   } catch {
     laneNotes[lane] = `Could not load ${key}.`;
     BLOCKS[lane] = [];
+    if (lane === "measure") catalogMeasures = [];
     selection[lane] = null;
   }
 }

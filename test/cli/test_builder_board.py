@@ -388,16 +388,15 @@ function fillIsing() {
   selection.state = "basis";
   selection.model = "preexisting";
   selection.simulator = "qutip";
-  selection.measure = "z";
   selection.then = "plot";
   stateText.basis = "01";
   settings.qubits = "2";
   settings.total = "1";
   qubitsSource = "state";
   actionText.save = "results/kept";
-  measureSites = [0];
   placedSims.push({ id: "qutip", key: 3, open: true, params: { time_steps: "11" } });
   placedThens.push("plot");
+  useFactoryMeasure();
 }
 function fillCircuit() {
   fillIsing();
@@ -591,6 +590,17 @@ if (request.action === "roundtrip") {
   const narrowStatus = statusMessage();
   const narrowHint = hint();
   const narrowPlaceholder = input.placeholder;
+  selection.model = null;
+  BLOCKS.model = [
+    { id: "preexisting", title: "Preexisting model", detail: "Choose a built-in model" },
+    { id: "hamiltonian", title: "Hamiltonian", adds: true, symbol: "Operator" },
+  ];
+  modelTerms.push({
+    id: "hamiltonian",
+    key: 1,
+    matrix: "[[1, 0, 0, 0], [0, 1, 0, 0], [0, 0, 1, 0], [0, 0, 0, 1]]",
+    sites: [],
+  });
   const body = JSON.stringify(runRequest());
   emptyBoard();
   const cleared = expressionText.counts ?? "";
@@ -1014,6 +1024,125 @@ if (request.action === "roundtrip") {
       stored,
     };
   })();
+} else if (request.action === "modelMeasure") {
+  fillIsing();
+  BLOCKS.model = [
+    { id: "preexisting", title: "Preexisting model", detail: "Choose a built-in model" },
+    { id: "hamiltonian", title: "Hamiltonian", adds: true, symbol: "Operator" },
+  ];
+  BLOCKS.measure = request.measures;
+  selection.measure = null;
+  measureSites = null;
+  const board = document.createElement("section");
+  board.className = "board";
+  document.documentElement.append(board);
+  draw(board);
+  const checks = [];
+  fetch = async (_url, options) => {
+    const posted = JSON.parse(options.body);
+    checks.push(posted.measure);
+    const count = Number(posted.model.arguments.n_qubits);
+    const measurements = [];
+    for (let index = 0; index < count; index += 1) {
+      measurements.push({ label: "expectation on " + index, qubits: [index] });
+    }
+    return { ok: true, json: async () => ({ qubits: count, measurements }) };
+  };
+  async function settle() {
+    for (let step = 0; step < 8; step += 1) await Promise.resolve();
+  }
+  result = (async () => {
+  place("model", "preexisting");
+  await settle();
+  const chip = () => board.querySelector(".chip.measure");
+  const detailOf = () => nodeText(walk(chip(), []).find((item) => item.className === "measure-detail"));
+  const boxes = () => walk(chip(), []).filter((node) => node.tag === "input" && node.attrs.type === "checkbox");
+  const placed = {
+    palette: BLOCKS.measure.map((block) => block.id),
+    posted: runRequest().measure,
+    detail: detailOf(),
+    boxes: boxes().length,
+    open: measureOpen,
+    check: checks[0],
+  };
+  settings.qubits = "3";
+  refreshSummaryAndPreview();
+  await settle();
+  const refreshed = {
+    posted: runRequest().measure,
+    detail: detailOf(),
+    checks: checks.length,
+  };
+  clearLane("measure");
+  const removed = {
+    measure: selection.measure,
+    palette: BLOCKS.measure.map((block) => block.id),
+    chip: Boolean(chip()),
+  };
+  place("measure", "model");
+  const again = {
+    measure: selection.measure,
+    open: measureOpen,
+    boxes: boxes().length,
+    posted: runRequest().measure,
+  };
+  clearLane("model");
+  const catalog = {
+    model: selection.model,
+    measure: selection.measure,
+    palette: BLOCKS.measure.map((block) => block.id),
+  };
+  place("model", "hamiltonian");
+  return {
+    placed,
+    refreshed,
+    removed,
+    again,
+    catalog,
+    added: {
+      measure: selection.measure,
+      palette: BLOCKS.measure.map((block) => block.id),
+      terms: modelTerms.map((term) => term.id),
+    },
+  };
+  })();
+} else if (request.action === "legacyMeasure") {
+  fillIsing();
+  const legacy = {
+    version: 1,
+    total: "1",
+    state: { id: "basis", value: "01" },
+    model: { id: "ising", arguments: { n_qubits: "2" } },
+    simulators: [{ id: "qutip", arguments: { time_steps: "11" } }],
+    measure: { id: "z", sites: [0] },
+    actions: { ids: ["plot"] },
+  };
+  const checks = [];
+  fetch = async (_url, options) => {
+    checks.push(JSON.parse(options.body).measure);
+    return {
+      ok: true,
+      json: async () => ({
+        qubits: 2,
+        measurements: [
+          { label: "expectation on 0", qubits: [0] },
+          { label: "expectation on 1", qubits: [1] },
+        ],
+      }),
+    };
+  };
+  localStorage.setItem("shadowsim.builder.board", JSON.stringify(legacy));
+  result = (async () => {
+    await restoreBoard();
+    return {
+      check: checks[0],
+      measure: selection.measure,
+      posted: runRequest().measure,
+      sites: measureSites,
+      detail: BLOCKS.measure[0] && BLOCKS.measure[0].detail,
+      palette: BLOCKS.measure.map((block) => block.id),
+    };
+  })();
 } else {
   throw new Error("unknown action");
 }
@@ -1135,6 +1264,44 @@ def test_an_accepted_run_is_what_gets_stored() -> None:
     assert page["restored"] is True
     assert page["state"] == "basis"
     assert page["bits"] == "01"
+
+
+def test_a_preexisting_model_measures_what_the_factory_records() -> None:
+    page = _call("modelMeasure")
+    assert page["placed"]["palette"] == ["model"]
+    assert page["placed"]["posted"] == {"id": "model"}
+    assert page["placed"]["detail"] == "expectation on 0; expectation on 1"
+    assert page["placed"]["boxes"] == 0
+    assert page["placed"]["open"] is False
+    assert page["placed"]["check"] == {"id": "model"}
+    assert page["refreshed"]["posted"] == {"id": "model"}
+    assert page["refreshed"]["detail"] == "expectation on 0; expectation on 1; expectation on 2"
+    assert page["refreshed"]["checks"] == 2
+    assert page["removed"]["measure"] is None
+    assert page["removed"]["palette"] == ["model"]
+    assert page["removed"]["chip"] is False
+    assert page["again"]["measure"] == "model"
+    assert page["again"]["open"] is False
+    assert page["again"]["boxes"] == 0
+    assert page["again"]["posted"] == {"id": "model"}
+    catalog = [item["id"] for item in listed_measurements()]
+    assert page["catalog"]["model"] is None
+    assert page["catalog"]["measure"] is None
+    assert page["catalog"]["palette"] == catalog
+    assert "y" in catalog
+    assert page["added"]["measure"] is None
+    assert page["added"]["palette"] == catalog
+    assert page["added"]["terms"] == ["hamiltonian"]
+
+
+def test_a_saved_catalog_measurement_is_read_as_the_model() -> None:
+    page = _call("legacyMeasure")
+    assert page["check"] == {"id": "model"}
+    assert page["measure"] == "model"
+    assert page["posted"] == {"id": "model"}
+    assert page["sites"] is None
+    assert page["detail"] == "expectation on 0; expectation on 1"
+    assert page["palette"] == ["model"]
 
 
 def test_counts_chip_edits_the_expression() -> None:

@@ -192,6 +192,10 @@
     return blockById("measure", page.selection.measure);
   }
 
+  function modelMeasureSelected() {
+    return page.selection.measure === "model";
+  }
+
   function positiveIntText(value) {
     return /^[1-9]\d*$/.test(value);
   }
@@ -516,6 +520,7 @@
   }
 
   function measureSitesReady() {
+    if (modelMeasureSelected()) return true;
     const count = qubitCount();
     if (!page.selection.measure || count == null) return true;
     return selectedSites(count).length > 0;
@@ -842,6 +847,7 @@
   }
 
   function measurementSetup() {
+    if (modelMeasureSelected()) return "measurements = model.measurements";
     const count = qubitCount();
     const sites = selectedSites(count);
     if (measureRecord()?.field?.kind === "expression") {
@@ -857,6 +863,7 @@
   }
 
   function observableSetup() {
+    if (modelMeasureSelected()) return "e_ops = model.e_ops";
     const letter = measureRecord()?.letter ?? "";
     const count = qubitCount();
     const sites = selectedSites(count);
@@ -896,10 +903,11 @@
     return { id: entry.id, arguments: fields, backend: postedBackend(entry) };
   }
 
-  function xBasis(sites) {
+  function pauliBasis(sites) {
+    const letter = measureRecord()?.letter ?? "Z";
     const count = qubitCount();
-    if (count == null || sites.length === count) return `"X" * ${systemQubits()}`;
-    const letters = Array.from({ length: count }, (_, qubit) => (sites.includes(qubit) ? "X" : "Z"));
+    if (count == null || sites.length === count) return `"${letter}" * ${systemQubits()}`;
+    const letters = Array.from({ length: count }, (_, qubit) => (sites.includes(qubit) ? letter : "Z"));
     return pyString(letters.join(""));
   }
 
@@ -919,7 +927,7 @@
       lindblads = "lindblads";
     }
     const sites = selectedSites(qubitCount());
-    const basis = measureRecord()?.rotate ? `,\n    basis=${xBasis(sites)}` : "";
+    const basis = !modelMeasureSelected() && measureRecord()?.rotate ? `,\n    basis=${pauliBasis(sites)}` : "";
     let setup = block.setup
       .replaceAll("{name}", name)
       .replaceAll("{hamiltonians}", hamiltonians)
@@ -1020,7 +1028,7 @@
       if (!names.includes(className)) names.push(className);
       if (!blockById("simulator", entry.id)?.observables) circuit = true;
     });
-    if (circuit) names.push("Measurement");
+    if (circuit && !modelMeasureSelected()) names.push("Measurement");
     names.sort();
     return names.length ? `from shadowsim.simulators import ${names.join(", ")}` : "";
   }
@@ -1046,7 +1054,12 @@
     const symbols = [
       ...new Set(page.modelTerms.map((term) => blockById("model", term.id)?.symbol).filter(Boolean)),
     ];
-    if (page.placedSims.some((entry) => blockById("simulator", entry.id)?.observables)) symbols.push("Operator");
+    if (
+      page.placedSims.some((entry) => blockById("simulator", entry.id)?.observables) &&
+      !modelMeasureSelected()
+    ) {
+      symbols.push("Operator");
+    }
     if (page.modelTerms.some((term) => term.id === "lindblad" && !lindbladProblem(term))) symbols.push("LocalOperator");
     if (symbols.length) lines.push(`from shadowsim.core import ${symbols.join(", ")}`);
     if (benchmark) lines.push("from shadowsim.benchmarking import Benchmark");

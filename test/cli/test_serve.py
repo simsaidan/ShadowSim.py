@@ -1245,7 +1245,7 @@ def _version_one(model: dict[str, Any], basis: str) -> bytes:
             "state": {"id": "basis", "value": basis},
             "model": model,
             "simulators": [{"id": "qutip", "arguments": {"time_steps": 2}, "backend": None}],
-            "measure": {"id": "z", "sites": None},
+            "measure": {"id": "model"},
             "actions": {"ids": []},
         }
     ).encode()
@@ -1280,7 +1280,13 @@ def test_a_check_returns_a_legal_qubit_count_without_a_child(monkeypatch: pytest
     finally:
         _close_server(server, thread)
     assert status == 200
-    assert json.loads(payload) == {"qubits": 6}
+    from shadowsim.models import tavis_cummings_hubbard
+
+    built = tavis_cummings_hubbard(n_cavities=2, n_emitters=1, nu=1.5)
+    assert json.loads(payload) == {
+        "qubits": 6,
+        "measurements": [{"label": item.label, "qubits": list(item.qubits)} for item in built.measurements],
+    }
     assert children == []
 
 

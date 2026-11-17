@@ -34,6 +34,7 @@ from shadowsim.cli.run import (
     _measured_result,
     _measurements,
     _model,
+    _model_records,
     _observable_labels,
     _page_limits,
     _selection_positive_int,
@@ -140,8 +141,17 @@ def _simulator_sections(overrides: Mapping[str, object]) -> list[object]:
 
 
 def _measure_section(overrides: Mapping[str, object]) -> dict[str, object]:
-    """Return the document's measure from the short names tests pass."""
-    measure: dict[str, object] = {"id": overrides.get("measure", "z"), "sites": overrides.get("sites")}
+    """Return the document's measure from the short names tests pass.
+
+    A factory model records its own measurements. An added Hamiltonian records
+    ``z`` unless the test names another catalog id.
+    """
+    terms = overrides.get("terms")
+    added = isinstance(terms, list) and bool(terms)
+    measure: dict[str, object] = {
+        "id": overrides.get("measure", "z" if added else "model"),
+        "sites": overrides.get("sites"),
+    }
     if "expression" in overrides:
         measure["expression"] = overrides["expression"]
     return measure
@@ -222,7 +232,8 @@ def forbid_qutip(monkeypatch: pytest.MonkeyPatch) -> None:
         ({"simulator": None}, "unknown simulator"),
         ({"state": "nope"}, "unknown initial state"),
         ({"model": "nope"}, "unknown model"),
-        ({"measure": "nope"}, "unknown measurement"),
+        ({"measure": "nope"}, "preexisting model records its own measurements"),
+        ({"measure": "z"}, "preexisting model records its own measurements"),
     ],
 )
 def test_build_simulator_rejects(overrides: dict[str, object], message: str, forbid_qutip: None) -> None:
@@ -370,7 +381,7 @@ def test_an_exported_observables_simulator_uses_its_class(monkeypatch: pytest.Mo
     assert simulator.kwargs["time_steps"] == 4
     with pytest.raises(ValueError, match="Note returns Pauli expectations"):
         build_simulator(
-            _selection(
+            _added(
                 simulator="note",
                 measure="counts",
                 sites=[0],
@@ -839,7 +850,25 @@ def test_check_page_returns_the_built_qubit_count(
     from shadowsim.simulators import qutip_simulator
 
     _block_evolution(monkeypatch, qutip_simulator)
-    assert check_page(_selection(model=model_id, time_steps=2, **overrides)) == {"qubits": qubits}
+    if model_id == "tavis_cummings_hubbard":
+        built = tavis_cummings_hubbard(n_cavities=2, n_emitters=1, nu=1.5)
+    else:
+        built = jaynes_cummings_hubbard(n_cavities=2, nu=1.5)
+    assert check_page(_selection(model=model_id, time_steps=2, **overrides)) == {
+        "qubits": qubits,
+        "measurements": [{"label": item.label, "qubits": list(item.qubits)} for item in built.measurements],
+    }
+
+
+@pytest.mark.qutip
+def test_check_page_leaves_catalog_measurements_off_an_added_hamiltonian(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    pytest.importorskip("qutip")
+    from shadowsim.simulators import qutip_simulator
+
+    _block_evolution(monkeypatch, qutip_simulator)
+    assert check_page(_added(time_steps=2)) == {"qubits": 1}
 
 
 @pytest.mark.parametrize(
@@ -958,24 +987,54 @@ def test_initial_state_rejects_an_unknown_id() -> None:
 @pytest.mark.qutip
 def test_pauli_measurement_records_one_curve_per_qubit() -> None:
     pytest.importorskip("qutip")
-    simulator = build_simulator(_selection(measure="x", time_steps=2))
+    simulator = build_simulator(_pair(measure="x", time_steps=2))
     assert len(simulator.observables) == 2
 
 
 def test_measure_sites_rejects_an_empty_list() -> None:
     with pytest.raises(ValueError, match="measured qubits"):
-        build_simulator(_selection(sites=[], time_steps=2))
+        build_simulator(_pair(sites=[], time_steps=2))
 
 
 def test_measure_sites_rejects_an_index_past_the_model() -> None:
     with pytest.raises(ValueError, match="indexes from 0 to 1"):
-        build_simulator(_selection(sites=[2], time_steps=2))
+        build_simulator(_pair(sites=[2], time_steps=2))
+
+
+def test_an_added_hamiltonian_rejects_model_measurements(forbid_qutip: None) -> None:
+    with pytest.raises(ValueError, match="added Hamiltonian"):
+        build_simulator(_added(measure="model"))
+
+
+def test_model_measurements_must_match_observables() -> None:
+    from dataclasses import replace
+
+    broken = replace(ising(n_qubits=2), measurements=ising(n_qubits=2).measurements[:1])
+    with pytest.raises(ValueError, match="do not match"):
+        _model_records(broken)
+
+
+@pytest.mark.qutip
+def test_tavis_cummings_records_factory_labels() -> None:
+    pytest.importorskip("qutip")
+    payload = run_page(_selection(model="tavis_cummings", basis="100", time_steps=2, then="plot"))
+    assert payload["labels"] == ["cavity population on 0, 1", "P(1) on 2"]
+    observables = payload["observables"]
+    assert isinstance(observables, list)
+    assert len(observables) == len(tavis_cummings().e_ops)
+
+
+@pytest.mark.qiskit
+def test_a_factory_model_is_measured_in_z() -> None:
+    pytest.importorskip("qiskit")
+    simulator = build_simulator(_selection(simulator="splitjmatrix", model="tavis_cummings", basis="100", time_steps=2))
+    assert simulator.basis == "Z" * simulator.num_qubits
 
 
 @pytest.mark.qutip
 def test_pauli_subset_records_the_selected_qubit() -> None:
     pytest.importorskip("qutip")
-    simulator = build_simulator(_selection(sites=[1], time_steps=2))
+    simulator = build_simulator(_pair(sites=[1], time_steps=2))
     assert len(simulator.observables) == 1
     assert simulator.observables[0].name == "IZ"
 
@@ -1203,7 +1262,7 @@ def test_benchmark_requires_a_recorded_result(monkeypatch: pytest.MonkeyPatch) -
 @pytest.mark.qutip
 def test_duplicate_measure_sites_are_kept_once() -> None:
     pytest.importorskip("qutip")
-    simulator = build_simulator(_selection(sites=[0, 0], time_steps=2))
+    simulator = build_simulator(_pair(sites=[0, 0], time_steps=2))
     assert len(simulator.observables) == 1
 
 
@@ -1233,7 +1292,7 @@ def test_export_counts_shots_for_a_circuit_simulator(tmp_path: Path) -> None:
     assert record["t_count"] == 0
     assert record["toffoli_count"] == 0
     assert payload["resources"] == [record]
-    assert payload["labels"] == ["⟨Z⟩ on 0", "⟨Z⟩ on 1"]
+    assert payload["labels"] == ["expectation on 0", "expectation on 1"]
 
 
 def test_thens_overrides_a_single_then() -> None:
@@ -1489,7 +1548,7 @@ def test_qutip_time_steps_come_from_the_selection() -> None:
 @pytest.mark.qiskit
 def test_circuit_simulator_records_counts_and_measures_the_selected_qubit() -> None:
     pytest.importorskip("qiskit_aer")
-    selection = _selection(simulator="trotterization", sites=[0], time_steps=2)
+    selection = _pair(simulator="trotterization", sites=[0], time_steps=2)
     simulator = build_simulator(selection)
     assert simulator.basis == "Z" * simulator.num_qubits
     assert simulator.simulate().observables == []
@@ -1513,7 +1572,7 @@ def test_split_j_reads_system_qubits_without_an_ancilla_offset() -> None:
 @pytest.mark.qiskit
 def test_counts_measurement_evaluates_the_expression_on_aer() -> None:
     pytest.importorskip("qiskit_aer")
-    selection = _selection(
+    selection = _pair(
         simulator="trotterization",
         measure="counts",
         sites=[1, 0],
@@ -1530,7 +1589,7 @@ def test_counts_measurement_evaluates_the_expression_on_aer() -> None:
 
 
 def test_counts_measurement_rejects_an_observables_simulator() -> None:
-    selection = _selection(measure="counts", sites=[0], expression='counts["1"] / shots', simulator="qutip")
+    selection = _added(measure="counts", sites=[0], expression='counts["1"] / shots', simulator="qutip")
     with pytest.raises(ValueError, match="QuTiP returns Pauli expectations"):
         build_simulator(selection)
 
@@ -1538,7 +1597,7 @@ def test_counts_measurement_rejects_an_observables_simulator() -> None:
 @pytest.mark.qiskit
 def test_counts_measurement_rejects_a_backend_without_shots() -> None:
     pytest.importorskip("qiskit")
-    selection = _selection(
+    selection = _added(
         measure="counts",
         sites=[0],
         expression='counts["1"] / shots',
@@ -1558,7 +1617,7 @@ def test_counts_measurement_rejects_a_backend_without_shots() -> None:
     ],
 )
 def test_counts_measurement_rejects_a_bad_expression(expression: object, message: str) -> None:
-    selection = _selection(measure="counts", simulator="trotterization", sites=[0], expression=expression)
+    selection = _added(measure="counts", simulator="trotterization", sites=[0], expression=expression)
     with pytest.raises(ValueError, match=message):
         build_simulator(selection)
 
@@ -1621,19 +1680,24 @@ def test_circuit_parameters_come_from_the_selection(simulator_id: str) -> None:
 def test_observable_labels_name_each_measured_qubit() -> None:
     assert _observable_labels({"id": "z", "sites": [0, 1]}, 2) == ["⟨Z⟩ on 0", "⟨Z⟩ on 1"]
     assert _observable_labels({"id": "x", "sites": [1]}, 2) == ["⟨X⟩ on 1"]
+    assert _observable_labels({"id": "y", "sites": [0]}, 1) == ["⟨Y⟩ on 0"]
     counts = {"id": "counts", "sites": [0, 1], "expression": ' counts["01"] / shots '}
     assert _observable_labels(counts, 2) == ['counts["01"] / shots']
     with pytest.raises(ValueError, match="unknown measurement"):
-        _observable_labels({"id": "y", "sites": [0]}, 1)
+        _observable_labels({"id": "w", "sites": [0]}, 1)
     with pytest.raises(ValueError, match="unknown measurement"):
-        _measurements({"id": "y", "sites": [0]}, 1)
+        _measurements({"id": "w", "sites": [0]}, 1)
 
 
 @pytest.mark.qutip
 def test_run_payload_names_the_selected_qubits() -> None:
     pytest.importorskip("qutip")
-    payload = run_page(_selection(measure="x", sites=[1], time_steps=2, then="plot"))
+    payload = run_page(_pair(measure="x", sites=[1], time_steps=2, then="plot"))
     assert payload["labels"] == ["⟨X⟩ on 1"]
+    rotated = run_page(_pair(measure="y", sites=[1], time_steps=2, then="plot"))
+    assert rotated["labels"] == ["⟨Y⟩ on 1"]
+    assert isinstance(rotated["observables"], list)
+    assert len(rotated["observables"]) == 1
     observables = payload["observables"]
     assert isinstance(observables, list)
     assert len(observables) == 1
@@ -1660,10 +1724,10 @@ def test_two_simulators_form_a_benchmark() -> None:
     assert isinstance(series, list)
     assert [item["name"] for item in series] == ["QuTiP#1", "QuTiP#2"]
     assert [item["labels"] for item in series] == [
-        ["QuTiP#1 · ⟨Z⟩ on 0", "QuTiP#1 · ⟨Z⟩ on 1"],
-        ["QuTiP#2 · ⟨Z⟩ on 0", "QuTiP#2 · ⟨Z⟩ on 1"],
+        ["QuTiP#1 · expectation on 0", "QuTiP#1 · expectation on 1"],
+        ["QuTiP#2 · expectation on 0", "QuTiP#2 · expectation on 1"],
     ]
-    assert payload["labels"] == ["⟨Z⟩ on 0", "⟨Z⟩ on 1"]
+    assert payload["labels"] == ["expectation on 0", "expectation on 1"]
     resources = payload["resources"]
     assert isinstance(resources, list)
     assert [item["simulator_id"] for item in resources] == ["qutip_simulator#1", "qutip_simulator#2"]
@@ -1771,8 +1835,16 @@ def test_benchmark_rejects_a_simulator_that_is_not_an_object() -> None:
 @pytest.mark.parametrize("simulator_id", ["trotterization", "splitjmatrix"])
 def test_circuit_simulator_measures_x_expectation(simulator_id: str) -> None:
     pytest.importorskip("qiskit_aer")
-    simulator = build_simulator(_selection(simulator=simulator_id, measure="x", sites=[1]))
+    simulator = build_simulator(_pair(simulator=simulator_id, measure="x", sites=[1]))
     assert simulator.basis == "".join("X" if qubit == 1 else "Z" for qubit in range(simulator.num_qubits))
+
+
+@pytest.mark.qiskit
+@pytest.mark.parametrize("simulator_id", ["trotterization", "splitjmatrix"])
+def test_circuit_simulator_measures_y_expectation(simulator_id: str) -> None:
+    pytest.importorskip("qiskit_aer")
+    simulator = build_simulator(_pair(simulator=simulator_id, measure="y", sites=[1]))
+    assert simulator.basis == "".join("Y" if qubit == 1 else "Z" for qubit in range(simulator.num_qubits))
 
 
 def test_post_runs_rejects_malformed_json() -> None:
@@ -2577,7 +2649,7 @@ def test_listed_simulators_reads_the_package_classes() -> None:
     ("path", "key", "ids"),
     [
         ("/states", "states", ["basis", "gray", "angle", "amplitude"]),
-        ("/measurements", "measurements", ["z", "x", "counts"]),
+        ("/measurements", "measurements", ["z", "x", "y", "counts"]),
         ("/actions", "actions", ["plot", "save", "export"]),
     ],
 )
@@ -2667,7 +2739,7 @@ def test_post_runs_returns_traces() -> None:
     assert isinstance(payload["runtime"], float)
     assert len(payload["times"]) == 101
     assert len(payload["observables"]) == 2
-    assert payload["labels"] == ["⟨Z⟩ on 0", "⟨Z⟩ on 1"]
+    assert payload["labels"] == ["expectation on 0", "expectation on 1"]
     resources = payload["resources"]
     assert len(resources) == 1
     assert resources[0]["simulator_id"] == "qutip_simulator"
@@ -2688,6 +2760,17 @@ def _added(**overrides: object) -> dict[str, object]:
         "qubits": "1",
         "basis": "0",
         "terms": [{"id": "hamiltonian", "matrix": _Z_MATRIX}],
+    }
+    base.update(overrides)
+    return _selection(**base)
+
+
+def _pair(**overrides: object) -> dict[str, object]:
+    """Return a two-qubit added Hamiltonian so a catalog measurement can name sites."""
+    base: dict[str, object] = {
+        "qubits": "2",
+        "basis": "10",
+        "terms": [{"id": "local_hamiltonian", "matrix": _Z_MATRIX, "sites": [0]}],
     }
     base.update(overrides)
     return _selection(**base)
@@ -2792,7 +2875,7 @@ def test_ignored_actions_and_bad_numbers_fail_before_import(forbid_qutip: None) 
     with pytest.raises(ValueError, match="unknown simulator"):
         run_page(_selection(simulator="nope", thens=1))
     with pytest.raises(ValueError, match="unknown measurement"):
-        build_simulator(_selection(simulator="trotterization", measure="y"))
+        build_simulator(_added(simulator="trotterization", measure="w"))
     with pytest.raises(ValueError, match="time steps must be an integer"):
         build_simulator(_selection(time_steps=True))
     with pytest.raises(ValueError, match="time steps must be an integer"):
