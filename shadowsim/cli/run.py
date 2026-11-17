@@ -17,6 +17,7 @@ from shadowsim.backends import _EXPORTS as _BACKEND_EXPORTS
 from shadowsim.backends.catalog import ListedBackend, listed_backends
 from shadowsim.benchmarking.benchmark import Benchmark
 from shadowsim.cli.catalog import (
+    _PAGE_QUBIT_CAP,
     action_record,
     labels_for,
     listed_states,
@@ -44,7 +45,6 @@ from shadowsim.utils.hermitian import hermitian
 _OBSERVABLES_TIME_STEPS = int(_chip_default("time_steps", observables=True))
 _CIRCUIT_SHOTS = 256
 _MAX_OPERATOR_QUBITS = 8
-_MAX_FACTORY_QUBITS = 15
 _MAX_TIME_STEPS = _chip_maximum("time_steps")
 _MAX_NUM_STEPS = _chip_maximum("num_steps")
 _MAX_TROTTER_DEPTH = _chip_maximum("trotter_depth")
@@ -1367,8 +1367,8 @@ def _factory_qubit_cap(build: object, parameters: Mapping[str, inspect.Parameter
     if not callable(counter):
         raise ValueError("model does not report a qubit count")
     kwargs = {name: bound[name] for name in inspect.signature(counter).parameters if name in bound}
-    if counter(**kwargs) > _MAX_FACTORY_QUBITS:
-        raise ValueError(f"must use at most {_MAX_FACTORY_QUBITS} qubits")
+    if counter(**kwargs) > _PAGE_QUBIT_CAP:
+        raise ValueError(f"must use at most {_PAGE_QUBIT_CAP} qubits")
 
 
 def _model(model_id: str, arguments: Mapping[str, object]) -> IsingModel | TavisCummingsModel:
@@ -1394,8 +1394,8 @@ def _model(model_id: str, arguments: Mapping[str, object]) -> IsingModel | Tavis
     bound: dict[str, object] = {}
     if "n_qubits" in parameters:
         num_qubits = _integer(arguments.get("n_qubits"))
-        if num_qubits > _MAX_FACTORY_QUBITS:
-            raise ValueError(f"qubits must be at most {_MAX_FACTORY_QUBITS}")
+        if num_qubits > _PAGE_QUBIT_CAP:
+            raise ValueError(f"qubits must be at most {_PAGE_QUBIT_CAP}")
         bound["n_qubits"] = num_qubits
     bound.update(_factory_kwargs(record["params"], arguments))
     _factory_qubit_cap(build, parameters, bound)

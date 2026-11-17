@@ -151,143 +151,10 @@ function check(fn, ...args) {
   return fn(currentPage(), ...args);
 }
 
-function blockById(laneId, blockId) {
-  return check(checks.blockById, laneId, blockId);
-}
-
-function chosenFactory() {
-  return check(checks.chosenFactory);
-}
-
-function operatorStatus(preview) {
-  return check(checks.operatorStatus, preview);
-}
-
-function isReference(entry) {
-  return check(checks.isReference, entry);
-}
-
-function backendFits(entry, backendId) {
-  return check(checks.backendFits, entry, backendId);
-}
-
-function socketStatus(preview) {
-  return check(checks.socketStatus, preview);
-}
-
-function isComplete() {
-  return check(checks.isComplete);
-}
-
-function formatSetting(key) {
-  return check(checks.formatSetting, key);
-}
-
-function qubitPhrase() {
-  return check(checks.qubitPhrase);
-}
-
-function stateOwnsQubits() {
-  return check(checks.stateOwnsQubits);
-}
-
-function numberList(raw, maxCount) {
-  return check(checks.numberList, raw, maxCount);
-}
-
-function amplitudeQubits(count) {
-  return check(checks.amplitudeQubits, count);
-}
-
-function factoryAlert() {
-  return check(checks.factoryAlert);
-}
-
-function factorySetsQubits() {
-  return check(checks.factorySetsQubits);
-}
-
-function stateImpliedQubits() {
-  return check(checks.stateImpliedQubits);
-}
-
-function stateSizeProblem() {
-  return check(checks.stateSizeProblem);
-}
-
-function stateSizeStatus(preview) {
-  return check(checks.stateSizeStatus, preview);
-}
-
-function stateInputProblem() {
-  return check(checks.stateInputProblem);
-}
-
-function positiveIntText(value) {
-  return check(checks.positiveIntText, value);
-}
-
 function freshParams(block) {
   const params = {};
   for (const field of block?.fields ?? []) params[field.name] = String(field.default ?? "");
   return params;
-}
-
-function simParamProblem(preview) {
-  return check(checks.simParamProblem, preview);
-}
-
-function simParamsReady() {
-  return check(checks.simParamsReady);
-}
-
-function sameTimeGrid() {
-  return check(checks.sameTimeGrid);
-}
-
-function missingPaths() {
-  return check(checks.missingPaths);
-}
-
-function savePathReady() {
-  return check(checks.savePathReady);
-}
-
-function qubitCount() {
-  return check(checks.qubitCount);
-}
-
-function selectedSites(count) {
-  return check(checks.selectedSites, count);
-}
-
-function shotsProblem(preview) {
-  return check(checks.shotsProblem, preview);
-}
-
-function shotsReady() {
-  return check(checks.shotsReady);
-}
-
-function measureSitesReady() {
-  return check(checks.measureSitesReady);
-}
-
-function countsStatus(preview) {
-  return check(checks.countsStatus, preview);
-}
-
-function numberProblem(preview) {
-  return check(checks.numberProblem, preview);
-}
-
-// biome-ignore lint/correctness/noUnusedVariables: the page tests call this
-function settingsReady() {
-  return check(checks.settingsReady);
-}
-
-function locallyReady() {
-  return check(checks.runAllowed);
 }
 
 function accepted() {
@@ -295,15 +162,7 @@ function accepted() {
 }
 
 function runAllowed() {
-  return locallyReady() && accepted();
-}
-
-function postedTerms() {
-  return check(checks.postedTerms);
-}
-
-function entryBody(entry) {
-  return check(checks.entryBody, entry);
+  return check(checks.runAllowed) && accepted();
 }
 
 function previewText() {
@@ -380,16 +239,16 @@ function qubitDetail(count) {
 }
 
 function preexistingDetail() {
-  const factory = chosenFactory();
+  const factory = check(checks.chosenFactory);
   if (!factory) return "";
   const qubits = acceptedLayoutQubits();
   if (factory.qubits) return qubits == null ? "at least 2 qubits" : qubitDetail(qubits);
-  if (qubits == null) return factoryAlert() || "Set the model arguments";
+  if (qubits == null) return check(checks.factoryAlert) || "Set the model arguments";
   return qubitDetail(qubits);
 }
 
 function factoryParams() {
-  const params = chosenFactory()?.params;
+  const params = check(checks.chosenFactory)?.params;
   return Array.isArray(params) ? params : [];
 }
 
@@ -487,7 +346,7 @@ function postedFactory() {
 
 function modelAlert() {
   if (checkError) return checkError;
-  return factoryAlert();
+  return check(checks.factoryAlert);
 }
 
 function syncFactoryDetail() {
@@ -518,7 +377,7 @@ function replaceChip(node, next) {
 }
 
 function preexistingChip() {
-  const factory = chosenFactory();
+  const factory = check(checks.chosenFactory);
   const select = el(
     "select",
     {
@@ -609,7 +468,7 @@ function grayPrepared(bits) {
 }
 
 function stateField(id) {
-  return blockById("state", id)?.field ?? null;
+  return check(checks.blockById, "state", id)?.field ?? null;
 }
 
 function stateTextOf(id) {
@@ -621,41 +480,30 @@ function blankDetail(field) {
 }
 
 function stateDetail(id) {
-  const field = stateField(id);
-  if (!field) return "";
-  const text = stateTextOf(id);
-  if (field.kind === "bits") {
-    if (!text) return blankDetail(field);
-    const shown = field.display === "gray" ? grayPrepared(text) : text;
+  const read = check(checks.readState, id);
+  if (!read?.filled) return read ? blankDetail(read.field) : "";
+  if (read.field.kind === "bits") {
+    const shown = read.field.display === "gray" ? grayPrepared(read.text) : read.text;
     return `Start in |${shown}>`;
   }
-  const values = numberList(text, field.cap);
-  if (!values || (field.nonzero && values.every((value) => value === 0))) return blankDetail(field);
-  const count = field.match === "padded" ? amplitudeQubits(values.length) : values.length;
-  const unit = field.unit || "value";
-  return count === 1 ? `1 ${unit}` : `${count} ${unit}s`;
+  const unit = read.field.unit || "value";
+  return read.count === 1 ? `1 ${unit}` : `${read.count} ${unit}s`;
 }
 
 function stateReady(id) {
-  const field = stateField(id);
-  if (!field) return false;
-  const text = stateTextOf(id);
-  if (field.kind === "bits") return text !== "";
-  const values = numberList(text, field.cap);
-  if (!values) return false;
-  return !field.nonzero || values.some((value) => value !== 0);
+  return check(checks.readState, id)?.filled === true;
 }
 
 function writeQubitField() {
   const qubitsInput = document.querySelector('input[aria-label="Qubits"]');
   if (!qubitsInput) return;
-  qubitsInput.readOnly = stateOwnsQubits() || factorySetsQubits();
+  qubitsInput.readOnly = check(checks.stateOwnsQubits) || check(checks.factorySetsQubits);
   if (qubitsInput.value !== settings.qubits) qubitsInput.value = settings.qubits;
 }
 
 function syncStateQubits() {
-  if (!stateOwnsQubits() || factorySetsQubits()) return;
-  const count = stateImpliedQubits();
+  if (!check(checks.stateOwnsQubits) || check(checks.factorySetsQubits)) return;
+  const count = check(checks.stateImpliedQubits);
   settings.qubits = count == null ? "" : String(count);
   qubitsSource = count == null ? null : "state";
   syncMeasureChip();
@@ -663,9 +511,9 @@ function syncStateQubits() {
 }
 
 function syncModelQubits() {
-  if (!factorySetsQubits()) {
+  if (!check(checks.factorySetsQubits)) {
     if (qubitsSource !== "model") return;
-    if (stateOwnsQubits()) {
+    if (check(checks.stateOwnsQubits)) {
       qubitsSource = null;
       syncStateQubits();
     } else {
@@ -684,7 +532,7 @@ function syncModelQubits() {
 function stateAlertLabel(id) {
   const field = stateField(id);
   if (!field) return "";
-  const expected = stateSizeProblem();
+  const expected = check(checks.stateSizeProblem);
   if (expected != null) return String(field.mismatch ?? "").replaceAll("{n}", String(expected));
   return field.empty ?? "";
 }
@@ -696,7 +544,7 @@ function refreshStateChip(id) {
   const alert = document.querySelector(".chip.tone-gold .basis-alert");
   if (alert) {
     const label = stateAlertLabel(id);
-    alert.hidden = stateReady(id) && stateSizeProblem() == null;
+    alert.hidden = stateReady(id) && check(checks.stateSizeProblem) == null;
     alert.title = label;
     alert.setAttribute("aria-label", label);
   }
@@ -746,7 +594,7 @@ function stateChip(options) {
             role: "img",
             "aria-label": stateAlertLabel(options.id),
             title: stateAlertLabel(options.id),
-            hidden: stateReady(options.id) && stateSizeProblem() == null,
+            hidden: stateReady(options.id) && check(checks.stateSizeProblem) == null,
           },
           "!",
         ),
@@ -856,7 +704,7 @@ function simulatorControl(params, field) {
 }
 
 function simulatorChip(entry) {
-  const block = blockById("simulator", entry.id);
+  const block = check(checks.blockById, "simulator", entry.id);
   const params = entry.params;
   if (!block) return null;
   const controls = (block.fields ?? []).map((field) => simulatorControl(params, field));
@@ -917,7 +765,7 @@ function simulatorChip(entry) {
 
 function pathValue(id) {
   if (Object.hasOwn(actionText, id)) return actionText[id];
-  return blockById("then", id)?.field?.default ?? "";
+  return check(checks.blockById, "then", id)?.field?.default ?? "";
 }
 
 function pathChip(block) {
@@ -999,10 +847,6 @@ function pathChip(block) {
   );
 }
 
-function backendFieldNumber(field, text) {
-  return check(checks.backendFieldNumber, field, text);
-}
-
 function gateSummary(field, text) {
   if (check(checks.gateFieldProblem, field, text)) return "";
   const names = check(checks.gateNames, text);
@@ -1013,7 +857,7 @@ function backendSummary(block, entry) {
   const parts = [];
   if (block.shots) {
     const shotText = String(entry.shots ?? "").trim();
-    if (!positiveIntText(shotText)) return block.detail;
+    if (!check(checks.positiveIntText, shotText)) return block.detail;
     parts.push(`${shotText} shots`);
   }
   for (const field of block.fields ?? []) {
@@ -1023,14 +867,14 @@ function backendSummary(block, entry) {
       if (gates) parts.push(gates);
       continue;
     }
-    if (backendFieldNumber(field, text) == null) return block.detail;
+    if (check(checks.backendFieldNumber, field, text) == null) return block.detail;
     parts.push(`${field.label} ${text}`);
   }
   return parts.length ? parts.join(", ") : block.detail;
 }
 
 function backendChip(entry) {
-  const block = blockById("backend", entry.backend);
+  const block = check(checks.blockById, "backend", entry.backend);
   if (!block) return null;
   const fields = block.fields ?? [];
   const samples = Boolean(block.shots);
@@ -1177,38 +1021,23 @@ function backendSocket(entry) {
 function methodRow(entry) {
   const simulator = simulatorChip(entry);
   if (!simulator) return null;
-  if (isReference(entry)) return el("div", { className: "method-row reference" }, simulator);
+  if (check(checks.isReference, entry))
+    return el("div", { className: "method-row reference" }, simulator);
   const backend = entry.backend ? backendChip(entry) : backendSocket(entry);
   return el("div", { className: "method-row" }, simulator, backend);
 }
 
-function squareMatrix(text) {
-  return check(checks.squareMatrix, text);
-}
-
-function inspectMatrix(text) {
-  return check(checks.inspectMatrix, text);
-}
-
-function hamiltonianProblem(term) {
-  return check(checks.hamiltonianProblem, term);
-}
-
-function validHamiltonianQubits() {
-  return check(checks.validHamiltonianQubits);
-}
-
 function hamiltonianDetail(term) {
-  const problem = hamiltonianProblem(term);
+  const problem = check(checks.hamiltonianProblem, term);
   if (!term.matrix.trim()) return "Square Hermitian matrix";
   if (problem) return problem.replace(/\.$/, "");
-  const size = inspectMatrix(term.matrix).matrix.length;
+  const size = check(checks.inspectMatrix, term.matrix).matrix.length;
   return `${size}×${size}`;
 }
 
 function syncHamiltonianQubits() {
-  if (stateOwnsQubits() || qubitsSource === "user") return;
-  const counts = [...new Set(validHamiltonianQubits())];
+  if (check(checks.stateOwnsQubits) || qubitsSource === "user") return;
+  const counts = [...new Set(check(checks.validHamiltonianQubits))];
   if (counts.length === 1) {
     settings.qubits = String(counts[0]);
     qubitsSource = "hamiltonian";
@@ -1281,38 +1110,34 @@ function hamiltonianChip(term) {
   return chip;
 }
 
-function localSites(term, count) {
-  return check(checks.localSites, term, count);
-}
-
-function localHamiltonianProblem(term) {
-  return check(checks.localHamiltonianProblem, term);
-}
-
-function lindbladProblem(term) {
-  return check(checks.lindbladProblem, term);
-}
-
 function actedQubitDetail(term) {
-  if (qubitCount() == null) return "Set qubits first";
-  const problem = term.id === "lindblad" ? lindbladProblem(term) : localHamiltonianProblem(term);
+  if (check(checks.qubitCount) == null) return "Set qubits first";
+  const problem =
+    term.id === "lindblad"
+      ? check(checks.lindbladProblem, term)
+      : check(checks.localHamiltonianProblem, term);
   if (problem) return problem.replace(/\.$/, "");
-  const sites = localSites(term, qubitCount());
-  const parsed = term.id === "lindblad" ? squareMatrix(term.matrix) : inspectMatrix(term.matrix);
+  const sites = check(checks.localSites, term, check(checks.qubitCount));
+  const parsed =
+    term.id === "lindblad"
+      ? check(checks.squareMatrix, term.matrix)
+      : check(checks.inspectMatrix, term.matrix);
   const label = sites.length === 1 ? `qubit ${sites[0]}` : `qubits ${sites.join(", ")}`;
   return `${parsed.matrix.length}×${parsed.matrix.length} on ${label}`;
 }
 
 function toggleLocalSite(term, site, checked) {
-  const next = localSites(term, qubitCount()).filter((index) => index !== site);
+  const next = check(checks.localSites, term, check(checks.qubitCount)).filter(
+    (index) => index !== site,
+  );
   if (checked) next.push(site);
   next.sort((left, right) => left - right);
   term.sites = next;
 }
 
 function localSiteFields(term) {
-  const count = qubitCount();
-  const chosen = new Set(localSites(term, count));
+  const count = check(checks.qubitCount);
+  const chosen = new Set(check(checks.localSites, term, count));
   const boxes = [];
   for (let site = 0; site < count; site += 1) {
     boxes.push(
@@ -1357,14 +1182,14 @@ function localFields(term) {
 }
 
 function operatorProblem(term) {
-  if (term.id === "lindblad") return lindbladProblem(term);
-  if (term.id === "local_hamiltonian") return localHamiltonianProblem(term);
-  return hamiltonianProblem(term);
+  if (term.id === "lindblad") return check(checks.lindbladProblem, term);
+  if (term.id === "local_hamiltonian") return check(checks.localHamiltonianProblem, term);
+  return check(checks.hamiltonianProblem, term);
 }
 
 function syncOperatorAlert(chip, term) {
   const problem = operatorProblem(term);
-  const shown = Boolean(problem) && (term.id === "hamiltonian" || qubitCount() != null);
+  const shown = Boolean(problem) && (term.id === "hamiltonian" || check(checks.qubitCount) != null);
   const alert = chip.querySelector(".basis-alert");
   const field = chip.querySelector("textarea");
   const alertId = `operator-alert-${term.key}`;
@@ -1386,8 +1211,8 @@ function refreshLocalHamiltonianChips() {
   document.querySelectorAll(".chip.local-hamiltonian, .chip.lindblad").forEach((chip) => {
     const term = modelTerms.find((item) => item.key === Number(chip.dataset.key));
     if (!term) return;
-    const count = qubitCount();
-    if (count != null) term.sites = localSites(term, count);
+    const count = check(checks.qubitCount);
+    if (count != null) term.sites = check(checks.localSites, term, count);
     const open = count != null;
     chip.classList.toggle("is-editing", open);
     const detail = chip.querySelector(".hamiltonian-detail");
@@ -1401,7 +1226,7 @@ function refreshLocalHamiltonianChips() {
 }
 
 function actedQubitChip(term) {
-  const open = qubitCount() != null;
+  const open = check(checks.qubitCount) != null;
   const lindblad = term.id === "lindblad";
   const title = lindblad ? "Add a Lindblad operator" : "Add a Local Hamiltonian";
   const chip = el(
@@ -1446,7 +1271,7 @@ function actedQubitChip(term) {
 
 function slotChips(lane) {
   const chips = [];
-  const chosen = blockById(lane.id, selection[lane.id]);
+  const chosen = check(checks.blockById, lane.id, selection[lane.id]);
   if (chosen && !chosen.adds && lane.id !== "then") {
     if (chosen.id === "preexisting") chips.push(preexistingChip());
     else if (lane.id === "state") chips.push(stateFieldChip(chosen));
@@ -1457,7 +1282,7 @@ function slotChips(lane) {
   }
   if (lane.id === "then") {
     for (const id of placedThens) {
-      const block = blockById("then", id);
+      const block = check(checks.blockById, "then", id);
       if (!block) continue;
       if (block.field?.kind === "path") chips.push(pathChip(block));
       else chips.push(blockCard(lane, block, { inSlot: true, onRemove: () => removeThen(id) }));
@@ -1473,7 +1298,7 @@ function slotChips(lane) {
   }
   if (lane.id !== "model") return chips;
   for (const term of modelTerms) {
-    const block = blockById("model", term.id);
+    const block = check(checks.blockById, "model", term.id);
     if (!block) continue;
     if (term.id === "hamiltonian") chips.push(hamiltonianChip(term));
     else if (term.id === "local_hamiltonian" || term.id === "lindblad")
@@ -1593,14 +1418,14 @@ function paletteComponent(lane, onPlace) {
 }
 
 function summaryComponent() {
-  if (!isComplete()) {
+  if (!check(checks.isComplete)) {
     return el("p", { className: "summary" }, "Place a block in each slot, then run.");
   }
-  const state = blockById("state", selection.state);
-  const model = selection.model === "preexisting" ? chosenFactory() : null;
+  const state = check(checks.blockById, "state", selection.state);
+  const model = selection.model === "preexisting" ? check(checks.chosenFactory) : null;
   const actions = thenSummary();
-  const qubits = qubitPhrase();
-  const total = formatSetting("total");
+  const qubits = check(checks.qubitPhrase);
+  const total = check(checks.formatSetting, "total");
   const modelPhrase = model
     ? [el("strong", {}, model.title), " model", ...termSummary()]
     : [el("strong", {}, "added operators")];
@@ -1690,9 +1515,14 @@ function settingsComponent() {
         inputmode: inputMode,
         value: settings[key],
         "aria-label": label,
-        readonly: key === "qubits" && (stateOwnsQubits() || factorySetsQubits()),
+        readonly:
+          key === "qubits" && (check(checks.stateOwnsQubits) || check(checks.factorySetsQubits)),
         oninput: (event) => {
-          if (key === "qubits" && (stateOwnsQubits() || factorySetsQubits())) return;
+          if (
+            key === "qubits" &&
+            (check(checks.stateOwnsQubits) || check(checks.factorySetsQubits))
+          )
+            return;
           settings[key] = event.target.value.trim();
           if (key === "qubits") {
             qubitsSource = settings.qubits === "" ? null : "user";
@@ -1776,7 +1606,7 @@ function dropAcceptance() {
 }
 
 function scheduleCheck() {
-  if (!locallyReady()) {
+  if (!check(checks.runAllowed)) {
     cancelScheduledCheck();
     checkSerial += 1;
     dropAcceptance();
@@ -1814,7 +1644,7 @@ function scheduleCheck() {
 }
 
 function applyAcceptedQubits() {
-  if (!factorySetsQubits() || acceptedQubits == null) return;
+  if (!check(checks.factorySetsQubits) || acceptedQubits == null) return;
   settings.qubits = String(acceptedQubits);
   qubitsSource = "model";
 }
@@ -1885,7 +1715,7 @@ async function postCheck(requested, serial) {
 
 // biome-ignore lint/correctness/noUnusedVariables: the page tests call this
 function applyCheck(qubits) {
-  if (!locallyReady()) return false;
+  if (!check(checks.runAllowed)) return false;
   cancelScheduledCheck();
   checkSerial += 1;
   checkError = null;
@@ -1941,22 +1771,26 @@ function stateEntryMessage(preview) {
 
 function statusMessage() {
   if (statusHold) return statusHold;
-  if (!isComplete())
-    return operatorStatus(false) ?? socketStatus(false) ?? "Place a block in each slot.";
-  if (factoryAlert()) return `${factoryAlert()}.`;
-  if (stateInputProblem() === "size") return stateSizeStatus(false);
-  if (stateInputProblem() === "empty") return stateEntryMessage(false);
-  const numbers = numberProblem(false);
+  if (!check(checks.isComplete))
+    return (
+      check(checks.operatorStatus, false) ??
+      check(checks.socketStatus, false) ??
+      "Place a block in each slot."
+    );
+  if (check(checks.factoryAlert)) return `${check(checks.factoryAlert)}.`;
+  if (check(checks.stateInputProblem) === "size") return check(checks.stateSizeStatus, false);
+  if (check(checks.stateInputProblem) === "empty") return stateEntryMessage(false);
+  const numbers = check(checks.numberProblem, false);
   if (numbers) return numbers;
-  if (simParamProblem(false)) return simParamProblem(false);
-  if (!simParamsReady()) return "Enter simulator parameters.";
-  if (!sameTimeGrid()) return "Use the same number of time steps for every simulator.";
-  if (!measureSitesReady()) return "Pick at least one qubit.";
-  if (countsStatus(false)) return countsStatus(false);
-  if (shotsProblem(false)) return shotsProblem(false);
-  if (!shotsReady()) return "Enter a shot count.";
+  if (check(checks.simParamProblem, false)) return check(checks.simParamProblem, false);
+  if (!check(checks.simParamsReady)) return "Enter simulator parameters.";
+  if (!check(checks.sameTimeGrid)) return "Use the same number of time steps for every simulator.";
+  if (!check(checks.measureSitesReady)) return "Pick at least one qubit.";
+  if (check(checks.countsStatus, false)) return check(checks.countsStatus, false);
+  if (check(checks.shotsProblem, false)) return check(checks.shotsProblem, false);
+  if (!check(checks.shotsReady)) return "Enter a shot count.";
   if (!check(checks.backendFieldsReady)) return check(checks.backendFieldStatus, false);
-  if (!savePathReady()) return pathMessage(false);
+  if (!check(checks.savePathReady)) return pathMessage(false);
   if (checkError) return `${checkError.replace(/[.!?]$/, "")}.`;
   if (checkInFlight || !accepted()) return "Checking the selection.";
   return "Ready to run.";
@@ -2067,24 +1901,29 @@ function codeBody() {
   const code = previewText();
   if (code) return el("pre", { className: "script" }, code);
   let message =
-    operatorStatus(true) ??
-    socketStatus(true) ??
+    check(checks.operatorStatus, true) ??
+    check(checks.socketStatus, true) ??
     "Place a block in each slot to preview the script.";
-  if (isComplete()) {
-    const numbers = numberProblem(true);
-    if (factoryAlert()) message = `${factoryAlert()} to preview the script.`;
-    else if (stateInputProblem() === "size") message = stateSizeStatus(true);
-    else if (stateInputProblem() === "empty") message = stateEntryMessage(true);
+  if (check(checks.isComplete)) {
+    const numbers = check(checks.numberProblem, true);
+    if (check(checks.factoryAlert))
+      message = `${check(checks.factoryAlert)} to preview the script.`;
+    else if (check(checks.stateInputProblem) === "size")
+      message = check(checks.stateSizeStatus, true);
+    else if (check(checks.stateInputProblem) === "empty") message = stateEntryMessage(true);
     else if (numbers) message = numbers;
-    else if (simParamProblem(true)) message = simParamProblem(true);
-    else if (!simParamsReady()) message = "Enter simulator parameters to preview the script.";
-    else if (!sameTimeGrid()) message = "Use the same number of time steps to preview the script.";
-    else if (!measureSitesReady()) message = "Pick at least one qubit to preview the script.";
-    else if (countsStatus(true)) message = countsStatus(true);
-    else if (shotsProblem(true)) message = shotsProblem(true);
-    else if (!shotsReady()) message = "Enter a shot count to preview the script.";
+    else if (check(checks.simParamProblem, true)) message = check(checks.simParamProblem, true);
+    else if (!check(checks.simParamsReady))
+      message = "Enter simulator parameters to preview the script.";
+    else if (!check(checks.sameTimeGrid))
+      message = "Use the same number of time steps to preview the script.";
+    else if (!check(checks.measureSitesReady))
+      message = "Pick at least one qubit to preview the script.";
+    else if (check(checks.countsStatus, true)) message = check(checks.countsStatus, true);
+    else if (check(checks.shotsProblem, true)) message = check(checks.shotsProblem, true);
+    else if (!check(checks.shotsReady)) message = "Enter a shot count to preview the script.";
     else if (!check(checks.backendFieldsReady)) message = check(checks.backendFieldStatus, true);
-    else if (!savePathReady()) message = pathMessage(true);
+    else if (!check(checks.savePathReady)) message = pathMessage(true);
     else if (checkError) message = `${checkError.replace(/[.!?]$/, "")} to preview the script.`;
     else message = "Checking the selection.";
   }
@@ -2671,11 +2510,9 @@ async function cancelRun() {
 }
 
 function stateValue() {
-  const field = stateField(selection.state);
-  const text = stateTextOf(selection.state);
-  if (!field) return null;
-  if (field.kind === "bits") return text;
-  return numberList(text, field.cap);
+  const read = check(checks.readState);
+  if (!read) return null;
+  return read.field.kind === "bits" ? read.text : read.values;
 }
 
 function modelMeasureBlock() {
@@ -2743,7 +2580,7 @@ function postedBoard(saved) {
 function postedMeasure() {
   if (selection.measure === "model") return { id: "model" };
   const measure = { id: selection.measure, sites: explicitSites() };
-  const field = blockById("measure", selection.measure)?.field;
+  const field = check(checks.blockById, "measure", selection.measure)?.field;
   if (field?.kind === "expression")
     measure.expression = (expressionText[selection.measure] ?? "").trim();
   return measure;
@@ -2761,12 +2598,12 @@ function postedActions() {
 function modelArguments() {
   if (selection.model !== "preexisting") return {};
   const body = { ...(postedFactory() ?? {}) };
-  if (chosenFactory()?.qubits) body.n_qubits = settings.qubits;
+  if (check(checks.chosenFactory)?.qubits) body.n_qubits = settings.qubits;
   return body;
 }
 
 function postedModel() {
-  const terms = postedTerms();
+  const terms = check(checks.postedTerms);
   if (Array.isArray(terms) && terms.length) return { terms, qubits: settings.qubits };
   return {
     id: selection.model === "preexisting" ? preexistingId : selection.model,
@@ -2780,7 +2617,7 @@ function runRequest() {
     total: settings.total,
     state: { id: selection.state, value: stateValue() },
     model: postedModel(),
-    simulators: placedSims.map(entryBody),
+    simulators: placedSims.map((entry) => check(checks.entryBody, entry)),
     measure: postedMeasure(),
     actions: postedActions(),
   };
@@ -2897,7 +2734,7 @@ function draw(board) {
 function termSummary() {
   const nodes = [];
   modelTerms.forEach((term, index) => {
-    const block = blockById("model", term.id);
+    const block = check(checks.blockById, "model", term.id);
     if (!block) return;
     nodes.push(index === 0 ? ", plus " : ", ");
     nodes.push(el("strong", {}, block.title));
@@ -2906,45 +2743,45 @@ function termSummary() {
 }
 
 function measureDetail(count) {
-  const block = blockById("measure", selection.measure);
+  const block = check(checks.blockById, "measure", selection.measure);
   if (block?.kind === "model") return block.detail ?? "";
   if (count == null) return block?.detail ?? "";
-  const sites = selectedSites(count);
+  const sites = check(checks.selectedSites, count);
   if (!sites.length) return "No qubits";
   if (sites.length === count) return block?.detail ?? "";
   return `Qubits ${sites.join(", ")}`;
 }
 
 function measurePhrase() {
-  const block = blockById("measure", selection.measure);
+  const block = check(checks.blockById, "measure", selection.measure);
   if (!block) return "";
   if (block.kind === "model") return block.phrase ?? "";
-  const count = qubitCount();
-  const sites = selectedSites(count);
+  const count = check(checks.qubitCount);
+  const sites = check(checks.selectedSites, count);
   if (count == null || sites.length === count) return block.phrase;
   if (!sites.length) return `${block.title} on no qubits`;
   return `${block.title} on qubits ${sites.join(", ")}`;
 }
 
 function explicitSites() {
-  const count = qubitCount();
+  const count = check(checks.qubitCount);
   if (measureSites == null || count == null) return null;
-  const sites = selectedSites(count);
+  const sites = check(checks.selectedSites, count);
   return sites.length === count ? null : sites;
 }
 
 function toggleMeasureSite(site, checked) {
-  const count = qubitCount();
+  const count = check(checks.qubitCount);
   if (count == null) return;
-  const next = selectedSites(count).filter((index) => index !== site);
+  const next = check(checks.selectedSites, count).filter((index) => index !== site);
   if (checked) next.push(site);
   next.sort((left, right) => left - right);
   measureSites = next.length === count ? null : next;
 }
 
 function measureFields() {
-  const count = qubitCount();
-  const chosen = new Set(selectedSites(count));
+  const count = check(checks.qubitCount);
+  const chosen = new Set(check(checks.selectedSites, count));
   const boxes = [];
   for (let site = 0; site < count; site += 1) {
     boxes.push(
@@ -2959,7 +2796,7 @@ function measureFields() {
             toggleMeasureSite(site, event.target.checked);
             const chip = event.target.closest(".chip");
             const detail = chip?.querySelector(".measure-detail");
-            if (detail) detail.textContent = measureDetail(qubitCount());
+            if (detail) detail.textContent = measureDetail(check(checks.qubitCount));
             const hint = chip?.querySelector(".counts-hint");
             if (hint) hint.textContent = countsHint();
             const input = chip?.querySelector(".counts-field input");
@@ -2975,14 +2812,14 @@ function measureFields() {
 }
 
 function countsHint() {
-  const sites = selectedSites(qubitCount());
+  const sites = check(checks.selectedSites, check(checks.qubitCount));
   if (!sites.length) return "Pick at least one qubit.";
   const label = sites.length === 1 ? "qubit" : "qubits";
   return `Keys list ${label} ${sites.join(", ")} in that order. shots is the total.`;
 }
 
 function countsPlaceholder() {
-  const width = Math.max(selectedSites(qubitCount()).length, 1);
+  const width = Math.max(check(checks.selectedSites, check(checks.qubitCount)).length, 1);
   return `counts["${"0".repeat(width)}"] / shots`;
 }
 
@@ -3009,7 +2846,7 @@ function countsField() {
 function syncMeasureChip() {
   const chip = document.querySelector(".chip.measure");
   if (!chip) return;
-  const count = qubitCount();
+  const count = check(checks.qubitCount);
   const detail = chip.querySelector(".measure-detail");
   if (detail) detail.textContent = measureDetail(count);
   if (count == null) {
@@ -3025,7 +2862,7 @@ function syncMeasureChip() {
   const next = measureFields();
   if (fields) fields.replaceWith(next);
   else chip.append(next);
-  if (blockById("measure", selection.measure)?.field?.kind !== "expression") return;
+  if (check(checks.blockById, "measure", selection.measure)?.field?.kind !== "expression") return;
   const hint = chip.querySelector(".counts-hint");
   if (hint) hint.textContent = countsHint();
   else chip.append(countsField());
@@ -3061,7 +2898,7 @@ function measureChip(block) {
       ),
     );
   }
-  const count = qubitCount();
+  const count = check(checks.qubitCount);
   const open = measureOpen && count != null;
   return el(
     "div",
@@ -3074,7 +2911,7 @@ function measureChip(block) {
         {
           type: "button",
           onclick: (event) => {
-            if (open || qubitCount() == null) return;
+            if (open || check(checks.qubitCount) == null) return;
             measureOpen = true;
             replaceChip(event.currentTarget, measureChip(block));
           },
@@ -3120,10 +2957,10 @@ function measureChip(block) {
 }
 
 function pathMessage(preview) {
-  const missing = missingPaths();
+  const missing = check(checks.missingPaths);
   const tail = preview ? " to preview the script." : ".";
   const names = missing.map((id) =>
-    String(blockById("then", id)?.field?.aria || "path").toLowerCase(),
+    String(check(checks.blockById, "then", id)?.field?.aria || "path").toLowerCase(),
   );
   const article = (name) => (/^[aeiou]/i.test(name) ? "an" : "a");
   if (!names.length) return `Enter a path${tail}`;
@@ -3131,7 +2968,9 @@ function pathMessage(preview) {
 }
 
 function thenSummary() {
-  const phrases = placedThens.map((id) => blockById("then", id)?.phrase).filter(Boolean);
+  const phrases = placedThens
+    .map((id) => check(checks.blockById, "then", id)?.phrase)
+    .filter(Boolean);
   const nodes = [];
   phrases.forEach((phrase, index) => {
     if (index) nodes.push(index === phrases.length - 1 ? " and " : ", ");
@@ -3141,10 +2980,10 @@ function thenSummary() {
 }
 
 function methodPhrase(entry) {
-  const title = blockById("simulator", entry.id)?.title;
+  const title = check(checks.blockById, "simulator", entry.id)?.title;
   if (!title) return null;
-  const backend = blockById("backend", entry.backend);
-  if (!isReference(entry) && backend) return `${title} on ${backend.phrase}`;
+  const backend = check(checks.blockById, "backend", entry.backend);
+  if (!check(checks.isReference, entry) && backend) return `${title} on ${backend.phrase}`;
   return title;
 }
 
@@ -3188,7 +3027,7 @@ function commitLane(laneId, palette) {
 
 function place(laneId, blockId) {
   if (running) return;
-  const block = blockById(laneId, blockId);
+  const block = check(checks.blockById, laneId, blockId);
   if (laneId === "model" && modelChoiceBlocked(block)) return;
   if (laneId === "simulator") {
     placedSims.push({
@@ -3213,7 +3052,7 @@ function place(laneId, blockId) {
     stateOpen = true;
   } else if (laneId === "measure") {
     selection.measure = blockId;
-    measureOpen = block?.kind !== "model" && qubitCount() != null;
+    measureOpen = block?.kind !== "model" && check(checks.qubitCount) != null;
     if (block?.kind === "model") measureSites = null;
   } else if (laneId === "then") {
     if (!placedThens.includes(blockId)) placedThens.push(blockId);
@@ -3242,24 +3081,32 @@ function removeThen(id) {
 
 function attachBackend(backendId, key) {
   if (running) return;
-  const backend = blockById("backend", backendId);
+  const backend = check(checks.blockById, "backend", backendId);
   if (!backend) return;
   const target =
     key == null
       ? placedSims.find(
-          (entry) => !isReference(entry) && !entry.backend && backendFits(entry, backendId),
+          (entry) =>
+            !check(checks.isReference, entry) &&
+            !entry.backend &&
+            check(checks.backendFits, entry, backendId),
         )
       : placedSims.find((entry) => entry.key === key);
-  if (!target || isReference(target) || !backendFits(target, backendId)) {
+  if (
+    !target ||
+    check(checks.isReference, target) ||
+    !check(checks.backendFits, target, backendId)
+  ) {
     const open = placedSims.filter(
-      (entry) => !isReference(entry) && (key == null ? !entry.backend : entry.key === key),
+      (entry) =>
+        !check(checks.isReference, entry) && (key == null ? !entry.backend : entry.key === key),
     );
     const blocked = open.find(
-      (entry) => blockById("simulator", entry.id)?.samples && !backend.shots,
+      (entry) => check(checks.blockById, "simulator", entry.id)?.samples && !backend.shots,
     );
-    const title = blocked ? blockById("simulator", blocked.id)?.title : null;
+    const title = blocked ? check(checks.blockById, "simulator", blocked.id)?.title : null;
     if (title) statusHold = `${title} needs a backend with a shot budget.`;
-    else if (!placedSims.some((entry) => !isReference(entry)))
+    else if (!placedSims.some((entry) => !check(checks.isReference, entry)))
       statusHold = "Place a simulator before its backend.";
     else statusHold = "Snap a backend onto an open simulator.";
     dragging = null;
@@ -3278,7 +3125,8 @@ function attachBackend(backendId, key) {
     }
   }
   if (backend.shots) {
-    if (!positiveIntText(String(target.shots ?? "").trim())) target.shots = DEFAULT_SHOTS;
+    if (!check(checks.positiveIntText, String(target.shots ?? "").trim()))
+      target.shots = DEFAULT_SHOTS;
     target.shotsOpen = true;
     target.backendOpen = false;
   } else if (backend.fields?.length) {
@@ -3367,7 +3215,7 @@ function clearLane(laneId) {
 }
 
 function knownBlock(laneId, blockId) {
-  return typeof blockId === "string" && Boolean(blockById(laneId, blockId));
+  return typeof blockId === "string" && Boolean(check(checks.blockById, laneId, blockId));
 }
 
 function plainObject(value) {
@@ -3451,7 +3299,11 @@ function applyModel(model) {
     qubitsSource = "user";
     const next = [];
     for (const term of terms) {
-      if (!plainObject(term) || !knownBlock("model", term.id) || !blockById("model", term.id)?.adds)
+      if (
+        !plainObject(term) ||
+        !knownBlock("model", term.id) ||
+        !check(checks.blockById, "model", term.id)?.adds
+      )
         continue;
       next.push({
         id: term.id,
@@ -3505,7 +3357,7 @@ function applySims(entries) {
   const next = [];
   for (const entry of Array.isArray(entries) ? entries : []) {
     if (!plainObject(entry) || !knownBlock("simulator", entry.id)) continue;
-    const block = blockById("simulator", entry.id);
+    const block = check(checks.blockById, "simulator", entry.id);
     const row = {
       id: entry.id,
       params: simParams(block, entry.arguments),
@@ -3516,7 +3368,11 @@ function applySims(entries) {
       backendOpen: false,
     };
     const backend = entry.backend;
-    if (plainObject(backend) && typeof backend.id === "string" && backendFits(row, backend.id)) {
+    if (
+      plainObject(backend) &&
+      typeof backend.id === "string" &&
+      check(checks.backendFits, row, backend.id)
+    ) {
       row.backend = backend.id;
       const args = plainObject(backend.arguments) ? backend.arguments : {};
       if ("shots" in args) row.shots = textNumber(args.shots);
@@ -3546,7 +3402,7 @@ function applyMeasure(measure) {
   measureSites = Array.isArray(measure.sites)
     ? measure.sites.filter((site) => Number.isInteger(site))
     : null;
-  const field = blockById("measure", selection.measure)?.field;
+  const field = check(checks.blockById, "measure", selection.measure)?.field;
   if (field?.kind === "expression" && typeof measure.expression === "string") {
     expressionText[selection.measure] = measure.expression;
   }
@@ -3801,7 +3657,8 @@ async function loadLane(path, lane, key) {
       }
     }
     laneNotes[lane] = "";
-    if (selection[lane] != null && !blockById(lane, selection[lane])) selection[lane] = null;
+    if (selection[lane] != null && !check(checks.blockById, lane, selection[lane]))
+      selection[lane] = null;
   } catch {
     laneNotes[lane] = `Could not load ${key}.`;
     BLOCKS[lane] = [];
