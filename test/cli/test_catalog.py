@@ -55,16 +55,19 @@ def test_listed_states_describe_the_four_encodings() -> None:
 
 def test_listed_measurements_name_pauli_and_counts() -> None:
     listed = listed_measurements()
-    assert [item["id"] for item in listed] == ["z", "x", "counts"]
+    assert [item["id"] for item in listed] == ["z", "x", "y", "counts"]
     assert listed[0]["letter"] == "Z"
     assert listed[0]["rotate"] is False
     assert "field" not in listed[0]
     assert listed[1]["letter"] == "X"
     assert listed[1]["rotate"] is True
-    assert listed[2]["kind"] == "counts"
-    assert listed[2]["field"] == {"kind": "expression", "label": "Expression", "aria": "Counts expression"}
-    assert "letter" not in listed[2]
+    assert listed[2]["letter"] == "Y"
+    assert listed[2]["rotate"] is True
+    assert listed[3]["kind"] == "counts"
+    assert listed[3]["field"] == {"kind": "expression", "label": "Expression", "aria": "Counts expression"}
+    assert "letter" not in listed[3]
     assert measurement_record("x")["rotate"] is True
+    assert measurement_record("y")["letter"] == "Y"
 
 
 def test_listed_actions_default_the_path_chips() -> None:
@@ -170,13 +173,16 @@ def test_measurements_for_reads_each_selected_qubit() -> None:
         Measurement((1,), expectation, "expectation on 1"),
         Measurement((0,), expectation, "expectation on 0"),
     ]
+    assert measurements_for({"id": "y", "sites": [0]}, 2) == [
+        Measurement((0,), expectation, "expectation on 0"),
+    ]
     counts = measurements_for({"id": "counts", "sites": [0], "expression": 'counts["0"] / shots'}, 1)
     assert counts == [Measurement((0,), 'counts["0"] / shots')]
 
 
 def test_measurements_for_rejects_a_bad_selection() -> None:
     with pytest.raises(ValueError, match="unknown measurement"):
-        measurements_for({"id": "y"}, 1)
+        measurements_for({"id": "w"}, 1)
     with pytest.raises(ValueError, match="unknown measurement"):
         measurements_for({"id": 1}, 1)
     with pytest.raises(ValueError, match="a counts measurement needs an expression"):
@@ -196,26 +202,28 @@ def test_measurements_for_rejects_a_bad_index(sites: list[object]) -> None:
 def test_labels_for_names_each_curve() -> None:
     assert labels_for({"id": "z", "sites": [0, 1]}, 2) == ["⟨Z⟩ on 0", "⟨Z⟩ on 1"]
     assert labels_for({"id": "x", "sites": [1]}, 2) == ["⟨X⟩ on 1"]
+    assert labels_for({"id": "y", "sites": [0]}, 2) == ["⟨Y⟩ on 0"]
     counts = {"id": "counts", "sites": [0, 1], "expression": ' counts["01"] / shots '}
     assert labels_for(counts, 2) == ['counts["01"] / shots']
 
 
 def test_labels_for_rejects_an_unknown_id() -> None:
     with pytest.raises(ValueError, match="unknown measurement"):
-        labels_for({"id": "y", "sites": [0]}, 1)
+        labels_for({"id": "w", "sites": [0]}, 1)
 
 
 def test_observables_for_places_the_pauli_letter() -> None:
     assert observables_for(2, "z", [0, 1]) == [Operator("ZI"), Operator("IZ")]
     assert observables_for(2, "x", [1]) == [Operator("IX")]
+    assert observables_for(2, "y", [0]) == [Operator("YI")]
     with pytest.raises(ValueError, match="unknown measurement"):
-        observables_for(1, "y", [0])
+        observables_for(1, "w", [0])
     with pytest.raises(ValueError, match="no Pauli operators"):
         observables_for(1, "counts", [0])
 
 
 def test_records_reject_an_unknown_id() -> None:
     with pytest.raises(ValueError, match="unknown measurement"):
-        measurement_record("y")
+        measurement_record("w")
     with pytest.raises(ValueError, match="unknown action"):
         action_record("print")

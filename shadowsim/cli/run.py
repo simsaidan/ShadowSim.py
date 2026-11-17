@@ -81,7 +81,8 @@ class _AddedModel:
     c_ops_local: list[LocalOperator]
 
 
-_PageModel = IsingModel | TavisCummingsModel | _AddedModel
+_FactoryModel = IsingModel | TavisCummingsModel
+_PageModel = _FactoryModel | _AddedModel
 
 _RUN_VERSION = 1
 _DOCUMENT_KEYS = frozenset({"version", "total", "state", "model", "simulators", "measure", "actions"})
@@ -242,20 +243,26 @@ def build_simulator(selection: Mapping[str, object], *, simulator: int = 0) -> S
             plus ``qubits``. Each simulator has ``id``, ``arguments``, and
             ``backend`` (null, or ``id`` plus ``arguments``). ``state.id`` is an
             id from :func:`shadowsim.cli.catalog.listed_states`. ``measure`` has
-            ``id`` and ``sites``, plus ``expression`` for ``counts``. ``measure.id``
-            is an id from :func:`shadowsim.cli.catalog.listed_measurements`.
+            ``id``. ``model`` records the factory's ``e_ops`` on an observables
+            simulator and applies its ``measurements`` on a circuit simulator.
+            The chart names are those measurement labels. An added Hamiltonian
+            also has ``sites``, plus ``expression`` for ``counts``. Its
+            ``measure.id`` is an id from
+            :func:`shadowsim.cli.catalog.listed_measurements`. A factory model
+            rejects a catalog id, and an added Hamiltonian rejects ``model``.
             ``actions`` is ignored. The simulator ``id`` is
             an id from :func:`shadowsim.simulators.catalog.listed_simulators`.
             A simulator that records observables ignores a missing backend. A
             circuit simulator's ``backend`` is an id from
             :func:`shadowsim.backends.catalog.listed_backends`, and one that
-            samples needs a backend with a shot budget. ``measure`` of ``x`` or
-            ``z`` records that Pauli's expectation on each selected qubit for
-            every simulator. ``counts`` evaluates ``expression`` (see
-            :class:`~shadowsim.simulators.Measurement`) on the shot counts of the
-            selected qubits, in ``sites`` order. It needs a backend with a shot
-            budget, so an observables simulator and a backend without one reject
-            it. A circuit simulator records counts only; :func:`run_page` reads them.
+            samples needs a backend with a shot budget. An added Hamiltonian's
+            ``measure`` of ``x``, ``y``, or ``z`` records that Pauli's expectation
+            on each selected qubit for every simulator. ``counts`` evaluates
+            ``expression`` (see :class:`~shadowsim.simulators.Measurement`) on the
+            shot counts of the selected qubits, in ``sites`` order. It needs a
+            backend with a shot budget, so an observables simulator and a backend
+            without one reject it. A circuit simulator records counts only;
+            :func:`run_page` reads them.
             ``model`` is a factory name from :func:`shadowsim.models.catalog.listed_models`.
             A non-empty ``terms`` list is the model instead: each item has ``id``
             and ``matrix``, and local terms also have ``sites``. At least one
@@ -274,8 +281,9 @@ def build_simulator(selection: Mapping[str, object], *, simulator: int = 0) -> S
             is a string of 0 and 1 whose length is the qubit count, at most 15
             characters. Angle is one finite real number per qubit. Amplitude is
             a non-zero list of finite real numbers, and the padded vector must
-            use the model's qubit count. ``measure.sites`` lists qubit indexes
-            to measure. Missing ``sites`` measures every qubit.
+            use the model's qubit count. For an added Hamiltonian,
+            ``measure.sites`` lists qubit indexes to measure. Missing ``sites``
+            measures every qubit. A factory measurement already names its qubits.
             Simulator ``arguments`` are the catalog fields for that constructor.
             ``time_steps`` is from 1 to 500. Missing it uses 101 when the
             constructor records observables and 11 otherwise. ``num_steps`` is
@@ -320,8 +328,12 @@ def _build_simulator(document: _RunDocument, index: int) -> Simulator:
     model = _page_model(document.model)
     state = _initial_state(document.state_id, model.num_qubits, document.state_value)
     measure_id = _text(document.measure.get("id"))
-    sites = _measure_sites(document.measure, model.num_qubits)
-    _measurements(document.measure, model.num_qubits)
+    _require_measure(model, measure_id)
+    if measure_id == "model":
+        sites: list[int] = []
+    else:
+        sites = _measure_sites(document.measure, model.num_qubits)
+        _measurements(document.measure, model.num_qubits)
     if class_name == "QutipSimulator":
         _reject_counts(measure_id, "QuTiP")
         steps = _selection_positive_int(
@@ -406,7 +418,9 @@ def check_page(selection: Mapping[str, object], *, output_root: Path | None = No
             ``None`` leaves those paths unchanged.
 
     Returns:
-        ``qubits``, the qubit count of the built model.
+        ``qubits``, the qubit count of the built model. A factory model also
+        returns ``measurements``, one ``label`` and ``qubits`` entry for each
+        measurement the factory defines.
 
     Raises:
         ValueError: The document cannot run, including an integer field below
@@ -415,7 +429,13 @@ def check_page(selection: Mapping[str, object], *, output_root: Path | None = No
         ImportError: The extra required by a simulator or backend is not installed.
     """
     prepared = _prepare_page(selection, output_root=output_root)
-    return {"qubits": prepared.simulators[0].num_qubits}
+    payload: dict[str, object] = {"qubits": prepared.simulators[0].num_qubits}
+    if _text(prepared.document.measure.get("id")) == "model":
+        model = cast(_FactoryModel, _page_model(prepared.document.model))
+        payload["measurements"] = [
+            {"label": item.label, "qubits": list(item.qubits)} for item in _model_records(model)[1]
+        ]
+    return payload
 
 
 def run_page(selection: Mapping[str, object], *, output_root: Path | None = None) -> dict[str, object]:
@@ -458,7 +478,7 @@ def run_page(selection: Mapping[str, object], *, output_root: Path | None = None
     simulator = prepared.simulators[0]
     simulator.simulate()
     result = _measured_result(simulator, selection)
-    payload = _result_payload(result, simulator, prepared.document.measure)
+    payload = _result_payload(result, simulator, _page_model(prepared.document.model), prepared.document.measure)
     saved = _write_results(prepared.directory, [result])
     if saved:
         payload["saved"] = saved
@@ -471,7 +491,9 @@ def run_page(selection: Mapping[str, object], *, output_root: Path | None = None
 def _measured_result(simulator: Simulator, selection: Mapping[str, object]) -> SimulationResult:
     """Read the page measurements from a simulated circuit simulator and return its result.
 
-    QuTiP already records its Pauli expectations, so its result is returned unchanged.
+    An observables simulator already recorded its curves, so its result is returned
+    unchanged. A factory model's curves are its ``e_ops``. An added Hamiltonian's
+    curves are the selected Pauli operators.
 
     Raises:
         ValueError: ``simulator`` has not been simulated, or the measurement
@@ -482,19 +504,20 @@ def _measured_result(simulator: Simulator, selection: Mapping[str, object]) -> S
         if simulator.last_result is None:
             raise ValueError("Results are not available. Please run the simulation first.")
         return simulator.last_result
-    return simulator.measure(_measurements(document.measure, simulator.num_qubits))
+    return simulator.measure(_page_measurements(_page_model(document.model), document.measure))
 
 
 def _result_payload(
     result: SimulationResult,
     simulator: Simulator,
+    model: _PageModel,
     measure: Mapping[str, object],
 ) -> dict[str, object]:
     """Return the curves, names, and resource record the page chart draws."""
     return {
         "times": result.times.tolist(),
         "observables": [curve.tolist() for curve in result.observables],
-        "labels": _observable_labels(measure, simulator.num_qubits),
+        "labels": _chart_labels(model, measure),
         "resources": [_resource_record(simulator, result.runtime)],
         "runtime": result.runtime,
         "algorithm": result.algorithm,
@@ -614,7 +637,7 @@ def _run_benchmark(
     benchmark.run()
     recorded = [_measured_result(simulator, selection) for simulator in simulators]
     resources = benchmark.resource_metrics()
-    labels = _observable_labels(prepared.document.measure, simulators[0].num_qubits)
+    labels = _chart_labels(_page_model(prepared.document.model), prepared.document.measure)
     series: list[dict[str, object]] = []
     for result, resource in zip(recorded, resources, strict=True):
         name = str(resource["title"])
@@ -659,12 +682,16 @@ def _qutip_simulator(
     sites: list[int],
     cls: Any = None,
 ) -> Simulator:
-    """Build an observables simulator for explicit Pauli observables.
+    """Build an observables simulator for the posted measurement.
 
-    QuTiP is imported when ``cls`` is omitted, so a test can replace this
-    function without importing that extra.
+    ``model`` records the factory ``e_ops``. An added Hamiltonian records one
+    Pauli on each selected qubit. QuTiP is imported when ``cls`` is omitted, so
+    a test can replace this function without importing that extra.
     """
-    observables = _observables(model.num_qubits, measure_id, sites)
+    if measure_id == "model":
+        observables = _model_records(cast(_FactoryModel, model))[0]
+    else:
+        observables = _observables(model.num_qubits, measure_id, sites)
     if cls is None:
         qutip_simulator = import_optional("shadowsim.simulators.qutip_simulator", extra="qutip")
         cls = qutip_simulator.QutipSimulator
@@ -692,19 +719,23 @@ def _circuit_simulator(
 ) -> Simulator:
     """Build a circuit simulator on the catalog backend ``record`` names.
 
-    A measurement whose catalog record sets ``rotate`` reads those qubits in the
-    X basis before the measurement. The others measure every qubit in Z. Chip
-    values come from the catalog fields on ``cls``. A posted name that is not
-    one of those fields is ignored. The simulator records counts, or Pauli
-    expectations when the backend has no shot budget, which
+    A factory model is measured in Z. Its expressions already name the
+    computational-basis counts they read. An added Hamiltonian whose catalog
+    record sets ``rotate`` reads those qubits in that record's letter and every
+    other qubit in Z. The others measure every qubit in Z. Chip values come
+    from the catalog fields on ``cls``. A posted
+    name that is not one of those fields is ignored. The simulator records
+    counts, or Pauli expectations when the backend has no shot budget, which
     :func:`_measured_result` reads.
     """
     posted = _simulator_arguments(cls, arguments)
     if getattr(cls, "closed_system", False) and model.c_ops_local:
         raise ValueError(f"{cls.__name__.removesuffix('Simulator')} is closed-system only")
     circuit_backend = _make_backend(record, backend_arguments)
-    if measurement_record(measure_id).get("rotate"):
-        posted["basis"] = _x_basis(model.num_qubits, sites)
+    if measure_id != "model":
+        measured = measurement_record(measure_id)
+        if measured.get("rotate"):
+            posted["basis"] = _pauli_basis(model.num_qubits, sites, str(measured.get("letter", "")))
     return cls(
         model.local_hamiltonians,
         model.c_ops_local,
@@ -777,10 +808,14 @@ def _field_phrase(label: str) -> str:
 def _reject_counts(measure_id: str, label: str) -> None:
     """Reject a counts measurement for a simulator or backend that returns expectations.
 
+    A factory model's measurements are applied to shot counts by a circuit
+    simulator. An observables simulator records ``e_ops`` instead, so this
+    check does not apply to ``model``.
+
     Raises:
         ValueError: ``measure_id`` is not listed, or it is a counts measurement.
     """
-    if measurement_record(measure_id)["kind"] != "counts":
+    if measure_id == "model" or measurement_record(measure_id)["kind"] != "counts":
         return
     raise ValueError(f"{label} returns Pauli expectations, not shot counts; use Aer for a counts measurement")
 
@@ -915,9 +950,9 @@ def _backend_class(setup: str) -> Any:
     return _load_exported(module_name, extra, class_name, "unknown backend")
 
 
-def _x_basis(num_qubits: int, sites: list[int]) -> str:
-    """Return a basis that reads X on ``sites`` and Z on every other qubit."""
-    return "".join("X" if qubit in sites else "Z" for qubit in range(num_qubits))
+def _pauli_basis(num_qubits: int, sites: list[int], letter: str) -> str:
+    """Return a basis that reads ``letter`` on ``sites`` and Z on every other qubit."""
+    return "".join(letter if qubit in sites else "Z" for qubit in range(num_qubits))
 
 
 def _selection_basis_gates(selection: Mapping[str, object], key: str = "basis_gates") -> list[str] | None:
@@ -1381,6 +1416,58 @@ def _measure_sites(measure: Mapping[str, object], num_qubits: int) -> list[int]:
         if item not in sites:
             sites.append(item)
     return sites
+
+
+def _require_measure(model: _PageModel, measure_id: str) -> None:
+    """Reject a measurement that does not belong to ``model``.
+
+    ``model`` records the factory's own measurements. An added Hamiltonian
+    records a catalog measurement. A factory whose observable list and
+    measurement list differ in length cannot be recorded.
+
+    Raises:
+        ValueError: The id belongs to the other kind of model, or the factory
+            lists do not match.
+    """
+    if measure_id == "model":
+        if isinstance(model, _AddedModel):
+            raise ValueError("an added Hamiltonian measures X, Y, Z, or a counts expression")
+        _model_records(model)
+        return
+    if not isinstance(model, _AddedModel):
+        raise ValueError("a preexisting model records its own measurements")
+
+
+def _model_records(model: _FactoryModel) -> tuple[list[Operator], list[Measurement]]:
+    """Return ``e_ops`` and ``measurements`` when the two lists have the same length.
+
+    Raises:
+        ValueError: The factory lists differ in length.
+    """
+    if len(model.e_ops) != len(model.measurements):
+        raise ValueError("model measurements do not match its observables")
+    return list(model.e_ops), list(model.measurements)
+
+
+def _page_measurements(model: _PageModel, measure: Mapping[str, object]) -> list[Measurement]:
+    """Return the measurements a circuit simulator reads after it runs.
+
+    Raises:
+        ValueError: ``measure`` does not belong to ``model``, or a counts
+            expression is not allowed.
+    """
+    measure_id = _text(measure.get("id"))
+    _require_measure(model, measure_id)
+    if measure_id == "model":
+        return _model_records(cast(_FactoryModel, model))[1]
+    return _measurements(measure, model.num_qubits)
+
+
+def _chart_labels(model: _PageModel, measure: Mapping[str, object]) -> list[str]:
+    """Return one chart name per recorded curve."""
+    if _text(measure.get("id")) == "model":
+        return [item.label for item in _model_records(cast(_FactoryModel, model))[1]]
+    return _observable_labels(measure, model.num_qubits)
 
 
 def _measurements(measure: Mapping[str, object], num_qubits: int) -> list[Measurement]:

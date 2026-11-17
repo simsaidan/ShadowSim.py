@@ -639,6 +639,41 @@ def test_preview_imports_are_explicit() -> None:
     assert 'measurements = [Measurement((1,), \'(counts["0"] - counts["1"]) / shots\', "expectation on 1")]' in text
     assert text.endswith("sim.simulate()\nresult = sim.measure(measurements)\nsim.plot_results()")
 
+    measured["selection"]["measure"] = "y"
+    rotated = _call("previewText", measured)
+    assert isinstance(rotated, str)
+    assert 'basis="ZY"' in rotated
+
+
+def test_a_model_measurement_previews_the_factory_lists() -> None:
+    block = {
+        "id": "model",
+        "title": "Model measurements",
+        "detail": "The model's measurements",
+        "phrase": "The model's measurements",
+        "kind": "model",
+    }
+    qutip = _qutip_page()
+    qutip["blocks"]["measure"] = [*qutip["blocks"]["measure"], block]
+    qutip["selection"]["measure"] = "model"
+    qutip["measureSites"] = []
+    text = _call("previewText", qutip)
+    assert isinstance(text, str)
+    assert "e_ops = model.e_ops" in text
+    assert "Operator(" not in text
+    assert _call("measureSitesReady", qutip) is True
+    assert _call("runAllowed", qutip) is True
+
+    circuit = _circuit_page()
+    circuit["blocks"]["measure"] = [*circuit["blocks"]["measure"], block]
+    circuit["selection"]["measure"] = "model"
+    preview = _call("previewText", circuit)
+    assert isinstance(preview, str)
+    assert "measurements = model.measurements" in preview
+    assert "basis=" not in preview
+    assert "Measurement" not in preview
+    assert "from shadowsim.simulators import TrotterizationSimulator" in preview
+
 
 def test_preview_uses_the_catalog_class() -> None:
     page = _circuit_page()
