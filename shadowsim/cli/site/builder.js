@@ -281,6 +281,7 @@ function numberProblem(preview) {
   return check(checks.numberProblem, preview);
 }
 
+// biome-ignore lint/correctness/noUnusedVariables: the page tests call this
 function settingsReady() {
   return check(checks.settingsReady);
 }
@@ -404,7 +405,10 @@ function movedFromDefault(name) {
 
 function fieldLocked(param) {
   return factoryParams().some(
-    (other) => Array.isArray(other.disables) && other.disables.includes(param.name) && movedFromDefault(other.name),
+    (other) =>
+      Array.isArray(other.disables) &&
+      other.disables.includes(param.name) &&
+      movedFromDefault(other.name),
   );
 }
 
@@ -792,7 +796,9 @@ function stateFieldChip(block) {
     value: stateTextOf(block.id),
     oninput: (event) => {
       const raw = event.target.value;
-      const next = bits ? raw.replace(/[^01]/g, "").slice(0, field.cap) : raw.replace(/[^\d.,\s-]/g, "");
+      const next = bits
+        ? raw.replace(/[^01]/g, "").slice(0, field.cap)
+        : raw.replace(/[^\d.,\s-]/g, "");
       if (event.target.value !== next) event.target.value = next;
       stateText[block.id] = next;
       refreshStateChip(block.id);
@@ -840,7 +846,9 @@ function simulatorControl(params, field) {
             refreshSummaryAndPreview();
           },
         },
-        ...choices.map((choice) => el("option", { value: choice, selected: choice === value }, choice)),
+        ...choices.map((choice) =>
+          el("option", { value: choice, selected: choice === value }, choice),
+        ),
       ),
     );
   }
@@ -1027,7 +1035,9 @@ function backendChip(entry) {
   const fields = block.fields ?? [];
   const samples = Boolean(block.shots);
   const configurable = samples || fields.length > 0;
-  const editing = samples ? Boolean(entry.shotsOpen) : Boolean(entry.backendOpen) && fields.length > 0;
+  const editing = samples
+    ? Boolean(entry.shotsOpen)
+    : Boolean(entry.backendOpen) && fields.length > 0;
   const shown = backendSummary(block, entry);
   return el(
     "div",
@@ -1147,14 +1157,14 @@ function backendSocket(entry) {
       className: "socket",
       "data-socket": String(entry.key),
       ondragover: (event) => {
-        if (!dragging || dragging.lane !== "backend") return;
+        if (dragging?.lane !== "backend") return;
         event.preventDefault();
         event.stopPropagation();
         event.currentTarget.classList.add("is-over");
       },
       ondragleave: (event) => event.currentTarget.classList.remove("is-over"),
       ondrop: (event) => {
-        if (!dragging || dragging.lane !== "backend") return;
+        if (dragging?.lane !== "backend") return;
         event.preventDefault();
         event.stopPropagation();
         attachBackend(dragging.id, entry.key);
@@ -1212,7 +1222,7 @@ function syncHamiltonianQubits() {
 }
 
 function refreshHamiltonianChips() {
-  document.querySelectorAll?.(".chip.hamiltonian")?.forEach((chip) => {
+  document.querySelectorAll(".chip.hamiltonian").forEach((chip) => {
     const term = modelTerms.find((item) => item.key === Number(chip.dataset.key));
     if (!term) return;
     const detail = chip.querySelector(".hamiltonian-detail");
@@ -1338,7 +1348,12 @@ function localFields(term) {
     },
   });
   input.value = term.matrix;
-  return el("div", { className: "local-fields" }, el("label", { className: "basis-field" }, "Matrix", input), localSiteFields(term));
+  return el(
+    "div",
+    { className: "local-fields" },
+    el("label", { className: "basis-field" }, "Matrix", input),
+    localSiteFields(term),
+  );
 }
 
 function operatorProblem(term) {
@@ -1368,7 +1383,7 @@ function syncOperatorAlert(chip, term) {
 }
 
 function refreshLocalHamiltonianChips() {
-  document.querySelectorAll?.(".chip.local-hamiltonian, .chip.lindblad")?.forEach((chip) => {
+  document.querySelectorAll(".chip.local-hamiltonian, .chip.lindblad").forEach((chip) => {
     const term = modelTerms.find((item) => item.key === Number(chip.dataset.key));
     if (!term) return;
     const count = qubitCount();
@@ -1398,7 +1413,12 @@ function actedQubitChip(term) {
     el(
       "div",
       { className: "basis-head" },
-      el("div", {}, el("strong", {}, title), el("span", { className: "hamiltonian-detail" }, actedQubitDetail(term))),
+      el(
+        "div",
+        {},
+        el("strong", {}, title),
+        el("span", { className: "hamiltonian-detail" }, actedQubitDetail(term)),
+      ),
       el(
         "div",
         { className: "basis-actions" },
@@ -1456,7 +1476,8 @@ function slotChips(lane) {
     const block = blockById("model", term.id);
     if (!block) continue;
     if (term.id === "hamiltonian") chips.push(hamiltonianChip(term));
-    else if (term.id === "local_hamiltonian" || term.id === "lindblad") chips.push(actedQubitChip(term));
+    else if (term.id === "local_hamiltonian" || term.id === "lindblad")
+      chips.push(actedQubitChip(term));
     else chips.push(blockCard(lane, block, { inSlot: true, onRemove: () => removeTerm(term.key) }));
   }
   return chips;
@@ -1532,7 +1553,8 @@ function methodPalette(lane, onPlace) {
                 blockCard(cardLane, block, {
                   inSlot: false,
                   blocked: false,
-                  onPlace: () => (cardLane.id === "backend" ? attachBackend(block.id) : onPlace(block.id)),
+                  onPlace: () =>
+                    cardLane.id === "backend" ? attachBackend(block.id) : onPlace(block.id),
                 }),
               ),
             ),
@@ -1635,7 +1657,7 @@ function importBoardButton() {
     "aria-label": "Board file",
     onchange: (event) => {
       const input = event.target;
-      const chosen = input.files && input.files[0];
+      const chosen = input.files?.[0];
       input.value = "";
       if (chosen) void importBoardFile(chosen);
     },
@@ -1644,12 +1666,16 @@ function importBoardButton() {
     "span",
     { className: "board-import" },
     file,
-    el("button", {
-      className: "board-file import-board",
-      type: "button",
-      disabled: running,
-      onclick: () => file.click(),
-    }, "Import board"),
+    el(
+      "button",
+      {
+        className: "board-file import-board",
+        type: "button",
+        disabled: running,
+        onclick: () => file.click(),
+      },
+      "Import board",
+    ),
   );
 }
 
@@ -1692,25 +1718,37 @@ function settingsComponent() {
     el(
       "div",
       { className: "settings-actions" },
-      el("button", {
-        className: "board-file export-board",
-        type: "button",
-        disabled: running || !accepted(),
-        onclick: () => downloadBoard(),
-      }, "Export board"),
+      el(
+        "button",
+        {
+          className: "board-file export-board",
+          type: "button",
+          disabled: running || !accepted(),
+          onclick: () => downloadBoard(),
+        },
+        "Export board",
+      ),
       importBoardButton(),
-      el("button", {
-        className: "clear",
-        type: "button",
-        disabled: running,
-        onclick: () => emptyBoard(),
-      }, "Clear"),
-      el("button", {
-        className: "run",
-        type: "button",
-        disabled: !running && !runAllowed(),
-        onclick: () => void (running ? cancelRun() : startRun()),
-      }, running ? "Cancel" : "Run simulation"),
+      el(
+        "button",
+        {
+          className: "clear",
+          type: "button",
+          disabled: running,
+          onclick: () => emptyBoard(),
+        },
+        "Clear",
+      ),
+      el(
+        "button",
+        {
+          className: "run",
+          type: "button",
+          disabled: !running && !runAllowed(),
+          onclick: () => void (running ? cancelRun() : startRun()),
+        },
+        running ? "Cancel" : "Run simulation",
+      ),
     ),
   );
 }
@@ -1724,7 +1762,7 @@ function documentBody() {
 }
 
 function cancelScheduledCheck() {
-  if (checkTimer != null && typeof clearTimeout === "function") clearTimeout(checkTimer);
+  if (checkTimer != null) clearTimeout(checkTimer);
   checkTimer = null;
 }
 
@@ -1794,7 +1832,10 @@ async function requestCheck(body) {
     payload = {};
   }
   if (!response.ok || !Number.isInteger(payload.qubits) || payload.qubits < 1) {
-    const error = typeof payload.error === "string" && payload.error ? payload.error : "The selection was rejected.";
+    const error =
+      typeof payload.error === "string" && payload.error
+        ? payload.error
+        : "The selection was rejected.";
     return { ok: false, error };
   }
   return { ok: true, qubits: payload.qubits, measurements: readModelMeasurements(payload) };
@@ -1834,13 +1875,15 @@ async function postCheck(requested, serial) {
     acceptedBody = null;
     acceptedQubits = null;
   } finally {
-    if (serial !== checkSerial) return;
-    checkInFlight = false;
-    pendingBody = null;
-    refreshSummaryAndPreview();
+    if (serial === checkSerial) {
+      checkInFlight = false;
+      pendingBody = null;
+      refreshSummaryAndPreview();
+    }
   }
 }
 
+// biome-ignore lint/correctness/noUnusedVariables: the page tests call this
 function applyCheck(qubits) {
   if (!locallyReady()) return false;
   cancelScheduledCheck();
@@ -1898,7 +1941,8 @@ function stateEntryMessage(preview) {
 
 function statusMessage() {
   if (statusHold) return statusHold;
-  if (!isComplete()) return operatorStatus(false) ?? socketStatus(false) ?? "Place a block in each slot.";
+  if (!isComplete())
+    return operatorStatus(false) ?? socketStatus(false) ?? "Place a block in each slot.";
   if (factoryAlert()) return `${factoryAlert()}.`;
   if (stateInputProblem() === "size") return stateSizeStatus(false);
   if (stateInputProblem() === "empty") return stateEntryMessage(false);
@@ -1920,11 +1964,7 @@ function statusMessage() {
 
 function statusComponent() {
   const ready = !statusHold && runAllowed();
-  return el(
-    "p",
-    { className: ready ? "status ready" : "status", role: "status" },
-    statusMessage(),
-  );
+  return el("p", { className: ready ? "status ready" : "status", role: "status" }, statusMessage());
 }
 
 function syncCopyButton() {
@@ -1933,7 +1973,7 @@ function syncCopyButton() {
   const enabled = Boolean(previewText());
   copy.disabled = !enabled;
   if (enabled) {
-    if (typeof copy.removeAttribute === "function") copy.removeAttribute("disabled");
+    copy.removeAttribute("disabled");
     return;
   }
   copy.setAttribute("disabled", "");
@@ -1941,7 +1981,7 @@ function syncCopyButton() {
 }
 
 function showCopied(button, label = "Copy") {
-  if (copiedButton && copiedButton !== button && copiedButton.isConnected !== false) {
+  if (copiedButton && copiedButton !== button && copiedButton.isConnected) {
     copiedButton.textContent = copiedLabel;
   }
   copiedButton = button;
@@ -1950,7 +1990,7 @@ function showCopied(button, label = "Copy") {
   if (copyTimer) clearTimeout(copyTimer);
   copyTimer = setTimeout(() => {
     copyTimer = 0;
-    if (button.isConnected === false) return;
+    if (!button.isConnected) return;
     button.textContent = label;
     if (copiedButton === button) copiedButton = null;
   }, 1500);
@@ -1962,9 +2002,12 @@ function copyPreview(event) {
   const pending = navigator.clipboard?.writeText?.(code);
   if (!pending || typeof pending.then !== "function") return;
   const button = event?.currentTarget;
-  pending.then(() => {
-    if (button) showCopied(button);
-  }, () => {});
+  pending.then(
+    () => {
+      if (button) showCopied(button);
+    },
+    () => {},
+  );
 }
 
 function copyButton() {
@@ -1991,9 +2034,12 @@ function copyBoard(event) {
   const pending = navigator.clipboard?.writeText?.(boardFileText());
   if (!pending || typeof pending.then !== "function") return;
   const button = event?.currentTarget;
-  pending.then(() => {
-    if (button) showCopied(button, "Copy board");
-  }, () => {});
+  pending.then(
+    () => {
+      if (button) showCopied(button, "Copy board");
+    },
+    () => {},
+  );
 }
 
 function copyBoardButton() {
@@ -2020,7 +2066,10 @@ function syncBoardJson(panel) {
 function codeBody() {
   const code = previewText();
   if (code) return el("pre", { className: "script" }, code);
-  let message = operatorStatus(true) ?? socketStatus(true) ?? "Place a block in each slot to preview the script.";
+  let message =
+    operatorStatus(true) ??
+    socketStatus(true) ??
+    "Place a block in each slot to preview the script.";
   if (isComplete()) {
     const numbers = numberProblem(true);
     if (factoryAlert()) message = `${factoryAlert()} to preview the script.`;
@@ -2045,7 +2094,9 @@ function codeBody() {
 function setStatus(message, ready) {
   const status = document.querySelector(".status");
   if (!status) return;
-  status.replaceWith(el("p", { className: ready ? "status ready" : "status", role: "status" }, message));
+  status.replaceWith(
+    el("p", { className: ready ? "status ready" : "status", role: "status" }, message),
+  );
 }
 
 function setResults(node) {
@@ -2093,7 +2144,8 @@ function chartCurves(payload) {
   }
   const observables = Array.isArray(payload.observables) ? payload.observables : [];
   return observables.map((values, index) => ({
-    label: typeof shared[index] === "string" && shared[index] ? shared[index] : `Observable ${index}`,
+    label:
+      typeof shared[index] === "string" && shared[index] ? shared[index] : `Observable ${index}`,
     values,
     index,
   }));
@@ -2143,7 +2195,7 @@ function errorCurves(payload) {
 
 function errorAxisTitle(payload) {
   const series = Array.isArray(payload.series) ? payload.series : [];
-  const name = series[0] && series[0].name ? String(series[0].name) : "reference";
+  const name = series[0]?.name ? String(series[0].name) : "reference";
   return `Error vs ${name}`;
 }
 
@@ -2188,7 +2240,8 @@ function nearestTimeIndex(payload, fraction) {
 function shownCurves(payload, view, observable) {
   const curves = view === "error" ? errorCurves(payload) : chartCurves(payload);
   const simulator = view && view !== "curves" && view !== "error" ? view : null;
-  const matched = simulator == null ? curves : curves.filter((curve) => curve.simulator === simulator);
+  const matched =
+    simulator == null ? curves : curves.filter((curve) => curve.simulator === simulator);
   if (!Number.isInteger(observable)) return matched;
   return matched.filter((curve) => curve.index === observable);
 }
@@ -2287,9 +2340,12 @@ function formatCircuitMetric(value) {
 
 function savedNote(payload) {
   const notes = [];
-  const saved = Array.isArray(payload.saved) ? payload.saved.filter((item) => typeof item === "string") : [];
+  const saved = Array.isArray(payload.saved)
+    ? payload.saved.filter((item) => typeof item === "string")
+    : [];
   if (saved.length) notes.push(`Saved to ${saved.join(", ")}`);
-  if (typeof payload.exported === "string" && payload.exported) notes.push(`Exported to ${payload.exported}`);
+  if (typeof payload.exported === "string" && payload.exported)
+    notes.push(`Exported to ${payload.exported}`);
   if (!notes.length) return null;
   return el("p", { className: "hint" }, notes.join(". "));
 }
@@ -2306,7 +2362,8 @@ function observableChoices(payload) {
   const labels = Array.isArray(payload.labels) ? payload.labels : [];
   const choices = [{ key: "all", label: "All" }];
   for (let index = 0; index < count; index++) {
-    const label = typeof labels[index] === "string" && labels[index] ? labels[index] : `Observable ${index}`;
+    const label =
+      typeof labels[index] === "string" && labels[index] ? labels[index] : `Observable ${index}`;
     choices.push({ key: String(index), label });
   }
   return choices;
@@ -2317,7 +2374,7 @@ function chartViews(payload) {
   if (series.length < 2) return [];
   const views = [{ key: "curves", label: "Curves" }];
   for (const entry of series) {
-    if (!entry || !entry.name) continue;
+    if (!entry?.name) continue;
     views.push({ key: String(entry.name), label: String(entry.name) });
   }
   views.push({ key: "error", label: "Error" });
@@ -2334,7 +2391,10 @@ function resultsComponent(payload) {
   function draw() {
     host.replaceChildren(chartComponent(payload, view, observable));
     for (const button of viewButtons) {
-      button.setAttribute("aria-pressed", button.getAttribute("data-view") === view ? "true" : "false");
+      button.setAttribute(
+        "aria-pressed",
+        button.getAttribute("data-view") === view ? "true" : "false",
+      );
     }
     for (const button of observableButtons) {
       const key = button.getAttribute("data-observable");
@@ -2378,13 +2438,29 @@ function resultsComponent(payload) {
   const line = resourceLine(payload.resources);
   const resources = line ? el("p", { className: "resources" }, line) : null;
   const observableSwitcher = observableButtons.length
-    ? el("div", { className: "chart-switch", role: "tablist", "aria-label": "Observable" }, ...observableButtons)
+    ? el(
+        "div",
+        { className: "chart-switch", role: "tablist", "aria-label": "Observable" },
+        ...observableButtons,
+      )
     : null;
   const viewSwitcher = viewButtons.length
-    ? el("div", { className: "chart-switch", role: "tablist", "aria-label": "Chart" }, ...viewButtons)
+    ? el(
+        "div",
+        { className: "chart-switch", role: "tablist", "aria-label": "Chart" },
+        ...viewButtons,
+      )
     : null;
   if (!note && !observableSwitcher && !viewSwitcher && !resources) return host.children[0];
-  return el("div", { className: "results" }, note, observableSwitcher, viewSwitcher, host, resources);
+  return el(
+    "div",
+    { className: "results" },
+    note,
+    observableSwitcher,
+    viewSwitcher,
+    host,
+    resources,
+  );
 }
 
 function curveColor(index, count) {
@@ -2499,7 +2575,9 @@ function chartComponent(payload, view, observable) {
     const x = ((event.clientX - rect.left) / rect.width) * width;
     const fraction = plotFraction(x, plotLeft, plotRight);
     readout.textContent =
-      fraction == null ? "" : hoverReadout(payload, nearestTimeIndex(payload, fraction), view, observable);
+      fraction == null
+        ? ""
+        : hoverReadout(payload, nearestTimeIndex(payload, fraction), view, observable);
   });
   svg.addEventListener("pointerleave", () => {
     readout.textContent = "";
@@ -2558,7 +2636,7 @@ function setButtonDisabled(button, disabled) {
     button.setAttribute("disabled", "");
     return;
   }
-  if (typeof button.removeAttribute === "function") button.removeAttribute("disabled");
+  button.removeAttribute("disabled");
 }
 
 function syncBoardFileButtons() {
@@ -2666,7 +2744,8 @@ function postedMeasure() {
   if (selection.measure === "model") return { id: "model" };
   const measure = { id: selection.measure, sites: explicitSites() };
   const field = blockById("measure", selection.measure)?.field;
-  if (field?.kind === "expression") measure.expression = (expressionText[selection.measure] ?? "").trim();
+  if (field?.kind === "expression")
+    measure.expression = (expressionText[selection.measure] ?? "").trim();
   return measure;
 }
 
@@ -2743,7 +2822,8 @@ async function startRun() {
     }
     if (!response.ok) {
       const message = payload.error || "The run failed.";
-      if (showRunResult(requested, el("p", { className: "placeholder" }, message))) statusHold = message;
+      if (showRunResult(requested, el("p", { className: "placeholder" }, message)))
+        statusHold = message;
       return;
     }
     releaseStatusHold();
@@ -3042,7 +3122,9 @@ function measureChip(block) {
 function pathMessage(preview) {
   const missing = missingPaths();
   const tail = preview ? " to preview the script." : ".";
-  const names = missing.map((id) => String(blockById("then", id)?.field?.aria || "path").toLowerCase());
+  const names = missing.map((id) =>
+    String(blockById("then", id)?.field?.aria || "path").toLowerCase(),
+  );
   const article = (name) => (/^[aeiou]/i.test(name) ? "an" : "a");
   if (!names.length) return `Enter a path${tail}`;
   return `Enter ${names.map((name) => `${article(name)} ${name}`).join(" and ")}${tail}`;
@@ -3121,8 +3203,7 @@ function place(laneId, blockId) {
     selection.simulator = placedSims[0].id;
   } else if (laneId === "model" && block?.adds) {
     modelTerms.push({ id: blockId, key: ++modelTermKey, matrix: "", sites: [] });
-  }
-  else if (laneId === "model" && blockId === "preexisting") {
+  } else if (laneId === "model" && blockId === "preexisting") {
     selection.model = "preexisting";
     if (!preexistingId) preexistingId = modelFactories[0]?.id ?? null;
     preexistingOpen = true;
@@ -3165,17 +3246,26 @@ function attachBackend(backendId, key) {
   if (!backend) return;
   const target =
     key == null
-      ? placedSims.find((entry) => !isReference(entry) && !entry.backend && backendFits(entry, backendId))
+      ? placedSims.find(
+          (entry) => !isReference(entry) && !entry.backend && backendFits(entry, backendId),
+        )
       : placedSims.find((entry) => entry.key === key);
   if (!target || isReference(target) || !backendFits(target, backendId)) {
-    const open = placedSims.filter((entry) => !isReference(entry) && (key == null ? !entry.backend : entry.key === key));
-    const blocked = open.find((entry) => blockById("simulator", entry.id)?.samples && !backend.shots);
+    const open = placedSims.filter(
+      (entry) => !isReference(entry) && (key == null ? !entry.backend : entry.key === key),
+    );
+    const blocked = open.find(
+      (entry) => blockById("simulator", entry.id)?.samples && !backend.shots,
+    );
     const title = blocked ? blockById("simulator", blocked.id)?.title : null;
     if (title) statusHold = `${title} needs a backend with a shot budget.`;
-    else if (!placedSims.some((entry) => !isReference(entry))) statusHold = "Place a simulator before its backend.";
+    else if (!placedSims.some((entry) => !isReference(entry)))
+      statusHold = "Place a simulator before its backend.";
     else statusHold = "Snap a backend onto an open simulator.";
     dragging = null;
-    document.querySelectorAll?.(".is-over").forEach((node) => node.classList.remove("is-over"));
+    document.querySelectorAll(".is-over").forEach((node) => {
+      node.classList.remove("is-over");
+    });
     setStatus(statusHold);
     return;
   }
@@ -3183,7 +3273,8 @@ function attachBackend(backendId, key) {
   if (backend.fields?.length) {
     target.backendFields = { ...(target.backendFields ?? {}) };
     for (const field of backend.fields) {
-      if (!String(target.backendFields[field.name] ?? "").trim()) target.backendFields[field.name] = field.default;
+      if (!String(target.backendFields[field.name] ?? "").trim())
+        target.backendFields[field.name] = field.default;
     }
   }
   if (backend.shots) {
@@ -3254,7 +3345,8 @@ function clearLane(laneId) {
       measureSites = null;
     }
   }
-  if (laneId === "state" && qubitsSource === "state" && settings.qubits !== "") qubitsSource = "user";
+  if (laneId === "state" && qubitsSource === "state" && settings.qubits !== "")
+    qubitsSource = "user";
   if (laneId === "model" && qubitsSource === "hamiltonian") {
     settings.qubits = "";
     qubitsSource = null;
@@ -3304,7 +3396,9 @@ function complexText(entry) {
 
 function matrixText(matrix) {
   if (!Array.isArray(matrix)) return "";
-  const rows = matrix.map((row) => `[${(Array.isArray(row) ? row : []).map((entry) => complexText(entry)).join(", ")}]`);
+  const rows = matrix.map(
+    (row) => `[${(Array.isArray(row) ? row : []).map((entry) => complexText(entry)).join(", ")}]`,
+  );
   return `[${rows.join(", ")}]`;
 }
 
@@ -3357,17 +3451,25 @@ function applyModel(model) {
     qubitsSource = "user";
     const next = [];
     for (const term of terms) {
-      if (!plainObject(term) || !knownBlock("model", term.id) || !blockById("model", term.id)?.adds) continue;
+      if (!plainObject(term) || !knownBlock("model", term.id) || !blockById("model", term.id)?.adds)
+        continue;
       next.push({
         id: term.id,
         matrix: matrixText(term.matrix),
         sites: Array.isArray(term.sites) ? term.sites.filter((site) => Number.isInteger(site)) : [],
       });
     }
-    modelTerms.splice(0, modelTerms.length, ...next.map((term) => ({ ...term, key: ++modelTermKey })));
+    modelTerms.splice(
+      0,
+      modelTerms.length,
+      ...next.map((term) => ({ ...term, key: ++modelTermKey })),
+    );
     return;
   }
-  const id = typeof model.id === "string" && modelFactories.some((item) => item.id === model.id) ? model.id : null;
+  const id =
+    typeof model.id === "string" && modelFactories.some((item) => item.id === model.id)
+      ? model.id
+      : null;
   if (!id) return;
   selection.model = "preexisting";
   preexistingId = id;
@@ -3378,7 +3480,8 @@ function applyModel(model) {
   }
   for (const [key, value] of Object.entries(args)) {
     if (key === "n_qubits") continue;
-    if (typeof value === "string" || typeof value === "number") factoryText[key] = textNumber(value);
+    if (typeof value === "string" || typeof value === "number")
+      factoryText[key] = textNumber(value);
   }
   installFactoryMeasure();
   selection.measure = "model";
@@ -3392,7 +3495,8 @@ function simParams(block, args) {
   for (const field of block?.fields ?? []) {
     if (!(field.name in args)) continue;
     const value = args[field.name];
-    if (typeof value === "string" || typeof value === "number") params[field.name] = textNumber(value);
+    if (typeof value === "string" || typeof value === "number")
+      params[field.name] = textNumber(value);
   }
   return params;
 }
@@ -3439,7 +3543,9 @@ function applyMeasure(measure) {
     return;
   }
   selection.measure = knownBlock("measure", measure.id) ? measure.id : null;
-  measureSites = Array.isArray(measure.sites) ? measure.sites.filter((site) => Number.isInteger(site)) : null;
+  measureSites = Array.isArray(measure.sites)
+    ? measure.sites.filter((site) => Number.isInteger(site))
+    : null;
   const field = blockById("measure", selection.measure)?.field;
   if (field?.kind === "expression" && typeof measure.expression === "string") {
     expressionText[selection.measure] = measure.expression;
@@ -3456,14 +3562,16 @@ function applyActions(actions) {
   selection.then = next[0] ?? null;
   for (const block of BLOCKS.then) {
     const field = block.field;
-    if (field?.kind === "path" && typeof actions[field.key] === "string") actionText[block.id] = actions[field.key];
+    if (field?.kind === "path" && typeof actions[field.key] === "string")
+      actionText[block.id] = actions[field.key];
   }
 }
 
 function applyDocument(saved) {
   if (!plainObject(saved)) return;
   resetBoard();
-  if (typeof saved.total === "string" || typeof saved.total === "number") settings.total = textNumber(saved.total);
+  if (typeof saved.total === "string" || typeof saved.total === "number")
+    settings.total = textNumber(saved.total);
   applyState(saved.state);
   applyModel(saved.model);
   applySims(saved.simulators);
@@ -3517,7 +3625,10 @@ async function restoreBoard() {
     return;
   }
   if (!response.ok || !Number.isInteger(payload.qubits) || payload.qubits < 1) {
-    statusHold = typeof payload.error === "string" && payload.error ? payload.error : "The selection was rejected.";
+    statusHold =
+      typeof payload.error === "string" && payload.error
+        ? payload.error
+        : "The selection was rejected.";
     return;
   }
   applyDocument(JSON.parse(body));
@@ -3574,7 +3685,7 @@ async function importBoardText(raw) {
     return;
   }
   if (running || !result.ok) {
-    if (!running) holdImportStatus(result && result.error ? result.error : "The selection was rejected.");
+    if (!running) holdImportStatus(result?.error ? result.error : "The selection was rejected.");
     return;
   }
   cancelScheduledCheck();
@@ -3678,7 +3789,8 @@ async function loadLane(path, lane, key) {
         },
         ...items.filter((item) => item.adds),
       ];
-      if (preexistingId && !modelFactories.some((item) => item.id === preexistingId)) preexistingId = null;
+      if (preexistingId && !modelFactories.some((item) => item.id === preexistingId))
+        preexistingId = null;
     } else BLOCKS[lane] = items;
     if (lane === "measure") catalogMeasures = items.slice();
     if (lane === "then") {

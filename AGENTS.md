@@ -22,6 +22,16 @@ uv run --group lint ruff check .
 uv run --group lint ruff format --check .
 ```
 
+The builder page scripts need Node 22.22.2 or newer on the 22 line, 24.15.0 or newer on the 24 line, or 26 or newer.
+
+```bash
+npm ci
+npm run lint
+npm test
+```
+
+`npm run coverage` reports JavaScript coverage and does not fail the build.
+
 ## Type checking
 
 ```bash
