@@ -669,24 +669,91 @@
     return qubitProblem(state, preview) ?? totalProblem(state, preview);
   }
 
-  function settingsReady(state) {
-    return (
-      numberProblem(state, false) == null &&
-      stateInputProblem(state) == null &&
-      simParamsReady(state) &&
-      sameTimeGrid(state) &&
-      savePathReady(state) &&
-      measureSitesReady(state) &&
-      countsProblem(state) == null &&
-      shotsReady(state) &&
-      backendFieldsReady(state) &&
-      !emitterProblem(state) &&
-      (!usingAddedOperators(state) || operatorsReady(state))
+  function stateEntryMessage(state, preview) {
+    const field = stateField(state);
+    const ending = preview ? " and total time to preview the script." : " and total time.";
+    return `${field?.empty || "Enter an initial state"}${ending}`;
+  }
+
+  function pathMessage(state, preview) {
+    const tail = preview ? " to preview the script." : ".";
+    const names = missingPaths(state).map((id) =>
+      String(blockById(state, "then", id)?.field?.aria || "path").toLowerCase(),
+    );
+    const article = (name) => (/^[aeiou]/i.test(name) ? "an" : "a");
+    if (!names.length) return `Enter a path${tail}`;
+    return `Enter ${names.map((name) => `${article(name)} ${name}`).join(" and ")}${tail}`;
+  }
+
+  function voiced(render) {
+    const message = render(false);
+    if (!message) return null;
+    return { message, previewMessage: render(true) };
+  }
+
+  function boardProblem(state) {
+    if (isComplete(state)) return null;
+    return voiced(
+      (preview) =>
+        operatorStatus(state, preview) ??
+        socketStatus(state, preview) ??
+        (preview
+          ? "Place a block in each slot to preview the script."
+          : "Place a block in each slot."),
     );
   }
 
+  function setupProblem(state) {
+    const factory = factoryAlert(state);
+    if (factory)
+      return { message: `${factory}.`, previewMessage: `${factory} to preview the script.` };
+    if (stateInputProblem(state) === "size")
+      return voiced((preview) => stateSizeStatus(state, preview));
+    if (stateInputProblem(state) === "empty")
+      return voiced((preview) => stateEntryMessage(state, preview));
+    const numbers = voiced((preview) => numberProblem(state, preview));
+    if (numbers) return numbers;
+    const parameters = voiced((preview) => simParamProblem(state, preview));
+    if (parameters) return parameters;
+    if (!simParamsReady(state))
+      return {
+        message: "Enter simulator parameters.",
+        previewMessage: "Enter simulator parameters to preview the script.",
+      };
+    if (!sameTimeGrid(state))
+      return {
+        message: "Use the same number of time steps for every simulator.",
+        previewMessage: "Use the same number of time steps to preview the script.",
+      };
+    if (!measureSitesReady(state))
+      return {
+        message: "Pick at least one qubit.",
+        previewMessage: "Pick at least one qubit to preview the script.",
+      };
+    const counts = voiced((preview) => countsStatus(state, preview));
+    if (counts) return counts;
+    const shots = voiced((preview) => shotsProblem(state, preview));
+    if (shots) return shots;
+    if (!shotsReady(state))
+      return {
+        message: "Enter a shot count.",
+        previewMessage: "Enter a shot count to preview the script.",
+      };
+    if (!backendFieldsReady(state)) return voiced((preview) => backendFieldStatus(state, preview));
+    if (!savePathReady(state)) return voiced((preview) => pathMessage(state, preview));
+    return null;
+  }
+
+  function firstProblem(state) {
+    return boardProblem(state) ?? setupProblem(state);
+  }
+
+  function settingsReady(state) {
+    return setupProblem(state) == null && (!usingAddedOperators(state) || operatorsReady(state));
+  }
+
   function runAllowed(state) {
-    return isComplete(state) && settingsReady(state);
+    return firstProblem(state) == null;
   }
 
   function stateLine(state) {
@@ -1305,6 +1372,7 @@
     factoryAlert,
     emitterProblem,
     entryBody,
+    firstProblem,
     fixedFactoryQubits,
     formatSetting,
     hamiltonianProblem,

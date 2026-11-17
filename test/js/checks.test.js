@@ -751,3 +751,137 @@ test("hubbard preview keeps structure and factory arguments", () => {
     "model = tavis_cummings_hubbard(omega_c=10.0, g=100.0, n_emitters=1, n_cavities=2, nu=1.5)",
   );
 });
+
+function expectProblem(page, message, previewMessage) {
+  assert.deepEqual(checks.firstProblem(page), { message, previewMessage });
+  assert.equal(checks.runAllowed(page), false);
+}
+
+test("firstProblem reports each problem in order", () => {
+  const page = withAerGates(circuitPage());
+  const timeSteps = page.maxTimeSteps;
+  const shots = page.maxShots;
+  page.selection.model = "hamiltonian";
+  page.modelTerms = [{ id: "hamiltonian", matrix: "[[1, 0], [0, -1]]" }];
+  page.preexistingId = "tavis_cummings";
+  page.modelFactories = [
+    {
+      id: "tavis_cummings",
+      title: "Tavis-Cummings",
+      qubits: false,
+      setup: "model = tavis_cummings()",
+      params: layoutParams("n_emitters"),
+    },
+  ];
+  page.factoryText = { n_emitters: "" };
+  page.checkedQubits = 3;
+  page.stateText.basis = "00";
+  page.settings.qubits = "2";
+  page.settings.total = "";
+  page.selection.measure = "counts";
+  page.measureSites = [];
+  page.expressionText = { counts: "" };
+  page.placedThens = ["plot", "save"];
+  page.actionText.save = "";
+  const params = {
+    time_steps: String(timeSteps + 1),
+    num_steps: "4",
+    trotter_depth: "1",
+    seed: "0",
+    order: "1",
+  };
+  page.placedSims = [
+    {
+      id: "trotterization",
+      params: { ...params },
+      backend: null,
+      shots: String(shots + 1),
+      backendFields: { basis_gates: "foo" },
+    },
+    {
+      id: "trotterization",
+      params: { ...params, time_steps: "" },
+      backend: null,
+      shots: "",
+      backendFields: { basis_gates: "foo" },
+    },
+  ];
+
+  expectProblem(page, "Enter a valid operator.", "Enter a valid operator to preview the script.");
+  page.selection.model = "preexisting";
+  expectProblem(
+    page,
+    "Snap a backend onto each simulator.",
+    "Snap a backend onto each simulator to preview the script.",
+  );
+  page.selection.state = null;
+  expectProblem(
+    page,
+    "Place a block in each slot.",
+    "Place a block in each slot to preview the script.",
+  );
+
+  page.selection.state = "basis";
+  for (const entry of page.placedSims) entry.backend = "aer";
+  expectProblem(
+    page,
+    "Enter an integer of at least 1 for Emitters.",
+    "Enter an integer of at least 1 for Emitters to preview the script.",
+  );
+  page.factoryText = { n_emitters: "1" };
+  expectProblem(
+    page,
+    "Enter a 3-bit basis string.",
+    "Enter a 3-bit basis string to preview the script.",
+  );
+  page.stateText.basis = "";
+  expectProblem(
+    page,
+    "Enter a bit string and total time.",
+    "Enter a bit string and total time to preview the script.",
+  );
+  page.stateText.basis = "00";
+  page.checkedQubits = 2;
+  expectProblem(page, "Enter a total time.", "Enter a total time to preview the script.");
+  page.settings.total = "1";
+  expectProblem(
+    page,
+    `Time steps must be from 1 to ${timeSteps}.`,
+    `Time steps must be from 1 to ${timeSteps} to preview the script.`,
+  );
+  page.placedSims[0].params.time_steps = "11";
+  expectProblem(
+    page,
+    "Enter simulator parameters.",
+    "Enter simulator parameters to preview the script.",
+  );
+  page.placedSims[1].params.time_steps = "5";
+  expectProblem(
+    page,
+    "Use the same number of time steps for every simulator.",
+    "Use the same number of time steps to preview the script.",
+  );
+  page.placedSims[1].params.time_steps = "11";
+  expectProblem(page, "Pick at least one qubit.", "Pick at least one qubit to preview the script.");
+  page.measureSites = [0];
+  expectProblem(
+    page,
+    "Enter a counts expression.",
+    "Enter a counts expression to preview the script.",
+  );
+  page.expressionText = { counts: 'counts["0"] / shots' };
+  expectProblem(
+    page,
+    `Shots must be from 1 to ${shots}.`,
+    `Shots must be from 1 to ${shots} to preview the script.`,
+  );
+  page.placedSims[0].shots = "256";
+  expectProblem(page, "Enter a shot count.", "Enter a shot count to preview the script.");
+  page.placedSims[1].shots = "256";
+  expectProblem(page, "Unknown gate foo.", "Unknown gate foo to preview the script.");
+  for (const entry of page.placedSims) entry.backendFields = { basis_gates: "" };
+  expectProblem(page, "Enter a save path.", "Enter a save path to preview the script.");
+  page.actionText.save = "results/run1";
+  assert.equal(checks.firstProblem(page), null);
+  assert.equal(checks.runAllowed(page), true);
+});
