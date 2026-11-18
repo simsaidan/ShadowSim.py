@@ -2630,11 +2630,19 @@ async function postWrite(requested) {
   }
 }
 
-function runningLabel(elapsedMs) {
+function clockLabel(elapsedMs) {
   const total = Math.max(0, Math.floor(elapsedMs / 1000));
   const minutes = Math.floor(total / 60);
   const seconds = String(total % 60).padStart(2, "0");
-  return `Running · ${minutes}:${seconds}`;
+  return `${minutes}:${seconds}`;
+}
+
+function runningLabel(elapsedMs) {
+  return `Running · ${clockLabel(elapsedMs)}`;
+}
+
+function finishedLabel(elapsedMs) {
+  return `Finished · ${clockLabel(elapsedMs)}. Results below are from this run.`;
 }
 
 function showRunningClock() {
@@ -2845,6 +2853,7 @@ async function startRun() {
       body: requested,
     });
     const payload = await response.json();
+    const elapsedMs = Date.now() - state.runStartedAt;
     if (payload.cancelled) {
       if (showRunResult(identity, el("p", { className: "placeholder" }, "Cancelled."))) {
         state.statusHold = "Cancelled.";
@@ -2857,9 +2866,9 @@ async function startRun() {
         state.statusHold = message;
       return;
     }
-    releaseStatusHold();
     if (showRunResult(identity, resultsComponent(payload), payload)) {
       rememberWrittenActions(selection);
+      state.statusHold = finishedLabel(elapsedMs);
     }
   } catch {
     if (showRunResult(identity, el("p", { className: "placeholder" }, "The run failed."))) {
