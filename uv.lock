@@ -1,5 +1,5 @@
 version = 1
-revision = 5
+revision = 3
 requires-python = ">=3.12"
 resolution-markers = [
     "python_full_version >= '3.15' and sys_platform == 'win32'",
@@ -2424,6 +2424,7 @@ dependencies = [
 all = [
     { name = "cirq" },
     { name = "matplotlib" },
+    { name = "pyyaml" },
     { name = "qiskit" },
     { name = "qiskit-aer" },
     { name = "qulacs" },
@@ -2452,6 +2453,9 @@ qutip = [
 ]
 viz = [
     { name = "matplotlib" },
+]
+yaml = [
+    { name = "pyyaml" },
 ]
 
 [package.dev-dependencies]
@@ -2485,6 +2489,7 @@ requires-dist = [
     { name = "juliacall", marker = "extra == 'pauli-propagation'", specifier = "==0.9.37" },
     { name = "matplotlib", marker = "extra == 'viz'" },
     { name = "numpy", specifier = ">=2.0" },
+    { name = "pyyaml", marker = "extra == 'yaml'" },
     { name = "qiskit", marker = "extra == 'qiskit'" },
     { name = "qiskit-aer", marker = "extra == 'qiskit'" },
     { name = "qulacs", marker = "extra == 'qulacs'" },
@@ -2497,8 +2502,9 @@ requires-dist = [
     { name = "shadowsim", extras = ["qulacs"], marker = "extra == 'all'" },
     { name = "shadowsim", extras = ["qutip"], marker = "extra == 'all'" },
     { name = "shadowsim", extras = ["viz"], marker = "extra == 'all'" },
+    { name = "shadowsim", extras = ["yaml"], marker = "extra == 'all'" },
 ]
-provides-extras = ["qutip", "qiskit", "viz", "pauli-propagation", "qulacs", "cirq", "circuits", "all"]
+provides-extras = ["qutip", "qiskit", "viz", "pauli-propagation", "qulacs", "cirq", "circuits", "yaml", "all"]
 
 [package.metadata.requires-dev]
 dev = [

@@ -18,6 +18,7 @@ from typing import Any
 import pytest
 
 from shadowsim.cli.catalog import listed_states
+from shadowsim.cli.main import main
 from shadowsim.cli.run import (
     _MAX_NUM_STEPS,
     _MAX_OPERATOR_QUBITS,
@@ -32,7 +33,6 @@ from shadowsim.cli.serve import (
     _read_auth_body,
     _send_json,
     _terminate_process,
-    main,
     serve,
 )
 

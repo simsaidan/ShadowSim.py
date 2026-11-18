@@ -12,6 +12,12 @@ hide:
 
     Browse the [API reference](reference/shadowsim/index.md), generated from the package.
 
+-   :material-console:{ .lg .middle } __CLI__
+
+    ---
+
+    Use the [command-line interface](cli.md) for the builder UI and research commands.
+
 -   :material-github:{ .lg .middle } __Source__
 
     ---

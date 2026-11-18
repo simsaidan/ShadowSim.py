@@ -35,6 +35,8 @@ qulacs = ["qulacs"]
 cirq = ["cirq"]
 # Product-formula simulators need SciPy for expm. Core stays NumPy-only.
 circuits = ["scipy>=1.14"]
+# Research CLI ``shadowsim run`` can load YAML experiment files.
+yaml = ["pyyaml"]
 all = [
     "shadowsim[qutip]",
     "shadowsim[qiskit]",
@@ -42,6 +44,7 @@ all = [
     "shadowsim[qulacs]",
     "shadowsim[cirq]",
     "shadowsim[circuits]",
+    "shadowsim[yaml]",
 ]
 
 [project.urls]
@@ -49,7 +52,7 @@ Repository = "https://github.com/simsaidan/ShadowSim.py"
 
 [project.scripts]
 new-simulator = "shadowsim.cli.new_simulator:main"
-shadowsim = "shadowsim.cli.serve:main"
+shadowsim = "shadowsim.cli.main:main"
 
 [dependency-groups]
 dev = [

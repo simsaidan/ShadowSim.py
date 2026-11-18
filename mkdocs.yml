@@ -59,6 +59,7 @@ markdown_extensions:
 
 nav:
   - Home: index.md
+  - Command-line interface: cli.md
   # Replaced by the api-autonav plugin with one page per public module.
   - API Reference
   - References: references.md
