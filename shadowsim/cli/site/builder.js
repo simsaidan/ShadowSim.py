@@ -1,6 +1,6 @@
 /* Builder page. Model, method, and backend cards come from the package. */
 
-import { resultsComponent } from "./chart.js";
+import { resultsComponent, savedNote } from "./chart.js";
 import { el } from "./dom.js";
 
 // checks.js is a classic script and sets this before the module runs.
@@ -105,6 +105,11 @@ const state = {
   runStartedAt: 0,
   runTimer: null,
   shownRun: null,
+  shownPayload: null,
+  writtenActions: null,
+  pendingWrite: null,
+  writeInFlight: false,
+  writeSerial: 0,
   acceptedBody: null,
   acceptedQubits: null,
   rejectedBody: null,
@@ -849,6 +854,7 @@ function pathChip(block) {
                     },
                     { lanes: ["then"], chrome: false },
                   );
+                  if (block.id === "save" || block.id === "export") queueWrite();
                 },
               },
               "Done",
@@ -1656,6 +1662,9 @@ function dropAcceptance() {
 }
 
 function scheduleCheck() {
+  if (state.pendingWrite != null && state.pendingWrite !== documentBody()) {
+    state.pendingWrite = null;
+  }
   if (!checks.runAllowed(currentPage())) {
     cancelScheduledCheck();
     state.checkSerial += 1;
@@ -1666,6 +1675,7 @@ function scheduleCheck() {
   if (state.acceptedBody === requested && state.checkError == null) {
     cancelScheduledCheck();
     state.pendingBody = null;
+    maybeStartWrite();
     return;
   }
   if (state.checkError != null && state.rejectedBody === requested) {
@@ -1769,6 +1779,7 @@ async function postCheck(requested, serial) {
         },
         refreshMeasure ? { lanes: ["measure"], palettes: ["measure"] } : {},
       );
+      maybeStartWrite();
     }
   }
 }
@@ -1787,6 +1798,7 @@ function applyCheck(qubits) {
     applyAcceptedQubits();
     state.acceptedBody = documentBody();
   });
+  maybeStartWrite();
   return true;
 }
 
@@ -2105,13 +2117,125 @@ function resultsPlaceholder() {
 
 function clearResults() {
   state.shownRun = null;
+  state.shownPayload = null;
+  state.writtenActions = null;
+  state.pendingWrite = null;
+  state.writeSerial += 1;
   setResults(resultsPlaceholder());
 }
 
 function clearStaleResults() {
   if (state.shownRun == null) return;
-  if (state.shownRun === JSON.stringify(runRequest())) return;
+  if (state.shownRun === shownRunKey()) return;
   clearResults();
+}
+
+function requestedWritePaths(selection = runRequest()) {
+  const actions = selection.actions || {};
+  const ids = Array.isArray(actions.ids) ? actions.ids : [];
+  const paths = {};
+  if (ids.includes("save")) paths.save_path = String(actions.save_path ?? "").trim();
+  if (ids.includes("export")) paths.export_path = String(actions.export_path ?? "").trim();
+  return paths;
+}
+
+function rememberWrittenActions(selection) {
+  state.writtenActions = requestedWritePaths(selection);
+}
+
+function writeAlreadyDone(selection = runRequest()) {
+  const paths = requestedWritePaths(selection);
+  const keys = Object.keys(paths);
+  if (!keys.length) return true;
+  const written = state.writtenActions;
+  if (!written) return false;
+  return keys.every((key) => written[key] === paths[key]);
+}
+
+function paintWriteNote(payload) {
+  if (!state.shownPayload) state.shownPayload = {};
+  if (Object.hasOwn(payload, "saved")) state.shownPayload.saved = payload.saved;
+  if (Object.hasOwn(payload, "exported")) state.shownPayload.exported = payload.exported;
+  const panel = document.querySelector('.panel[aria-label="Results"]');
+  const body = panel?.querySelector(":scope > .placeholder, :scope > .chart, :scope > .results");
+  if (!body || body.classList.contains("placeholder")) return;
+  const note = savedNote(state.shownPayload);
+  if (body.classList.contains("results")) {
+    const existing = body.querySelector(":scope > .hint");
+    if (note && existing) existing.replaceWith(note);
+    else if (note && !existing) body.prepend(note);
+    else if (!note && existing) existing.remove();
+    return;
+  }
+  if (!note) return;
+  const wrap = el("div", { className: "results" });
+  body.replaceWith(wrap);
+  wrap.append(note, body);
+}
+
+function queueWrite() {
+  if (state.running) return;
+  if (typeof fetch !== "function") return;
+  if (state.shownRun == null || state.shownRun !== shownRunKey()) return;
+  const selection = runRequest();
+  if (writeAlreadyDone(selection)) return;
+  state.pendingWrite = JSON.stringify(selection);
+  maybeStartWrite();
+}
+
+function maybeStartWrite() {
+  if (state.pendingWrite == null || state.writeInFlight || state.running) return;
+  if (typeof fetch !== "function") return;
+  if (!accepted() || state.acceptedBody !== state.pendingWrite) return;
+  if (state.shownRun == null || state.shownRun !== shownRunKey()) {
+    state.pendingWrite = null;
+    return;
+  }
+  const requested = state.pendingWrite;
+  state.pendingWrite = null;
+  void postWrite(requested);
+}
+
+async function postWrite(requested) {
+  const serial = ++state.writeSerial;
+  state.writeInFlight = true;
+  try {
+    const response = await fetch("/runs/write", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: requested,
+    });
+    let payload = {};
+    try {
+      payload = await response.json();
+    } catch {
+      payload = {};
+    }
+    if (serial !== state.writeSerial) return;
+    if (documentBody() !== requested || state.shownRun !== shownRunKey(JSON.parse(requested))) {
+      return;
+    }
+    if (!response.ok) {
+      const message =
+        typeof payload.error === "string" && payload.error
+          ? payload.error
+          : "The write failed.";
+      state.statusHold = message.endsWith(".") ? message : `${message}.`;
+      setStatus(state.statusHold);
+      return;
+    }
+    rememberWrittenActions(JSON.parse(requested));
+    paintWriteNote(payload);
+    releaseStatusHold();
+    setStatus(statusMessage(), runAllowed());
+  } catch {
+    if (serial !== state.writeSerial || documentBody() !== requested) return;
+    state.statusHold = "The write failed.";
+    setStatus(state.statusHold);
+  } finally {
+    if (serial === state.writeSerial) state.writeInFlight = false;
+    maybeStartWrite();
+  }
 }
 
 function runningLabel(elapsedMs) {
@@ -2272,12 +2396,18 @@ function runRequest() {
   };
 }
 
-function showRunResult(requested, node) {
-  if (JSON.stringify(runRequest()) !== requested) {
+function shownRunKey(document = runRequest()) {
+  const { actions: _actions, ...simulation } = document;
+  return JSON.stringify(simulation);
+}
+
+function showRunResult(identity, node, payload = null) {
+  if (shownRunKey() !== identity) {
     clearResults();
     return false;
   }
-  state.shownRun = requested;
+  state.shownRun = identity;
+  state.shownPayload = payload;
   setResults(node);
   return true;
 }
@@ -2290,8 +2420,14 @@ async function startRun() {
   setRunButton("Cancel");
   showRunningClock();
   state.runTimer = setInterval(showRunningClock, 1000);
-  const requested = JSON.stringify(runRequest());
-  state.shownRun = requested;
+  const selection = runRequest();
+  const requested = JSON.stringify(selection);
+  const identity = shownRunKey(selection);
+  state.shownRun = identity;
+  state.shownPayload = null;
+  state.writtenActions = null;
+  state.pendingWrite = null;
+  state.writeSerial += 1;
   setResults(el("p", { className: "placeholder" }, "Running."));
   try {
     const response = await fetch("/runs", {
@@ -2301,21 +2437,23 @@ async function startRun() {
     });
     const payload = await response.json();
     if (payload.cancelled) {
-      if (showRunResult(requested, el("p", { className: "placeholder" }, "Cancelled."))) {
+      if (showRunResult(identity, el("p", { className: "placeholder" }, "Cancelled."))) {
         state.statusHold = "Cancelled.";
       }
       return;
     }
     if (!response.ok) {
       const message = payload.error || "The run failed.";
-      if (showRunResult(requested, el("p", { className: "placeholder" }, message)))
+      if (showRunResult(identity, el("p", { className: "placeholder" }, message)))
         state.statusHold = message;
       return;
     }
     releaseStatusHold();
-    showRunResult(requested, resultsComponent(payload));
+    if (showRunResult(identity, resultsComponent(payload), payload)) {
+      rememberWrittenActions(selection);
+    }
   } catch {
-    if (showRunResult(requested, el("p", { className: "placeholder" }, "The run failed."))) {
+    if (showRunResult(identity, el("p", { className: "placeholder" }, "The run failed."))) {
       state.statusHold = "The run failed.";
     }
   } finally {
@@ -2369,6 +2507,10 @@ function layoutComponent() {
 
 function draw(board) {
   state.shownRun = null;
+  state.shownPayload = null;
+  state.writtenActions = null;
+  state.pendingWrite = null;
+  state.writeSerial += 1;
   board.replaceChildren(
     layoutComponent(),
     settingsComponent(),
@@ -2666,7 +2808,8 @@ function place(laneId, blockId) {
     lanes.push("measure");
     palettes.push("measure");
   }
-  update(null, { lanes, palettes, clearResults: true });
+  update(null, { lanes, palettes, clearResults: laneId !== "then" });
+  if (laneId === "then" && (blockId === "save" || blockId === "export")) queueWrite();
 }
 
 function removeThen(id) {
@@ -2678,7 +2821,7 @@ function removeThen(id) {
       state.selection.then = state.placedThens[0] ?? null;
       releaseStatusHold();
     },
-    { lanes: ["then"], clearResults: true },
+    { lanes: ["then"] },
   );
 }
 

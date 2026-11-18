@@ -601,7 +601,7 @@ test("edits keep the chart until the run changes", () => {
   let chart = window.document.createElement("div");
   chart.className = "chart";
   page.setResults(chart);
-  page.state.shownRun = JSON.stringify(page.runRequest());
+  page.state.shownRun = page.shownRunKey();
   openChip(board, "basis");
   assert.equal(resultsNode(window) === chart, true);
   assert.equal(labeled(board, "Total time") === total, true);
@@ -616,7 +616,7 @@ test("edits keep the chart until the run changes", () => {
   chart = window.document.createElement("div");
   chart.className = "chart";
   page.setResults(chart);
-  page.state.shownRun = JSON.stringify(page.runRequest());
+  page.state.shownRun = page.shownRunKey();
   openChip(board, "backend");
   const shots = labeled(board, "Shots");
   assert.equal(resultsNode(window) === chart, true);
@@ -628,26 +628,106 @@ test("edits keep the chart until the run changes", () => {
   chart = window.document.createElement("div");
   chart.className = "chart";
   page.setResults(chart);
-  page.state.shownRun = JSON.stringify(page.runRequest());
+  page.state.shownRun = page.shownRunKey();
   page.place("then", "save");
-  assert.equal(showingPlaceholder(window), true);
+  assert.equal(resultsNode(window) === chart, true);
   assert.equal(labeled(board, "Total time") === total, true);
   assert.equal(page.state.placedThens.includes("save"), true);
-
-  chart = window.document.createElement("div");
-  chart.className = "chart";
-  page.setResults(chart);
-  page.state.shownRun = JSON.stringify(page.runRequest());
+  typeInto(labeled(board, "Save path"), "results/kept");
+  assert.equal(resultsNode(window) === chart, true);
+  assert.equal(page.state.actionText.save, "results/kept");
+  page.place("then", "export");
+  assert.equal(resultsNode(window) === chart, true);
+  assert.equal(page.state.placedThens.includes("export"), true);
   page.removeThen("save");
-  assert.equal(showingPlaceholder(window), true);
+  assert.equal(resultsNode(window) === chart, true);
   assert.equal(page.state.placedThens.includes("save"), false);
+  page.removeThen("plot");
+  assert.equal(resultsNode(window) === chart, true);
+  assert.equal(page.state.placedThens.includes("plot"), false);
 
   chart = window.document.createElement("div");
   chart.className = "chart";
   page.setResults(chart);
-  page.state.shownRun = JSON.stringify(page.runRequest());
+  page.state.shownRun = page.shownRunKey();
   page.attachBackend("aer");
   assert.equal(resultsNode(window) === chart, true);
+  window.close();
+});
+
+async function settleWrites(page) {
+  for (let step = 0; step < 40; step += 1) {
+    await Promise.resolve();
+    if (!page.state.writeInFlight && page.state.pendingWrite == null && !page.state.checkInFlight) {
+      return;
+    }
+  }
+}
+
+test("save and export write the shown result", async () => {
+  const { window, page } = prepare();
+  fillCircuit(page);
+  const board = mount(window);
+  page.draw(board);
+  const posts = [];
+  window.fetch = async (url, options) => {
+    const path = String(url);
+    if (path.endsWith("/runs/check")) {
+      return { ok: true, json: async () => ({ qubits: 2 }) };
+    }
+    if (path.endsWith("/runs/write")) {
+      posts.push(JSON.parse(options.body));
+      const actions = JSON.parse(options.body).actions;
+      const payload = {};
+      if (actions.ids.includes("save")) payload.saved = [actions.save_path];
+      if (actions.ids.includes("export")) payload.exported = `${actions.export_path}/metrics.json`;
+      return { ok: true, json: async () => payload };
+    }
+    throw new Error(`unexpected ${path}`);
+  };
+  const chart = window.document.createElement("div");
+  chart.className = "chart";
+  page.setResults(chart);
+  page.state.shownRun = page.shownRunKey();
+  page.state.shownPayload = { times: [0], observables: [[1]] };
+
+  page.place("then", "save");
+  await settleWrites(page);
+  assert.equal(posts.length, 1);
+  assert.deepEqual(posts[0].actions.ids.filter((id) => id === "save" || id === "export"), [
+    "save",
+  ]);
+  assert.equal(posts[0].actions.save_path, "results/kept");
+  assert.equal(resultsNode(window).querySelector(".chart") === chart, true);
+  assert.equal(resultsNode(window).querySelector(".hint").textContent, "Saved to results/kept");
+
+  posts.length = 0;
+  typeInto(labeled(board, "Save path"), "results/other");
+  await settleWrites(page);
+  assert.equal(posts.length, 0);
+  assert.equal(resultsNode(window).querySelector(".chart") === chart, true);
+
+  click(chipByClass(board, "save").querySelector(".done"));
+  await settleWrites(page);
+  assert.equal(posts.length, 1);
+  assert.equal(posts[0].actions.save_path, "results/other");
+  assert.equal(resultsNode(window).querySelector(".hint").textContent, "Saved to results/other");
+
+  posts.length = 0;
+  openChip(board, "save");
+  click(chipByClass(board, "save").querySelector(".done"));
+  await settleWrites(page);
+  assert.equal(posts.length, 0);
+
+  page.place("then", "export");
+  await settleWrites(page);
+  assert.equal(posts.length, 1);
+  assert.equal(posts[0].actions.ids.includes("export"), true);
+  assert.equal(
+    resultsNode(window).querySelector(".hint").textContent,
+    "Saved to results/other. Exported to results/metrics.json",
+  );
+  assert.equal(resultsNode(window).querySelector(".chart") === chart, true);
   window.close();
 });
 

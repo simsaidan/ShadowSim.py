@@ -2,10 +2,12 @@
 
 import importlib
 import inspect
+import json
 import math
 import re
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
+from datetime import datetime
 from pathlib import Path
 from typing import Any, cast
 
@@ -127,6 +129,25 @@ class _PreparedRun:
     directory: Path | None
     export_to: Path | None
     benchmark: Benchmark | None
+
+
+@dataclass(frozen=True)
+class RetainedRun:
+    """A finished run the page can save or export without simulating again.
+
+    ``directory`` holds the measured results in the same layout as a save.
+    ``document`` is the posted selection with ``actions`` removed. ``resources``
+    and ``errors`` are the chart payload records used for an export.
+    """
+
+    directory: Path
+    document: dict[str, object]
+    resources: list[object]
+    errors: list[object] | None = None
+
+
+class RetainedRunMismatch(ValueError):
+    """The posted selection does not match the retained run."""
 
 
 def _exact_keys(body: Mapping[str, object], allowed: frozenset[str]) -> None:
@@ -438,7 +459,21 @@ def check_page(selection: Mapping[str, object], *, output_root: Path | None = No
     return payload
 
 
-def run_page(selection: Mapping[str, object], *, output_root: Path | None = None) -> dict[str, object]:
+def simulation_body(selection: Mapping[str, object]) -> dict[str, object]:
+    """Return the posted selection without ``actions``.
+
+    Save and export paths do not change the curves. A retained run is matched
+    against this body.
+    """
+    return {key: value for key, value in selection.items() if key != "actions"}
+
+
+def run_page(
+    selection: Mapping[str, object],
+    *,
+    output_root: Path | None = None,
+    retain_to: Path | None = None,
+) -> dict[str, object]:
     """Run every simulator in a version 1 document.
 
     The simulators are built by the same steps as :func:`check_page`. None of
@@ -465,24 +500,75 @@ def run_page(selection: Mapping[str, object], *, output_root: Path | None = None
     series names its curves ``{simulator} · {label}``. Save and export both run
     when both are selected. When ``output_root`` is set, ``save_path`` and
     ``export_path`` must resolve under that directory.
-    A relative path is resolved from the working directory.
+    A relative path is resolved from the working directory. When ``retain_to`` is
+    set, the measured results are also written there so :func:`write_page` can
+    save or export them later without simulating again.
 
     Args:
         selection: The version 1 document described on :func:`build_simulator`.
         output_root: Directory that save and export paths must stay under.
             ``None`` leaves those paths unchanged.
+        retain_to: Directory that receives a copy of the measured results.
+            ``None`` skips that copy.
     """
     prepared = _prepare_page(selection, output_root=output_root)
     if prepared.benchmark is not None:
-        return _run_benchmark(selection, prepared, prepared.benchmark)
+        return _run_benchmark(selection, prepared, prepared.benchmark, retain_to=retain_to)
     simulator = prepared.simulators[0]
     simulator.simulate()
     result = _measured_result(simulator, selection)
     payload = _result_payload(result, simulator, _page_model(prepared.document.model), prepared.document.measure)
+    if retain_to is not None:
+        _write_results(retain_to, [result])
     saved = _write_results(prepared.directory, [result])
     if saved:
         payload["saved"] = saved
     exported = _export_resources(prepared.export_to, simulator, result.runtime)
+    if exported:
+        payload["exported"] = exported
+    return payload
+
+
+def write_page(
+    selection: Mapping[str, object],
+    retained: RetainedRun,
+    *,
+    output_root: Path | None = None,
+) -> dict[str, object]:
+    """Write save and export for a retained run. Do not simulate.
+
+    ``selection`` is the version 1 document, including the Save and Export paths
+    to write. Its simulation fields must match ``retained.document``. The
+    measured results are loaded from ``retained.directory``. Export writes the
+    retained ``resources`` and ``errors`` records.
+
+    Args:
+        selection: The version 1 document described on :func:`build_simulator`.
+        retained: The finished run :func:`run_page` stored under ``retain_to``.
+        output_root: Directory that save and export paths must stay under.
+            ``None`` leaves those paths unchanged.
+
+    Returns:
+        ``saved`` and ``exported`` paths in the same shape as :func:`run_page`.
+
+    Raises:
+        RetainedRunMismatch: The posted simulation does not match ``retained``.
+        ValueError: The document cannot write, including an action id that is
+            not listed or a save or export path outside ``output_root``.
+        FileNotFoundError: A retained result directory is missing.
+    """
+    if simulation_body(selection) != retained.document:
+        raise RetainedRunMismatch("the retained run does not match this selection")
+    document = _read_document(selection)
+    _require_actions(document.action_ids)
+    directory = _save_directory(document, output_root)
+    export_to = _export_location(document, output_root)
+    results = _load_retained_results(retained.directory)
+    payload: dict[str, object] = {}
+    saved = _write_results(directory, results)
+    if saved:
+        payload["saved"] = saved
+    exported = _export_retained_metrics(export_to, retained.resources, retained.errors)
     if exported:
         payload["exported"] = exported
     return payload
@@ -614,6 +700,33 @@ def _export_benchmark(location: Path | None, benchmark: Benchmark) -> str | None
     return str(benchmark.save_error_metrics(output_dir=location))
 
 
+def _metrics_path(location: Path, prefix: str) -> Path:
+    """Return ``location`` when it is a ``.json`` file, otherwise a stamped file under it."""
+    if location.suffix == ".json":
+        return location
+    stamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+    return location / f"{prefix}_{stamp}.json"
+
+
+def _export_retained_metrics(
+    location: Path | None,
+    resources: list[object],
+    errors: list[object] | None,
+) -> str | None:
+    """Write retained resource and error metrics. A ``.json`` path is that file."""
+    if location is None:
+        return None
+    if errors is None:
+        path = _metrics_path(location, "resource_metrics")
+        body: dict[str, object] = {"resources": resources}
+    else:
+        path = _metrics_path(location, "benchmark_error_metrics")
+        body = {"errors": errors, "resources": resources}
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(body, indent=2) + "\n")
+    return str(path)
+
+
 def _write_results(directory: Path | None, results: list[SimulationResult]) -> list[str]:
     """Write results under ``directory``. Several results each get a ``sim_N`` folder."""
     if directory is None:
@@ -623,10 +736,33 @@ def _write_results(directory: Path | None, results: list[SimulationResult]) -> l
     return [str(result.save(directory / f"sim_{index + 1}")) for index, result in enumerate(results)]
 
 
+def _load_retained_results(directory: Path) -> list[SimulationResult]:
+    """Load measured results previously written under ``directory``.
+
+    Raises:
+        FileNotFoundError: Neither a single result nor ``sim_N`` folders are present.
+    """
+    if (directory / "meta.json").is_file():
+        return [SimulationResult.load(directory)]
+    results: list[SimulationResult] = []
+    index = 1
+    while True:
+        folder = directory / f"sim_{index}"
+        if not (folder / "meta.json").is_file():
+            break
+        results.append(SimulationResult.load(folder))
+        index += 1
+    if not results:
+        raise FileNotFoundError(f"retained results are missing under {directory}")
+    return results
+
+
 def _run_benchmark(
     selection: Mapping[str, object],
     prepared: _PreparedRun,
     benchmark: Benchmark,
+    *,
+    retain_to: Path | None = None,
 ) -> dict[str, object]:
     """Run the prepared benchmark and return curves, names, and resources.
 
@@ -661,6 +797,8 @@ def _run_benchmark(
         "runtime": float(sum(wall_times)),
         "algorithm": "benchmark",
     }
+    if retain_to is not None:
+        _write_results(retain_to, recorded)
     saved = _write_results(
         prepared.directory,
         [item.last_result for item in simulators if item.last_result is not None],
