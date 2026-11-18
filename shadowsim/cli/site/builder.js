@@ -1947,8 +1947,7 @@ function renderPalette(laneId) {
 
 function renderChrome(scope) {
   if (scope.statusOnly) {
-    const status = document.querySelector(".status");
-    if (status) status.replaceWith(statusComponent());
+    setStatus(statusMessage(), !state.statusHold && runAllowed());
     return;
   }
   if (scope.checking) {
@@ -1962,8 +1961,7 @@ function renderChrome(scope) {
   if (summary) summary.replaceWith(summaryComponent());
   if (!state.running) {
     releaseStatusHold();
-    const status = document.querySelector(".status");
-    if (status) status.replaceWith(statusComponent());
+    setStatus(statusMessage(), runAllowed());
   }
   paintPreview();
   paintButtons();
@@ -1974,8 +1972,7 @@ function renderChrome(scope) {
 
 function paintChecking() {
   if (state.running) return;
-  const status = document.querySelector(".status");
-  if (status) status.replaceWith(statusComponent());
+  setStatus(statusMessage(), !state.statusHold && runAllowed());
   paintPreview();
   paintButtons();
 }
@@ -2120,7 +2117,12 @@ function statusMessage() {
 
 function statusComponent() {
   const ready = !state.statusHold && runAllowed();
-  return el("p", { className: ready ? "status ready" : "status", role: "status" }, statusMessage());
+  return el(
+    "div",
+    { className: ready ? "status ready" : "status" },
+    el("p", { className: "status-live", role: "status" }, statusMessage()),
+    el("span", { className: "status-clock", hidden: true, "aria-hidden": "true" }),
+  );
 }
 
 function showCopied(button, label = "Copy") {
@@ -2212,9 +2214,9 @@ function codeBody() {
 function setStatus(message, ready) {
   const status = document.querySelector(".status");
   if (!status) return;
-  status.replaceWith(
-    el("p", { className: ready ? "status ready" : "status", role: "status" }, message),
-  );
+  status.className = ready ? "status ready" : "status";
+  const live = status.querySelector(".status-live");
+  if (live) live.textContent = message;
 }
 
 function setResults(node) {
@@ -2391,9 +2393,21 @@ function showRunningClock() {
   if (!state.running) return;
   const status = document.querySelector(".status");
   if (!status) return;
-  status.className = "status";
-  status.setAttribute("aria-live", "off");
-  status.textContent = runningLabel(Date.now() - state.runStartedAt);
+  status.className = "status running";
+  const clock = status.querySelector(".status-clock");
+  if (!clock) return;
+  clock.hidden = false;
+  clock.textContent = runningLabel(Date.now() - state.runStartedAt);
+}
+
+function hideRunningClock() {
+  const status = document.querySelector(".status");
+  if (!status) return;
+  status.classList.remove("running");
+  const clock = status.querySelector(".status-clock");
+  if (!clock) return;
+  clock.hidden = true;
+  clock.textContent = "";
 }
 
 function stopRunClock() {
@@ -2560,6 +2574,7 @@ async function startRun() {
   releaseStatusHold();
   state.runStartedAt = Date.now();
   setRunButton("Cancel");
+  setStatus("Running.");
   showRunningClock();
   state.runTimer = setInterval(showRunningClock, 1000);
   const selection = runRequest();
@@ -2600,6 +2615,7 @@ async function startRun() {
     }
   } finally {
     stopRunClock();
+    hideRunningClock();
     state.running = false;
     setRunButton("Run simulation");
     if (state.statusHold) setStatus(state.statusHold);

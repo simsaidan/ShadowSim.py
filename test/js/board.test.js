@@ -940,3 +940,54 @@ test("different time-step defaults are flagged on the method fields", () => {
   for (const alert of alerts()) assert.equal(alert.hidden, true);
   window.close();
 });
+
+test("the status live region keeps its identity across updates", () => {
+  const { window, page } = prepare();
+  resetPage(page);
+  const board = mount(window);
+  page.draw(board);
+
+  const root = board.querySelector(".status");
+  const live = () => root.querySelector('[role="status"]');
+  const clock = root.querySelector(".status-clock");
+  const first = live();
+  assert.equal(root.querySelectorAll('[role="status"]').length, 1);
+  assert.equal(first.className, "status-live");
+  assert.equal(clock.hidden, true);
+  assert.equal(clock.getAttribute("aria-hidden"), "true");
+
+  page.setStatus("Checking the selection.");
+  page.setStatus("Ready to run.", true);
+  assert.equal(live(), first);
+  assert.equal(first.textContent, "Ready to run.");
+  assert.equal(root.className, "status ready");
+
+  page.renderChrome({ statusOnly: true });
+  assert.equal(live(), first);
+
+  page.state.running = true;
+  page.state.runStartedAt = Date.now() - 5000;
+  page.setStatus("Running.");
+  page.showRunningClock();
+  assert.equal(live(), first);
+  assert.equal(first.textContent, "Running.");
+  assert.equal(root.className, "status running");
+  assert.equal(clock.hidden, false);
+  assert.equal(clock.textContent, "Running · 0:05");
+  assert.doesNotMatch(first.textContent, /0:05/);
+
+  page.state.runStartedAt = Date.now() - 65000;
+  page.showRunningClock();
+  assert.equal(live(), first);
+  assert.equal(first.textContent, "Running.");
+  assert.equal(clock.textContent, "Running · 1:05");
+
+  page.hideRunningClock();
+  page.state.running = false;
+  page.setStatus("Cancelled.");
+  assert.equal(live(), first);
+  assert.equal(first.textContent, "Cancelled.");
+  assert.equal(clock.hidden, true);
+  assert.equal(clock.textContent, "");
+  window.close();
+});
