@@ -1229,3 +1229,73 @@ test("the status live region keeps its identity across updates", () => {
   assert.equal(clock.textContent, "");
   window.close();
 });
+
+test("finishedLabel includes the elapsed clock", () => {
+  const { window, page } = prepare();
+  assert.equal(page.finishedLabel(0), "Finished · 0:00. Results below are from this run.");
+  assert.equal(page.finishedLabel(5000), "Finished · 0:05. Results below are from this run.");
+  assert.equal(page.finishedLabel(65000), "Finished · 1:05. Results below are from this run.");
+  window.close();
+});
+
+async function runOnce(page, window, payload, { ok = true, elapsedMs = 5000 } = {}) {
+  fillIsing(page);
+  page.applyCheck(2);
+  const board = mount(window);
+  page.draw(board);
+  const realNow = window.Date.now.bind(window.Date);
+  let now = realNow();
+  window.Date.now = () => now;
+  window.fetch = async (url) => {
+    if (String(url).endsWith("/runs")) {
+      now += elapsedMs;
+      return { ok, json: async () => payload };
+    }
+    throw new Error(`unexpected ${url}`);
+  };
+  await page.startRun();
+  window.Date.now = realNow;
+  return board;
+}
+
+test("a finished run keeps elapsed status until the board changes", async () => {
+  const { window, page } = prepare();
+  const board = await runOnce(page, window, {
+    times: [0, 1],
+    observables: [[1, 0]],
+    labels: ["⟨Z⟩ on 0"],
+  });
+  const finished = "Finished · 0:05. Results below are from this run.";
+  assert.equal(page.state.statusHold, finished);
+  assert.equal(page.statusMessage(), finished);
+  assert.equal(board.querySelector(".status-live").textContent, finished);
+  assert.equal(board.querySelector(".status-clock").hidden, true);
+  assert.equal(board.querySelector(".status").classList.contains("running"), false);
+
+  page.renderChrome({ statusOnly: true });
+  assert.equal(page.state.statusHold, finished);
+  assert.equal(page.statusMessage(), finished);
+
+  page.update(() => {
+    page.state.settings.total = "2";
+  });
+  assert.equal(page.state.statusHold, null);
+  assert.equal(page.statusMessage(), "Checking the selection.");
+  window.close();
+});
+
+test("cancel and failure keep their own status messages", async () => {
+  const cancelled = prepare();
+  await runOnce(cancelled.page, cancelled.window, { cancelled: true });
+  assert.equal(cancelled.page.state.statusHold, "Cancelled.");
+  assert.equal(cancelled.page.statusMessage(), "Cancelled.");
+  assert.equal(cancelled.window.document.querySelector(".status-live").textContent, "Cancelled.");
+  cancelled.window.close();
+
+  const failed = prepare();
+  await runOnce(failed.page, failed.window, { error: "backend offline" }, { ok: false });
+  assert.equal(failed.page.state.statusHold, "backend offline");
+  assert.equal(failed.page.statusMessage(), "backend offline");
+  assert.equal(failed.window.document.querySelector(".status-live").textContent, "backend offline");
+  failed.window.close();
+});
