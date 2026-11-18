@@ -864,6 +864,22 @@ body {
 
 .plot line { stroke: var(--line); }
 
+.plot line.grid {
+  stroke: var(--line);
+  opacity: 0.35;
+}
+
+.plot line.crosshair {
+  stroke: var(--muted);
+  stroke-dasharray: 4 3;
+  opacity: 0.75;
+}
+
+.plot circle.marker {
+  stroke: var(--white);
+  stroke-width: 1.5;
+}
+
 .plot text {
   fill: var(--muted);
   font-size: 12px;
@@ -881,6 +897,28 @@ body {
   list-style: none;
 }
 
+.legend button {
+  display: inline-flex;
+  align-items: center;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+.legend button:focus-visible {
+  outline: 2px solid var(--blue-ink);
+  outline-offset: 2px;
+}
+
+.legend button.off {
+  opacity: 0.45;
+  text-decoration: line-through;
+}
+
 .legend i {
   display: inline-block;
   width: 14px;
@@ -888,6 +926,46 @@ body {
   margin-right: 6px;
   border-radius: 999px;
   vertical-align: middle;
+}
+
+.chart-table-toggle {
+  display: inline-block;
+  margin: 10px 0 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--blue-ink);
+  font: inherit;
+  font-size: 12.5px;
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.chart-table-toggle:focus-visible {
+  outline: 2px solid var(--blue-ink);
+  outline-offset: 2px;
+}
+
+.chart-table {
+  width: 100%;
+  margin: 10px 0 0;
+  border-collapse: collapse;
+  color: var(--muted);
+  font-size: 12.5px;
+}
+
+.chart-table th,
+.chart-table td {
+  padding: 4px 8px;
+  border-bottom: 1px solid var(--line);
+  text-align: left;
+  vertical-align: top;
+}
+
+.chart-table thead th {
+  color: var(--ink);
+  font-weight: 600;
 }
 
 .narrow-screen {
