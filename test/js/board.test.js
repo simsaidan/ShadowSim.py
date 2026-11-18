@@ -18,7 +18,7 @@ const {
   setChange,
   setChecked,
   settle,
-  showingPlaceholder,
+  staleBanner,
   toggleSite,
   typeInto,
 } = require("./board");
@@ -609,9 +609,15 @@ test("edits keep the chart until the run changes", () => {
   assert.equal(resultsNode(window) === chart, true);
   assert.equal(labeled(board, "Total time") === total, true);
   typeInto(total, "4");
-  assert.equal(showingPlaceholder(window), true);
+  assert.equal(resultsNode(window).querySelector(".chart") === chart, true);
+  assert.equal(resultsNode(window).classList.contains("stale"), true);
+  assert.equal(staleBanner(window).textContent, "Out of date. Run again to refresh.");
   assert.equal(labeled(board, "Total time") === total, true);
   assert.equal(page.state.settings.total, "4");
+  typeInto(total, "1");
+  assert.equal(resultsNode(window).querySelector(".chart") === chart, true);
+  assert.equal(resultsNode(window).classList.contains("stale"), false);
+  assert.equal(staleBanner(window), null);
 
   chart = window.document.createElement("div");
   chart.className = "chart";
@@ -621,7 +627,9 @@ test("edits keep the chart until the run changes", () => {
   const shots = labeled(board, "Shots");
   assert.equal(resultsNode(window) === chart, true);
   typeInto(shots, "128");
-  assert.equal(showingPlaceholder(window), true);
+  assert.equal(resultsNode(window).querySelector(".chart") === chart, true);
+  assert.equal(resultsNode(window).classList.contains("stale"), true);
+  assert.equal(staleBanner(window).textContent, "Out of date. Run again to refresh.");
   assert.equal(labeled(board, "Shots") === shots, true);
   assert.equal(page.state.placedSims[0].shots, "128");
 
