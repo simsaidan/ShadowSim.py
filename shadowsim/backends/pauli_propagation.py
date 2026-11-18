@@ -51,7 +51,7 @@ _QASM_BASIS = (
 
 
 class PauliPropagationBackend(_UnsupportedCircuitMetrics):
-    """Propagate one Pauli observable per requested qubit.
+    """Propagate one Pauli observable per requested qubit [@rudolph2025pauli].
 
     The program is translated to Qiskit and written as OpenQASM 2 for
     ``PauliPropagation.OpenQASMInterface.readqasm``. ``z_expectations`` and
