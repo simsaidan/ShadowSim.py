@@ -4,6 +4,7 @@ const {
   catalog,
   chipByClass,
   click,
+  fieldAlert,
   fillCircuit,
   fillIsing,
   installDownloads,
@@ -12,6 +13,7 @@ const {
   openChip,
   operatorAlert,
   optionValue,
+  paletteCard,
   prepare,
   resetPage,
   resultsNode,
@@ -539,14 +541,15 @@ test("operator alerts name the current problem", () => {
   };
   const alerts = { nonhermitian, wrongSize, emptyLocal, splitLocal, splitLindblad };
   for (const [key, label] of Object.entries(shown)) {
-    assert.equal(alerts[key].label, label);
-    assert.equal(alerts[key].title, label);
+    assert.equal(alerts[key].message, label);
     assert.equal(alerts[key].hidden, false);
     assert.equal(alerts[key].linked, true);
+    assert.equal(alerts[key].invalid, true);
   }
   for (const alert of [validHamiltonian, validLocal]) {
     assert.equal(alert.hidden, true);
     assert.equal(alert.linked, false);
+    assert.equal(alert.invalid, false);
     assert.equal(alert.describedby, null);
   }
   const removeLabel = (chip) => chip.querySelector("button.remove").getAttribute("aria-label");
@@ -880,6 +883,97 @@ test("export and import round-trip the board", async () => {
   window.close();
 });
 
+test("state and factory fields show linked error lines", () => {
+  const { window, page } = prepare();
+  resetPage(page);
+  page.state.blocks.model = [
+    { id: "preexisting", title: "Preexisting model", detail: "Choose a built-in model" },
+  ];
+  page.state.modelFactories = [
+    {
+      id: "ising",
+      title: "Ising",
+      qubits: true,
+      setup: "model = ising(n_qubits={qubits})",
+      params: [
+        { name: "J", label: "J", kind: "number", default: "1" },
+        { name: "h", label: "h", kind: "number", default: "0" },
+      ],
+    },
+  ];
+  page.state.preexistingId = "ising";
+  const board = mount(window);
+  page.draw(board);
+  page.place("state", "basis");
+  const bits = () => board.querySelector('input[aria-label="Basis bits"]');
+  assert.deepEqual(fieldAlert(bits()), {
+    message: "Enter a bit string",
+    linked: true,
+    invalid: true,
+    describedby: "state-error-basis",
+  });
+  typeInto(bits(), "01");
+  assert.equal(fieldAlert(bits()).message, null);
+  assert.equal(bits().hasAttribute("aria-invalid"), false);
+
+  page.place("model", "preexisting");
+  const j = () => board.querySelector('[aria-label="J"]');
+  typeInto(j(), "x");
+  assert.deepEqual(fieldAlert(j()), {
+    message: "Enter a real number for J",
+    linked: true,
+    invalid: true,
+    describedby: "factory-error-J",
+  });
+  assert.equal(board.querySelector(".preexisting-alert").hidden, false);
+  typeInto(j(), "1");
+  assert.equal(fieldAlert(j()).message, null);
+  assert.equal(board.querySelector(".preexisting-alert").hidden, true);
+  window.close();
+});
+
+test("blocked model cards explain why they are disabled", () => {
+  const { window, page } = prepare();
+  resetPage(page);
+  page.state.blocks.model = [
+    { id: "preexisting", title: "Preexisting model", detail: "Choose a built-in model" },
+    { id: "hamiltonian", title: "Hamiltonian", adds: true, detail: "" },
+  ];
+  page.state.modelFactories = [
+    { id: "ising", title: "Ising", qubits: true, setup: "model = ising(n_qubits={qubits})" },
+  ];
+  page.state.preexistingId = "ising";
+  const board = mount(window);
+  page.draw(board);
+
+  page.place("model", "hamiltonian");
+  const preexisting = () => paletteCard(board, "model", "preexisting");
+  assert.equal(preexisting().disabled, true);
+  assert.equal(
+    preexisting().querySelector(".block-reason").textContent,
+    "Remove added operators to use a preexisting model.",
+  );
+  assert.equal(
+    preexisting().getAttribute("aria-describedby"),
+    preexisting().querySelector(".block-reason").id,
+  );
+
+  click(board.querySelector(".chip.hamiltonian .remove"));
+  page.place("model", "preexisting");
+  const hamiltonian = paletteCard(board, "model", "hamiltonian");
+  assert.equal(hamiltonian.disabled, true);
+  assert.equal(
+    hamiltonian.querySelector(".block-reason").textContent,
+    "Remove the preexisting model to add operators.",
+  );
+  assert.equal(
+    hamiltonian.getAttribute("aria-describedby"),
+    hamiltonian.querySelector(".block-reason").id,
+  );
+  assert.equal(preexisting().disabled, false);
+  window.close();
+});
+
 test("different time-step defaults are flagged on the method fields", () => {
   const { window, page } = prepare();
   resetPage(page);
@@ -922,11 +1016,10 @@ test("different time-step defaults are flagged on the method fields", () => {
   page.place("simulator", "trotterization");
   assert.equal(steps().length, 2);
   for (const input of steps()) {
-    assert.equal(input.getAttribute("aria-invalid"), "true");
-    assert.equal(input.getAttribute("title"), message);
-    const alert = input.ownerDocument.getElementById(input.getAttribute("aria-describedby"));
-    assert.equal(alert.hidden, false);
-    assert.equal(alert.getAttribute("aria-label"), message);
+    const alert = fieldAlert(input);
+    assert.equal(alert.invalid, true);
+    assert.equal(alert.linked, true);
+    assert.equal(alert.message, message);
   }
   assert.equal(page.statusMessage(), "Place a block in the Initial state slot.");
 

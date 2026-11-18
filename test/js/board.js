@@ -212,13 +212,31 @@ function operatorAlert(chip) {
   const alert = chip.querySelector(".chip-alert");
   const field = chip.querySelector("textarea");
   const describedby = field?.getAttribute("aria-describedby") ?? null;
+  const error = describedby ? chip.ownerDocument.getElementById(describedby) : null;
+  const message = error && !error.hidden ? error.textContent : null;
   return {
-    label: alert.getAttribute("aria-label") || null,
-    title: alert.getAttribute("title") || null,
+    message,
     hidden: alert.hidden === true,
-    linked: describedby != null && describedby === alert.getAttribute("id"),
+    linked: Boolean(message) && error?.classList.contains("field-error") === true,
+    invalid: field?.getAttribute("aria-invalid") === "true",
     describedby,
   };
+}
+
+function fieldAlert(control) {
+  const describedby = control?.getAttribute("aria-describedby") ?? null;
+  const error = describedby ? control.ownerDocument.getElementById(describedby) : null;
+  const message = error && !error.hidden ? error.textContent : null;
+  return {
+    message,
+    linked: Boolean(message) && error?.classList.contains("field-error") === true,
+    invalid: control?.getAttribute("aria-invalid") === "true",
+    describedby,
+  };
+}
+
+function paletteCard(root, lane, blockId) {
+  return root.querySelector(`.lane[data-palette="${lane}"] .block[data-block="${blockId}"]`);
 }
 
 function toggleSite(chip, site, checked) {
@@ -237,6 +255,7 @@ module.exports = {
   catalog,
   chipByClass,
   click,
+  fieldAlert,
   fillCircuit,
   fillIsing,
   installDownloads,
@@ -245,6 +264,7 @@ module.exports = {
   openChip,
   operatorAlert,
   optionValue,
+  paletteCard,
   prepare,
   resetPage,
   resultsNode,

@@ -273,29 +273,34 @@
     return pairs;
   }
 
-  function paramAlert(state) {
+  function paramAlertDetail(state) {
     for (const param of factoryParams(state)) {
       const text = factoryFieldText(state, param).trim();
+      let message = null;
       if (param.kind === "integer") {
-        const problem = integerAlert(state, param);
-        if (problem) return problem;
+        message = integerAlert(state, param);
       } else if (param.kind === "number") {
-        if (realText(text) == null) return `Enter a real number for ${param.label}`;
+        if (realText(text) == null) message = `Enter a real number for ${param.label}`;
       } else if (param.kind === "number_or_list") {
         const values = numberValues(text);
         if (values == null) {
-          return text.includes(",")
+          message = text.includes(",")
             ? `Enter real numbers for ${param.label}`
             : `Enter a real number for ${param.label}`;
         }
       } else if (param.kind === "choice") {
         const choices = Array.isArray(param.choices) ? param.choices : [];
-        if (!choices.includes(text)) return `Choose ${choices.join(" or ")} for ${param.label}`;
+        if (!choices.includes(text)) message = `Choose ${choices.join(" or ")} for ${param.label}`;
       } else if (param.kind === "edges") {
-        if (parseEdges(text) == null) return "Enter edges as pairs such as 0-1, 1-2";
+        if (parseEdges(text) == null) message = "Enter edges as pairs such as 0-1, 1-2";
       }
+      if (message) return { name: param.name, message };
     }
     return null;
+  }
+
+  function paramAlert(state) {
+    return paramAlertDetail(state)?.message ?? null;
   }
 
   function factorySetsQubits(state) {
@@ -1396,6 +1401,7 @@
     factorySetsQubits,
     chosenFactory,
     factoryAlert,
+    paramAlertDetail,
     emitterProblem,
     entryBody,
     firstProblem,
