@@ -181,6 +181,10 @@ function chipByClass(root, kind) {
   return [...root.querySelectorAll(".chip")].find((node) => node.classList.contains(kind));
 }
 
+function active(root) {
+  return root.ownerDocument.activeElement;
+}
+
 function openChip(root, kind) {
   const chip = chipByClass(root, kind);
   click(chip.children[0].children[0]);
@@ -229,6 +233,7 @@ function optionValue(select) {
 }
 
 module.exports = {
+  active,
   catalog,
   chipByClass,
   click,
