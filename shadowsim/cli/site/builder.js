@@ -459,8 +459,7 @@ function factoryField(param, errorMessage = null) {
       spellcheck: "false",
       autocomplete: "off",
       oninput: (event) => {
-        const next = integer ? event.target.value.replace(/\D/g, "") : event.target.value.trim();
-        if (integer && event.target.value !== next) event.target.value = next;
+        const next = event.target.value;
         update(() => {
           rememberFactoryText(param.name, next);
           deriveModelQubits();
@@ -821,11 +820,7 @@ function stateFieldChip(block) {
     cap: field.cap,
     value: stateTextOf(block.id),
     oninput: (event) => {
-      const raw = event.target.value;
-      const next = bits
-        ? raw.replace(/[^01]/g, "").slice(0, field.cap)
-        : raw.replace(/[^\d.,\s-]/g, "");
-      if (event.target.value !== next) event.target.value = next;
+      const next = event.target.value;
       update(() => {
         state.stateText[block.id] = next;
         deriveStateQubits();
@@ -840,8 +835,15 @@ function timeStepMessage(entry) {
   return message;
 }
 
-function simField(params, key, label, seed, errorId) {
-  const message = errorId ? checks.timeStepMismatch(currentPage()) : null;
+function simulatorFieldMessage(entry, field) {
+  if (field.name === "time_steps") {
+    const mismatch = timeStepMessage(entry);
+    if (mismatch) return mismatch;
+  }
+  return checks.simFieldProblem(currentPage(), field, entry.params?.[field.name]);
+}
+
+function simField(params, key, label, seed, errorId, message) {
   return el(
     "label",
     {},
@@ -855,21 +857,21 @@ function simField(params, key, label, seed, errorId) {
       value: params[key],
       spellcheck: "false",
       oninput: (event) => {
-        const next = seed
-          ? event.target.value.replace(/[^\d-]/g, "").replace(/(?!^)-/g, "")
-          : event.target.value.replace(/\D/g, "");
-        if (event.target.value !== next) event.target.value = next;
+        const next = event.target.value;
         update(() => {
           params[key] = next;
         });
       },
     }),
-    errorId ? fieldError(errorId, message) : null,
+    fieldError(errorId, message),
   );
 }
 
-function simulatorControl(params, field, errorId) {
+function simulatorControl(entry, field) {
+  const params = entry.params;
   const value = String(params[field.name] ?? field.default ?? "");
+  const errorId = `sim-error-${entry.key}-${field.name}`;
+  const message = simulatorFieldMessage(entry, field);
   if (field.kind === "choice") {
     const choices = Array.isArray(field.choices) ? field.choices : [];
     return el(
@@ -880,6 +882,8 @@ function simulatorControl(params, field, errorId) {
         "select",
         {
           "aria-label": field.label,
+          "aria-invalid": message ? "true" : null,
+          "aria-describedby": message ? errorId : null,
           onchange: (event) => {
             update(() => {
               params[field.name] = event.target.value;
@@ -890,21 +894,25 @@ function simulatorControl(params, field, errorId) {
           el("option", { value: choice, selected: choice === value }, choice),
         ),
       ),
+      fieldError(errorId, message),
     );
   }
-  const mismatch = field.name === "time_steps" ? errorId : null;
-  return simField(params, field.name, field.label, !Number.isInteger(field.minimum), mismatch);
+  return simField(
+    params,
+    field.name,
+    field.label,
+    !Number.isInteger(field.minimum),
+    errorId,
+    message,
+  );
 }
 
 function simulatorChip(entry) {
   const block = checks.blockById(currentPage(), "simulator", entry.id);
-  const params = entry.params;
   if (!block) return null;
-  const mismatch = timeStepMessage(entry);
-  const errorId = `time-steps-error-${entry.key}`;
-  const controls = (block.fields ?? []).map((field) =>
-    simulatorControl(params, field, field.name === "time_steps" && mismatch ? errorId : null),
-  );
+  const fields = block.fields ?? [];
+  const invalid = fields.some((field) => simulatorFieldMessage(entry, field));
+  const controls = fields.map((field) => simulatorControl(entry, field));
   return el(
     "div",
     {
@@ -939,7 +947,7 @@ function simulatorChip(entry) {
       el(
         "div",
         { className: "chip-actions" },
-        chipAlert({ hidden: !mismatch }),
+        chipAlert({ hidden: !invalid }),
         entry.open
           ? el(
               "button",
@@ -1194,32 +1202,44 @@ function backendChip(entry) {
       ),
     ),
     editing && samples
-      ? el(
-          "label",
-          { className: "chip-field" },
-          "Shots",
-          el("input", {
-            type: "text",
-            inputmode: "numeric",
-            "aria-label": "Shots",
-            value: String(entry.shots ?? ""),
-            spellcheck: "false",
-            oninput: (event) => {
-              const next = event.target.value.replace(/\D/g, "");
-              if (event.target.value !== next) event.target.value = next;
-              update(() => {
-                entry.shots = next;
-              });
-            },
-          }),
-        )
+      ? (() => {
+          const errorId = `shots-error-${entry.key}`;
+          const message = checks.shotsFieldProblem(currentPage(), entry.shots, state.maxShots);
+          return el(
+            "label",
+            { className: "chip-field" },
+            "Shots",
+            el("input", {
+              type: "text",
+              inputmode: "numeric",
+              "aria-label": "Shots",
+              "aria-invalid": message ? "true" : null,
+              "aria-describedby": message ? errorId : null,
+              value: String(entry.shots ?? ""),
+              spellcheck: "false",
+              oninput: (event) => {
+                const next = event.target.value;
+                update(() => {
+                  entry.shots = next;
+                });
+              },
+            }),
+            fieldError(errorId, message),
+          );
+        })()
       : null,
     editing && fields.length
       ? el(
           "div",
           { className: "backend-fields" },
-          ...fields.map((field) =>
-            el(
+          ...fields.map((field) => {
+            const text = entry.backendFields?.[field.name];
+            const errorId = `backend-error-${entry.key}-${field.name}`;
+            const message =
+              field.kind === "gates"
+                ? checks.gateFieldProblem(currentPage(), field, text)
+                : checks.backendNumberProblem(currentPage(), field, text);
+            return el(
               "label",
               {},
               field.label,
@@ -1227,23 +1247,22 @@ function backendChip(entry) {
                 type: "text",
                 inputmode: field.kind === "gates" ? "text" : "decimal",
                 "aria-label": field.label,
-                value: String(entry.backendFields?.[field.name] ?? ""),
+                "aria-invalid": message ? "true" : null,
+                "aria-describedby": message ? errorId : null,
+                value: String(text ?? ""),
                 spellcheck: "false",
                 autocomplete: "off",
                 oninput: (event) => {
-                  const gates = field.kind === "gates";
-                  const next = gates
-                    ? event.target.value.toLowerCase().replace(/[^a-z0-9_,\s]/g, "")
-                    : event.target.value.replace(/[^0-9.eE+\-infity]/gi, "");
-                  if (event.target.value !== next) event.target.value = next;
+                  const next = event.target.value;
                   update(() => {
                     entry.backendFields = entry.backendFields ?? {};
                     entry.backendFields[field.name] = next;
                   });
                 },
               }),
-            ),
-          ),
+              fieldError(errorId, message),
+            );
+          }),
         )
       : null,
   );
@@ -2184,6 +2203,36 @@ function paintBackendDetails() {
     const block = checks.blockById(currentPage(), "backend", entry.backend);
     if (block) detail.textContent = backendSummary(block, entry);
   });
+  paintBackendFields();
+}
+
+function paintBackendFields() {
+  document.querySelectorAll(".chip.backend").forEach((chip) => {
+    const entry = state.placedSims.find((item) => String(item.key) === chip.dataset.key);
+    if (!entry?.backend) return;
+    const block = checks.blockById(currentPage(), "backend", entry.backend);
+    if (!block) return;
+    if (block.shots) {
+      const field = chip.querySelector('input[aria-label="Shots"]');
+      const host = field?.closest("label");
+      const errorId = `shots-error-${entry.key}`;
+      const message = checks.shotsFieldProblem(currentPage(), entry.shots, state.maxShots);
+      syncFieldError(host, errorId, message);
+      setFieldValidity(field, errorId, message);
+    }
+    for (const spec of block.fields ?? []) {
+      const field = chip.querySelector(`input[aria-label="${spec.label}"]`);
+      const host = field?.closest("label");
+      const errorId = `backend-error-${entry.key}-${spec.name}`;
+      const text = entry.backendFields?.[spec.name];
+      const message =
+        spec.kind === "gates"
+          ? checks.gateFieldProblem(currentPage(), spec, text)
+          : checks.backendNumberProblem(currentPage(), spec, text);
+      syncFieldError(host, errorId, message);
+      setFieldValidity(field, errorId, message);
+    }
+  });
 }
 
 function paintMeasureChip() {
@@ -2216,18 +2265,25 @@ function paintMeasureChip() {
   if (input) input.placeholder = countsPlaceholder();
 }
 
-function paintTimeSteps() {
-  const message = checks.timeStepMismatch(currentPage());
+function paintSimFields() {
   document.querySelectorAll(".chip.simulator").forEach((chip) => {
     const entry = state.placedSims.find((item) => String(item.key) === chip.dataset.key);
-    const shown = Boolean(message) && String(entry?.params?.time_steps ?? "") !== "";
-    const errorId = `time-steps-error-${chip.dataset.key}`;
-    const text = shown ? message : null;
-    setChipAlert(chip.querySelector(".chip-alert"), shown);
-    const field = chip.querySelector('input[aria-label="Time steps"]');
-    const host = field?.closest("label");
-    syncFieldError(host, errorId, text);
-    setFieldValidity(field, errorId, text);
+    if (!entry) return;
+    const block = checks.blockById(currentPage(), "simulator", entry.id);
+    const fields = block?.fields ?? [];
+    let invalid = false;
+    for (const spec of fields) {
+      const control = chip.querySelector(
+        `input[aria-label="${spec.label}"], select[aria-label="${spec.label}"]`,
+      );
+      const host = control?.closest("label");
+      const errorId = `sim-error-${entry.key}-${spec.name}`;
+      const message = simulatorFieldMessage(entry, spec);
+      if (message) invalid = true;
+      syncFieldError(host, errorId, message);
+      setFieldValidity(control, errorId, message);
+    }
+    setChipAlert(chip.querySelector(".chip-alert"), invalid);
   });
 }
 
@@ -2238,7 +2294,7 @@ function paintDerived() {
   paintStateChip();
   paintHamiltonianChips();
   paintLocalHamiltonianChips();
-  paintTimeSteps();
+  paintSimFields();
   paintBackendDetails();
   paintPathDetails();
   paintMeasureChip();

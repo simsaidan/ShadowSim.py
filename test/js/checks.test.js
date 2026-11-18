@@ -312,6 +312,57 @@ test("unknown aer gates block the run and the preview", () => {
   assert.equal(checks.backendFieldStatus(page, false), "Enter gate names separated by commas.");
 });
 
+test("backend number fields reject letter mixes like tiny", () => {
+  const page = circuitPage();
+  const maxWeight = {
+    name: "max_weight",
+    label: "Max weight",
+    default: "inf",
+    allow_inf: true,
+  };
+  const minCoeff = {
+    name: "min_abs_coeff",
+    label: "Min coefficient",
+    default: "1e-10",
+    allow_inf: false,
+  };
+  page.blocks.backend.push({
+    id: "paulipropagation",
+    phrase: "PauliPropagation",
+    shots: false,
+    setup:
+      "circuit_backend = PauliPropagationBackend(max_weight={max_weight}, min_abs_coeff={min_abs_coeff})",
+    fields: [maxWeight, minCoeff],
+  });
+  page.placedSims[0].backend = "paulipropagation";
+  page.placedSims[0].backendFields = { max_weight: "tiny", min_abs_coeff: "1e-10" };
+  assert.equal(checks.backendFieldsReady(page), false);
+  assert.equal(checks.runAllowed(page), false);
+  assert.equal(
+    checks.backendNumberProblem(page, maxWeight, "tiny"),
+    "Enter a non-negative number or inf for Max weight",
+  );
+  assert.equal(
+    checks.backendFieldStatus(page, false),
+    "Enter a non-negative number or inf for Max weight.",
+  );
+  assert.equal(
+    checks.backendFieldStatus(page, true),
+    "Enter a non-negative number or inf for Max weight to preview the script.",
+  );
+  assert.equal(checks.backendNumberProblem(page, maxWeight, "inf"), null);
+  assert.equal(checks.backendNumberProblem(page, maxWeight, "infinity"), null);
+  assert.equal(
+    checks.backendNumberProblem(page, minCoeff, "fifty"),
+    "Enter a non-negative number for Min coefficient",
+  );
+  page.placedSims[0].backendFields = { max_weight: "inf", min_abs_coeff: "fifty" };
+  assert.equal(
+    checks.backendFieldStatus(page, false),
+    "Enter a non-negative number for Min coefficient.",
+  );
+});
+
 test("preview numbers a backend with its row", () => {
   const page = circuitPage();
   page.blocks.simulator.unshift({

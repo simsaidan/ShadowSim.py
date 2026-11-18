@@ -7,6 +7,7 @@ const {
   fieldAlert,
   fillCircuit,
   fillIsing,
+  insertAt,
   installDownloads,
   labeled,
   mount,
@@ -584,14 +585,102 @@ test("the Aer card edits gates beside shots", () => {
   assert.equal(page.previewText().includes("basis_gates=None"), true);
   typeInto(gates, "RX, ry, RX");
   page.applyCheck();
-  assert.equal(page.state.placedSims[0].backendFields.basis_gates, "rx, ry, rx");
+  assert.equal(page.state.placedSims[0].backendFields.basis_gates, "RX, ry, RX");
   assert.equal(chip.querySelector(".backend-detail").textContent, "256 shots, rx, ry");
   assert.equal(page.previewText().includes('basis_gates=["rx", "ry"]'), true);
   typeInto(gates, "foo");
+  assert.deepEqual(fieldAlert(gates), {
+    message: "Unknown gate foo.",
+    linked: true,
+    invalid: true,
+    describedby: "backend-error-1-basis_gates",
+  });
   assert.equal(page.statusMessage(), "Unknown gate foo.");
   assert.equal(page.previewText(), "");
   typeInto(gates, ",,,");
   assert.equal(page.statusMessage(), "Enter gate names separated by commas.");
+  window.close();
+});
+
+test("inputs keep mid-string characters and caret position", () => {
+  const { window, page } = prepare();
+  fillCircuit(page);
+  const board = mount(window);
+  page.draw(board);
+
+  openChip(board, "backend");
+  const shots = labeled(board, "Shots");
+  typeInto(shots, "256");
+  insertAt(shots, 1, "x");
+  assert.equal(shots.value, "2x56");
+  assert.equal(page.state.placedSims[0].shots, "2x56");
+  assert.equal(shots.selectionStart, 2);
+  assert.equal(shots.selectionEnd, 2);
+  assert.deepEqual(fieldAlert(shots), {
+    message: "Enter a shot count",
+    linked: true,
+    invalid: true,
+    describedby: "shots-error-1",
+  });
+
+  openChip(board, "simulator");
+  const seed = labeled(board, "Seed");
+  typeInto(seed, "12");
+  insertAt(seed, 1, "a");
+  assert.equal(seed.value, "1a2");
+  assert.equal(page.state.placedSims[0].params.seed, "1a2");
+  assert.equal(seed.selectionStart, 2);
+  assert.equal(seed.selectionEnd, 2);
+  assert.deepEqual(fieldAlert(seed), {
+    message: "Enter an integer for Seed",
+    linked: true,
+    invalid: true,
+    describedby: "sim-error-1-seed",
+  });
+
+  openChip(board, "basis");
+  const bits = labeled(board, "Basis bits");
+  typeInto(bits, "01");
+  insertAt(bits, 1, "2");
+  assert.equal(bits.value, "021");
+  assert.equal(page.state.stateText.basis, "021");
+  assert.equal(bits.selectionStart, 2);
+  assert.equal(bits.selectionEnd, 2);
+  window.close();
+});
+
+test("backend number fields show an error for tiny", () => {
+  const { window, page } = prepare();
+  fillCircuit(page);
+  page.state.blocks.backend = [
+    {
+      id: "paulipropagation",
+      phrase: "PauliPropagation",
+      shots: false,
+      setup:
+        "circuit_backend = PauliPropagationBackend(max_weight={max_weight}, min_abs_coeff={min_abs_coeff})",
+      fields: [
+        { name: "max_weight", label: "Max weight", default: "inf", allow_inf: true },
+        { name: "min_abs_coeff", label: "Min coefficient", default: "1e-10", allow_inf: false },
+      ],
+    },
+  ];
+  page.state.placedSims[0].backend = "paulipropagation";
+  page.state.placedSims[0].backendFields = { max_weight: "inf", min_abs_coeff: "1e-10" };
+  page.state.placedSims[0].backendOpen = true;
+  const board = mount(window);
+  page.draw(board);
+  const weight = labeled(board, "Max weight");
+  typeInto(weight, "tiny");
+  assert.equal(page.state.placedSims[0].backendFields.max_weight, "tiny");
+  assert.deepEqual(fieldAlert(weight), {
+    message: "Enter a non-negative number or inf for Max weight",
+    linked: true,
+    invalid: true,
+    describedby: "backend-error-1-max_weight",
+  });
+  assert.equal(page.statusMessage(), "Enter a non-negative number or inf for Max weight.");
+  assert.equal(page.previewText(), "");
   window.close();
 });
 
