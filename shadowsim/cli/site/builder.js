@@ -2217,9 +2217,7 @@ async function postWrite(requested) {
     }
     if (!response.ok) {
       const message =
-        typeof payload.error === "string" && payload.error
-          ? payload.error
-          : "The write failed.";
+        typeof payload.error === "string" && payload.error ? payload.error : "The write failed.";
       state.statusHold = message.endsWith(".") ? message : `${message}.`;
       setStatus(state.statusHold);
       return;

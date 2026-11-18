@@ -21,13 +21,13 @@ import pytest
 from shadowsim.backends import listed_backends
 from shadowsim.cli.catalog import listed_states
 from shadowsim.cli.run import (
-    RetainedRun,
-    RetainedRunMismatch,
     _MAX_NUM_STEPS,
     _MAX_OPERATOR_QUBITS,
     _MAX_SHOTS,
     _MAX_TIME_STEPS,
     _MAX_TROTTER_DEPTH,
+    RetainedRun,
+    RetainedRunMismatch,
     _backend_class,
     _backend_has_shot_budget,
     _backend_record,
@@ -1249,9 +1249,7 @@ def test_export_writes_benchmark_metrics_to_a_json_file(tmp_path: Path) -> None:
 
 
 @pytest.mark.qutip
-def test_write_page_saves_a_retained_result_without_simulating(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_write_page_saves_a_retained_result_without_simulating(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     pytest.importorskip("qutip")
     retain = tmp_path / "retain"
     destination = tmp_path / "written"
@@ -1384,6 +1382,47 @@ def test_write_page_rejects_a_path_outside_the_output_directory(tmp_path: Path) 
             _selection(then="save", save_path=str(tmp_path / "outside"), time_steps=2),
             retained,
             output_root=root,
+        )
+
+
+def test_write_page_exports_resource_metrics_to_a_directory(tmp_path: Path) -> None:
+    retain = tmp_path / "retain"
+    destination = tmp_path / "metrics"
+    result = SimulationResult(
+        times=np.array([0.0, 1.0]),
+        observables=[np.array([0.25, 0.5])],
+        algorithm="crafted",
+    )
+    result.save(retain)
+    resources = [{"simulator_id": "crafted", "wall_time_s": 0.1}]
+    retained = RetainedRun(
+        directory=retain,
+        document=simulation_body(_selection(time_steps=2)),
+        resources=resources,
+    )
+    written = write_page(
+        _selection(then="export", export_path=str(destination), time_steps=2),
+        retained,
+    )
+    assert "saved" not in written
+    exported = Path(str(written["exported"]))
+    assert exported.parent == destination
+    assert exported.name.startswith("resource_metrics_")
+    assert json.loads(exported.read_text()) == {"resources": resources}
+
+
+def test_write_page_rejects_missing_retained_results(tmp_path: Path) -> None:
+    retain = tmp_path / "retain"
+    retain.mkdir()
+    retained = RetainedRun(
+        directory=retain,
+        document=simulation_body(_selection(time_steps=2)),
+        resources=[{"simulator_id": "crafted", "wall_time_s": 0.1}],
+    )
+    with pytest.raises(FileNotFoundError, match="retained results are missing"):
+        write_page(
+            _selection(then="save", save_path=str(tmp_path / "out"), time_steps=2),
+            retained,
         )
 
 

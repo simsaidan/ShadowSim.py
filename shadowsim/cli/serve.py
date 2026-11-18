@@ -16,13 +16,13 @@ import threading
 import time
 import traceback
 import webbrowser
+from collections.abc import Mapping
 from http.server import BaseHTTPRequestHandler
 from http.server import HTTPServer as _HTTPServer
 from multiprocessing.connection import Connection
 from multiprocessing.process import BaseProcess
 from pathlib import Path
 from socketserver import ThreadingMixIn
-from collections.abc import Mapping
 from typing import Any
 from urllib.parse import parse_qs, urlsplit
 
@@ -368,11 +368,7 @@ class _Handler(BaseHTTPRequestHandler):
             except Exception as exc:
                 _send_internal_error(self, exc)
                 return
-            if (
-                outcome[0] == "ok"
-                and isinstance(outcome[1], dict)
-                and _retain_dir_ready(pending)
-            ):
+            if outcome[0] == "ok" and isinstance(outcome[1], dict) and _retain_dir_ready(pending):
                 _retain.remember(selection, outcome[1], pending)
                 kept = True
             _finish_run(self, outcome)

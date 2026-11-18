@@ -694,9 +694,10 @@ test("save and export write the shown result", async () => {
   page.place("then", "save");
   await settleWrites(page);
   assert.equal(posts.length, 1);
-  assert.deepEqual(posts[0].actions.ids.filter((id) => id === "save" || id === "export"), [
-    "save",
-  ]);
+  assert.deepEqual(
+    posts[0].actions.ids.filter((id) => id === "save" || id === "export"),
+    ["save"],
+  );
   assert.equal(posts[0].actions.save_path, "results/kept");
   assert.equal(resultsNode(window).querySelector(".chart") === chart, true);
   assert.equal(resultsNode(window).querySelector(".hint").textContent, "Saved to results/kept");
