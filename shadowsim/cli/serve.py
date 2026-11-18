@@ -7,13 +7,16 @@ import json
 import multiprocessing
 import os
 import secrets
+import shutil
 import signal
 import ssl
 import sys
+import tempfile
 import threading
 import time
 import traceback
 import webbrowser
+from collections.abc import Mapping
 from http.server import BaseHTTPRequestHandler
 from http.server import HTTPServer as _HTTPServer
 from multiprocessing.connection import Connection
@@ -25,7 +28,15 @@ from urllib.parse import parse_qs, urlsplit
 
 from shadowsim.backends import listed_backends
 from shadowsim.cli.catalog import listed_actions, listed_measurements, listed_states
-from shadowsim.cli.run import _page_limits, check_page, run_page
+from shadowsim.cli.run import (
+    RetainedRun,
+    RetainedRunMismatch,
+    _page_limits,
+    check_page,
+    run_page,
+    simulation_body,
+    write_page,
+)
 from shadowsim.models.catalog import listed_model_terms, listed_models
 from shadowsim.simulators.catalog import listed_simulators
 
@@ -47,6 +58,7 @@ _CONTENT_TYPES = {
 _POLL_SECONDS = 0.2
 _KILL_AFTER = 2.0
 _BUSY = "a run is still finishing"
+_NO_RETAINED = "no matching retained run"
 _TOKEN_COOKIE = "shadowsim-token"
 _PAGE_UNAUTHORIZED = "Open the URL printed when the server started.\n"
 _JSON_REQUIRED = "Content-Type must be application/json"
@@ -84,9 +96,61 @@ class _Slot:
         self.cancel = threading.Event()
         self.guard = threading.Lock()
         self.running = threading.Lock()
+        self.retain_to: Path | None = None
+
+
+class _RetainStore:
+    """The last successful run the page can save or export without re-running."""
+
+    def __init__(self) -> None:
+        self.guard = threading.Lock()
+        self.root: Path | None = None
+        self.current: RetainedRun | None = None
+
+    def new_directory(self) -> Path:
+        """Return an empty directory under the store root for the next run."""
+        with self.guard:
+            if self.root is None:
+                self.root = Path(tempfile.mkdtemp(prefix="shadowsim-retain-"))
+            return Path(tempfile.mkdtemp(prefix="run-", dir=self.root))
+
+    def remember(self, selection: Mapping[str, object], payload: Mapping[str, object], directory: Path) -> None:
+        """Keep ``directory`` as the retained run and drop any previous copy."""
+        resources = payload.get("resources")
+        if not isinstance(resources, list):
+            resources = []
+        errors = payload.get("errors")
+        kept_errors = errors if isinstance(errors, list) else None
+        document = simulation_body(selection)
+        retained = RetainedRun(
+            directory=directory,
+            document=document,
+            resources=list(resources),
+            errors=None if kept_errors is None else list(kept_errors),
+        )
+        with self.guard:
+            previous = self.current
+            self.current = retained
+        if previous is not None and previous.directory != directory:
+            shutil.rmtree(previous.directory, ignore_errors=True)
+
+    def get(self) -> RetainedRun | None:
+        """Return the retained run, or ``None`` when none is stored."""
+        with self.guard:
+            return self.current
+
+    def clear(self) -> None:
+        """Drop the retained run and remove the store root."""
+        with self.guard:
+            root = self.root
+            self.root = None
+            self.current = None
+        if root is not None:
+            shutil.rmtree(root, ignore_errors=True)
 
 
 _slot = _Slot()
+_retain = _RetainStore()
 
 
 class HTTPServer(ThreadingMixIn, _HTTPServer):
@@ -244,15 +308,18 @@ class _Handler(BaseHTTPRequestHandler):
         1 KiB and, on a match, stores the token in a cookie. Otherwise it is 404.
         ``POST /runs/check`` builds the selection in this process and returns its
         qubit count. It does not simulate and does not take the run slot. A
-        document the build rejects is 400. ``POST /runs/cancel`` stops the child
-        process. A second ``POST /runs`` while it is still going receives 409 and
-        does not start another one. When the server has a startup token, the run
-        routes require that token in a cookie or in ``Authorization: Bearer``
-        before any run is checked, started, or stopped. ``POST /runs`` and
-        ``POST /runs/check`` also require ``Content-Type: application/json``
+        document the build rejects is 400. ``POST /runs/write`` saves or exports
+        the last successful run without simulating. It also skips the run slot.
+        A missing or mismatched retained run, or a write while a run is in
+        progress, is 409. ``POST /runs/cancel`` stops the child process. A second
+        ``POST /runs`` while it is still going receives 409 and does not start
+        another one. When the server has a startup token, the run routes require
+        that token in a cookie or in ``Authorization: Bearer`` before any run is
+        checked, started, written, or stopped. ``POST /runs``, ``POST /runs/check``,
+        and ``POST /runs/write`` also require ``Content-Type: application/json``
         before the body is parsed, and reject a body larger than 8 MiB. The read
         timeout stays until that body arrives, then it is cleared before the
-        check or the run starts. ``POST /runs/cancel`` has no body, so its
+        check, write, or run starts. ``POST /runs/cancel`` has no body, so its
         timeout is cleared first.
         """
         path = urlsplit(self.path).path
@@ -274,6 +341,12 @@ class _Handler(BaseHTTPRequestHandler):
                 return
             _reply_check(self, selection)
             return
+        if path == "/runs/write":
+            selection = _posted_selection(self)
+            if selection is None:
+                return
+            _reply_write(self, selection)
+            return
         if path != "/runs":
             self.send_error(404)
             return
@@ -283,22 +356,31 @@ class _Handler(BaseHTTPRequestHandler):
         if not _slot.running.acquire(blocking=False):
             _send_json(self, 409, {"error": _BUSY})
             return
+        pending = _retain.new_directory()
         with _slot.guard:
             _slot.phase = _RunPhase.RUNNING
             _slot.cancel.clear()
+            _slot.retain_to = pending
+        kept = False
         try:
             try:
                 outcome = _run_in_child(selection, _server_output_root(self))
             except Exception as exc:
                 _send_internal_error(self, exc)
                 return
+            if outcome[0] == "ok" and isinstance(outcome[1], dict) and _retain_dir_ready(pending):
+                _retain.remember(selection, outcome[1], pending)
+                kept = True
             _finish_run(self, outcome)
         finally:
             with _slot.guard:
                 _slot.phase = _RunPhase.IDLE
                 _slot.process = None
                 _slot.cancel.clear()
+                _slot.retain_to = None
             _slot.running.release()
+            if not kept:
+                shutil.rmtree(pending, ignore_errors=True)
 
     def _body(self) -> bytes:
         """Return the request body, or raise if its length is missing or too large."""
@@ -316,7 +398,7 @@ def _posted_selection(handler: _Handler) -> dict[str, Any] | None:
     8 MiB. The read timeout is cleared once that body has arrived.
 
     Args:
-        handler: Request for ``POST /runs`` or ``POST /runs/check``.
+        handler: Request for ``POST /runs``, ``POST /runs/check``, or ``POST /runs/write``.
 
     Returns:
         The JSON object, or ``None`` when this function already sent 401, 415, or 400.
@@ -356,6 +438,40 @@ def _reply_check(handler: BaseHTTPRequestHandler, selection: dict[str, Any]) -> 
     _send_json(handler, 200, payload)
 
 
+def _reply_write(handler: BaseHTTPRequestHandler, selection: dict[str, Any]) -> None:
+    """Save or export the retained run for ``selection``.
+
+    A run already in progress, or a missing or mismatched retained run, is 409.
+    A document :func:`~shadowsim.cli.run.write_page` rejects is 400. This does
+    not take the run slot and does not simulate.
+
+    Args:
+        handler: Request for ``POST /runs/write``.
+        selection: The version 1 document ``write_page`` reads.
+    """
+    with _slot.guard:
+        busy = _slot.phase is _RunPhase.RUNNING
+    if busy:
+        _send_json(handler, 409, {"error": _BUSY})
+        return
+    retained = _retain.get()
+    if retained is None or simulation_body(selection) != retained.document:
+        _send_json(handler, 409, {"error": _NO_RETAINED})
+        return
+    try:
+        payload = write_page(selection, retained, output_root=_server_output_root(handler))
+    except RetainedRunMismatch:
+        _send_json(handler, 409, {"error": _NO_RETAINED})
+        return
+    except ValueError as exc:
+        _send_json(handler, 400, {"error": str(exc)})
+        return
+    except Exception as exc:
+        _send_internal_error(handler, exc)
+        return
+    _send_json(handler, 200, payload)
+
+
 def _end_read_timeout(handler: BaseHTTPRequestHandler) -> None:
     """Remove the socket timeout once the guarded read has finished.
 
@@ -375,12 +491,17 @@ def _detach_process_group() -> None:
         return
 
 
-def _run_page_in_child(selection: dict[str, Any], connection: Connection, output_root: Path | None) -> None:
+def _run_page_in_child(
+    selection: dict[str, Any],
+    connection: Connection,
+    output_root: Path | None,
+    retain_to: Path | None,
+) -> None:
     """Run one selection and send ``(kind, payload)`` to the parent."""
     _detach_process_group()
     try:
         try:
-            payload = run_page(selection, output_root=output_root)
+            payload = run_page(selection, output_root=output_root, retain_to=retain_to)
         except ValueError as exc:
             message: tuple[str, Any] = ("invalid", str(exc))
         except Exception as exc:
@@ -412,11 +533,13 @@ def _park_until_killed(connection: Connection, started: Any) -> None:
 
 def _spawn_page(selection: dict[str, Any], output_root: Path | None = None) -> tuple[BaseProcess, Connection]:
     """Start ``run_page`` in a spawned process and return its result pipe."""
+    with _slot.guard:
+        retain_to = _slot.retain_to
     context = multiprocessing.get_context("spawn")
     parent, child = context.Pipe(duplex=False)
     process = context.Process(
         target=_run_page_in_child,
-        args=(selection, child, output_root),
+        args=(selection, child, output_root, retain_to),
         daemon=True,
         name="shadowsim-run",
     )
@@ -585,6 +708,11 @@ def _server_output_root(handler: BaseHTTPRequestHandler) -> Path | None:
     if isinstance(root, Path):
         return root
     return None
+
+
+def _retain_dir_ready(directory: Path) -> bool:
+    """Return whether ``directory`` holds measured results from a child run."""
+    return (directory / "meta.json").is_file() or (directory / "sim_1" / "meta.json").is_file()
 
 
 def _server_token(handler: BaseHTTPRequestHandler) -> str | None:
@@ -1160,6 +1288,7 @@ def serve(
         print("\nStopped.")
     finally:
         _cancel_run()
+        _retain.clear()
         server.server_close()
     return 0
 

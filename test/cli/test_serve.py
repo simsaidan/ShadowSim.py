@@ -603,8 +603,10 @@ def _open(
 
 
 def _open_server(**kwargs: Any) -> tuple[Any, threading.Thread]:
+    from shadowsim.cli import serve as serve_cli
     from shadowsim.cli.serve import HTTPServer as ThreadedServer
 
+    serve_cli._retain.clear()
     server = ThreadedServer(("127.0.0.1", 0), _Handler, **kwargs)
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
@@ -631,9 +633,12 @@ def _assert_dropped(client: socket.socket, limit: float) -> None:
 
 
 def _close_server(server: Any, thread: threading.Thread) -> None:
+    from shadowsim.cli import serve as serve_cli
+
     server.shutdown()
     server.server_close()
     thread.join(timeout=5)
+    serve_cli._retain.clear()
 
 
 def test_limits_match_the_validator_caps() -> None:
@@ -1134,6 +1139,92 @@ def test_a_posted_run_uses_the_output_directory(monkeypatch: pytest.MonkeyPatch,
     assert status == 200
     assert json.loads(body) == {"ok": True}
     assert seen["output_root"] == root
+
+
+def test_a_write_without_a_retained_run_is_conflict() -> None:
+    server, thread = _open_server()
+    port = server.server_address[1]
+    try:
+        status, body = _exchange(port, "POST", "/runs/write", b'{"version": 1}')
+    finally:
+        _close_server(server, thread)
+    assert status == 409
+    assert json.loads(body) == {"error": "no matching retained run"}
+
+
+def test_a_write_while_a_run_is_busy_is_conflict(monkeypatch: pytest.MonkeyPatch) -> None:
+    started = threading.Event()
+    release = threading.Event()
+    first: dict[str, tuple[int, bytes]] = {}
+
+    def hold(selection: dict[str, object], output_root: object = None) -> tuple[str, dict[str, bool]]:
+        started.set()
+        assert release.wait(timeout=5)
+        return ("ok", {"ok": True})
+
+    monkeypatch.setattr("shadowsim.cli.serve._run_in_child", hold)
+    server, thread = _open_server()
+    port = server.server_address[1]
+
+    def post_run() -> None:
+        first["result"] = _exchange(port, "POST", "/runs", b"{}")
+
+    poster = threading.Thread(target=post_run)
+    poster.start()
+    try:
+        assert started.wait(timeout=2)
+        status, body = _exchange(port, "POST", "/runs/write", b'{"version": 1}')
+        assert status == 409
+        assert json.loads(body) == {"error": "a run is still finishing"}
+    finally:
+        release.set()
+        poster.join(timeout=5)
+        _close_server(server, thread)
+    assert first["result"] == (200, b'{"ok": true}')
+
+
+@pytest.mark.qutip
+def test_a_write_uses_the_retained_run(tmp_path: Path) -> None:
+    pytest.importorskip("qutip")
+    server, thread = _open_server()
+    root = (tmp_path / "results").resolve()
+    root.mkdir()
+    server.output_root = root
+    port = server.server_address[1]
+    selection = {
+        "version": 1,
+        "total": "0.5",
+        "state": {"id": "basis", "value": "10"},
+        "model": {"id": "ising", "arguments": {"n_qubits": "2"}},
+        "simulators": [{"id": "qutip", "arguments": {"time_steps": 2}, "backend": None}],
+        "measure": {"id": "model"},
+        "actions": {"ids": []},
+    }
+    destination = root / "kept"
+    try:
+        status, body = _exchange(port, "POST", "/runs", json.dumps(selection).encode())
+        assert status == 200
+        payload = json.loads(body)
+        assert "times" in payload
+        write_body = {
+            **selection,
+            "actions": {"ids": ["save"], "save_path": str(destination)},
+        }
+        status, body = _exchange(port, "POST", "/runs/write", json.dumps(write_body).encode())
+        assert status == 200
+        written = json.loads(body)
+        assert written["saved"] == [str(destination)]
+        assert (destination / "meta.json").is_file()
+        mismatched = {
+            **selection,
+            "total": "1.0",
+            "actions": {"ids": ["save"], "save_path": str(root / "other")},
+        }
+        status, body = _exchange(port, "POST", "/runs/write", json.dumps(mismatched).encode())
+        assert status == 409
+        assert json.loads(body) == {"error": "no matching retained run"}
+    finally:
+        _close_server(server, thread)
 
 
 def test_a_check_returns_the_qubit_count_without_starting_a_run(

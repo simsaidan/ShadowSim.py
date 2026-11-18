@@ -222,7 +222,7 @@ function formatCircuitMetric(value) {
   return "N/A";
 }
 
-function savedNote(payload) {
+export function savedNote(payload) {
   const notes = [];
   const saved = Array.isArray(payload.saved)
     ? payload.saved.filter((item) => typeof item === "string")
