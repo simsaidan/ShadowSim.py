@@ -1,6 +1,6 @@
 const assert = require("node:assert/strict");
 const { test } = require("node:test");
-const { click } = require("./dom");
+const { click, installDownloads } = require("./dom");
 const { loadPage } = require("./load-page");
 
 const loaded = loadPage();
@@ -136,8 +136,7 @@ function benchmark() {
 }
 
 const resources =
-  "QuTiP#1 0.41 s, depth N/A, width N/A, gates N/A, T N/A, Toffoli N/A" +
-  " · aer 1.2 s, 256 shots × 11, depth 4, width 2, gates 9, T 1, Toffoli 2";
+  "QuTiP#1 0.41 s · aer 1.2 s, 256 shots × 11, depth 4, width 2, gates 9, T 1, Toffoli 2";
 
 test("two observables show both curves and scales", () => {
   const chart = page.chartComponent({
@@ -236,13 +235,17 @@ test("hover readout names the nearest values", () => {
 });
 
 test("one simulator has no switch", () => {
+  const downloads = ["Download figure", "Download series"];
   const bare = page.resultsComponent({
     times: [0, 1],
     observables: [[1, 0]],
     labels: ["⟨Z⟩ on 0"],
   });
-  assert.equal(bare.className, "chart");
-  assert.deepEqual(buttons(bare), []);
+  assert.equal(bare.className, "results");
+  assert.deepEqual(
+    buttons(bare).map((node) => node.textContent),
+    downloads,
+  );
   const timed = page.resultsComponent({
     times: [0, 1],
     observables: [[1, 0]],
@@ -262,11 +265,11 @@ test("one simulator has no switch", () => {
       },
     ],
   });
-  assert.deepEqual(buttons(timed), []);
-  assert.equal(
-    byClass(timed, "resources").textContent,
-    "0.42 s, depth N/A, width N/A, gates N/A, T N/A, Toffoli N/A",
+  assert.deepEqual(
+    buttons(timed).map((node) => node.textContent),
+    downloads,
   );
+  assert.equal(byClass(timed, "resources").textContent, "0.42 s");
   const sampled = page.resultsComponent({
     times: [0, 1],
     observables: [[1, 0]],
@@ -297,7 +300,17 @@ test("the error switch replaces the curves and keeps the resource line", () => {
   const curves = page.resultsComponent(payload);
   assert.deepEqual(
     buttons(curves).map((node) => node.textContent),
-    ["All", "⟨Z⟩ on 0", "⟨Z⟩ on 1", "Curves", "QuTiP#1", "QuTiP#2", "Error"],
+    [
+      "All",
+      "⟨Z⟩ on 0",
+      "⟨Z⟩ on 1",
+      "Curves",
+      "QuTiP#1",
+      "QuTiP#2",
+      "Error",
+      "Download figure",
+      "Download series",
+    ],
   );
   assert.deepEqual(pressed(curves), ["All", "Curves"]);
   assert.deepEqual(legend(curves), [
@@ -307,6 +320,11 @@ test("the error switch replaces the curves and keeps the resource line", () => {
     "QuTiP#2 · ⟨Z⟩ on 1",
   ]);
   assert.equal(byClass(curves, "hint").textContent, "Saved to results/run1");
+  assert.equal(
+    byClass(curves, "comparison").textContent,
+    "QuTiP#2 vs QuTiP#1 · ⟨Z⟩ on 0: max 2, RMSE 1.5 · QuTiP#2 vs QuTiP#1 · ⟨Z⟩ on 1: max 1, RMSE 0.5",
+  );
+  assert.equal(byClass(curves, "panel-actions").children.length, 2);
   assert.equal(byClass(curves, "resources").textContent, resources);
 
   const error = press(page.resultsComponent(payload), ["Error"]);
@@ -315,10 +333,11 @@ test("the error switch replaces the curves and keeps the resource line", () => {
   assert.equal(svgOf(error).getAttribute("aria-label"), "Error vs QuTiP#1 versus time");
   assert.equal(polylines(error).length, 2);
   assert.deepEqual(lineTitles(error), ["QuTiP#2 · ⟨Z⟩ on 0", "QuTiP#2 · ⟨Z⟩ on 1"]);
-  assert.deepEqual(legend(error), [
-    "QuTiP#2 · ⟨Z⟩ on 0: max 2, RMSE 1.5",
-    "QuTiP#2 · ⟨Z⟩ on 1: max 1, RMSE 0.5",
-  ]);
+  assert.deepEqual(legend(error), ["QuTiP#2 · ⟨Z⟩ on 0", "QuTiP#2 · ⟨Z⟩ on 1"]);
+  assert.equal(
+    byClass(error, "comparison").textContent,
+    "QuTiP#2 vs QuTiP#1 · ⟨Z⟩ on 0: max 2, RMSE 1.5 · QuTiP#2 vs QuTiP#1 · ⟨Z⟩ on 1: max 1, RMSE 0.5",
+  );
   const [yTicks] = axisLabels(error);
   assert.deepEqual(yTicks, ["0", "1", "2"]);
   const difference = points(polylines(error)[0]);
@@ -340,7 +359,7 @@ test("the observable switch shows one chart at a time", () => {
 
   const error = press(page.resultsComponent(payload), ["⟨Z⟩ on 1", "Error"]);
   assert.deepEqual(pressed(error), ["⟨Z⟩ on 1", "Error"]);
-  assert.deepEqual(legend(error), ["QuTiP#2 · ⟨Z⟩ on 1: max 1, RMSE 0.5"]);
+  assert.deepEqual(legend(error), ["QuTiP#2 · ⟨Z⟩ on 1"]);
   assert.deepEqual(lineTitles(error), ["QuTiP#2 · ⟨Z⟩ on 1"]);
   assert.equal(byClass(error, "resources").textContent, resources);
 
@@ -373,6 +392,106 @@ test("the simulator switch sits between curves and error", () => {
   assert.deepEqual(pressed(focused), ["⟨Z⟩ on 0", "QuTiP"]);
   assert.deepEqual(legend(focused), ["QuTiP · ⟨Z⟩ on 0"]);
   assert.equal(polylines(focused).length, 1);
+});
+
+test("axis tabs and legend share QuTiP and Trotter titles", () => {
+  const payload = {
+    times: [0, 1],
+    labels: ["⟨Z⟩ on 0"],
+    series: [
+      {
+        name: "QuTiP",
+        labels: ["QuTiP · ⟨Z⟩ on 0"],
+        observables: [[1, 0]],
+      },
+      {
+        name: "Trotter",
+        labels: ["Trotter · ⟨Z⟩ on 0"],
+        observables: [[0.5, 0]],
+      },
+    ],
+    errors: [
+      {
+        challenger_id: "trotterization_simulator",
+        observables: [{ index: 0, linf: 0.5, rmse: 0.5 }],
+      },
+    ],
+    resources: [
+      {
+        simulator_id: "qutip_simulator",
+        title: "QuTiP",
+        wall_time_s: 0.1,
+        shots_per_job: null,
+        num_jobs: null,
+        total_shots: null,
+        depth: "N/A",
+        width: "N/A",
+        gate_count: "N/A",
+        t_count: "N/A",
+        toffoli_count: "N/A",
+      },
+      {
+        simulator_id: "trotterization_simulator",
+        title: "Trotter",
+        wall_time_s: 0.2,
+        shots_per_job: 128,
+        num_jobs: 2,
+        total_shots: 256,
+        depth: 4,
+        width: 2,
+        gate_count: 8,
+        t_count: 0,
+        toffoli_count: 0,
+      },
+    ],
+  };
+  const panel = page.resultsComponent(payload);
+  assert.deepEqual(
+    buttons(panel)
+      .filter((node) => node.getAttribute("data-view"))
+      .map((node) => node.textContent),
+    ["Curves", "QuTiP", "Trotter", "Error"],
+  );
+  assert.deepEqual(legend(panel), ["QuTiP · ⟨Z⟩ on 0", "Trotter · ⟨Z⟩ on 0"]);
+  assert.equal(byClass(panel, "comparison").textContent, "Trotter vs QuTiP: max 0.5, RMSE 0.5");
+  assert.equal(
+    byClass(panel, "resources").textContent,
+    "QuTiP 0.1 s · Trotter 0.2 s, 128 shots × 2, depth 4, width 2, gates 8, T 0, Toffoli 0",
+  );
+
+  const error = press(page.resultsComponent(structuredClone(payload)), ["Error"]);
+  assert.equal(byClass(error, "y-title").textContent, "Error vs QuTiP");
+  assert.equal(svgOf(error).getAttribute("aria-label"), "Error vs QuTiP versus time");
+  assert.deepEqual(legend(error), ["Trotter · ⟨Z⟩ on 0"]);
+});
+
+test("results can download the figure and the on-screen series", async () => {
+  const downloads = installDownloads(window);
+  const payload = benchmark();
+  const panel = page.resultsComponent(payload);
+  click(buttons(panel).find((node) => node.textContent === "Download figure"));
+  const figureBlob = downloads.find((item) => item.type === "image/svg+xml");
+  const figureLink = downloads.find((item) => item.name === "shadowsim-figure.svg");
+  assert.ok(figureBlob);
+  assert.ok(figureLink);
+  const markup = await figureBlob.blob.text();
+  assert.equal(markup.includes("<svg"), true);
+  assert.equal(markup.includes('class="plot"'), true);
+
+  downloads.length = 0;
+  press(panel, ["⟨Z⟩ on 1", "Error"]);
+  click(buttons(panel).find((node) => node.textContent === "Download series"));
+  const seriesBlob = downloads.find((item) => item.type === "application/json");
+  const seriesLink = downloads.find((item) => item.name === "shadowsim-series.json");
+  assert.ok(seriesBlob);
+  assert.ok(seriesLink);
+  const body = JSON.parse(await seriesBlob.blob.text());
+  assert.deepEqual(body, {
+    times: [0, 1],
+    view: "error",
+    observable: 1,
+    curves: [{ label: "QuTiP#2 · ⟨Z⟩ on 1", values: [0, 1] }],
+  });
 });
 
 test.after(() => {
