@@ -295,6 +295,23 @@ test("one simulator has no switch", () => {
   );
 });
 
+test("chart switches are toggle groups, not tabs", () => {
+  const panel = page.resultsComponent(benchmark());
+  const switches = [...panel.querySelectorAll(".chart-switch")];
+  assert.deepEqual(
+    switches.map((node) => [node.getAttribute("role"), node.getAttribute("aria-label")]),
+    [
+      ["group", "Observable"],
+      ["group", "Chart"],
+    ],
+  );
+  for (const button of switches.flatMap((node) => [...node.querySelectorAll("button")])) {
+    assert.equal(button.getAttribute("role"), null);
+    assert.equal(["true", "false"].includes(button.getAttribute("aria-pressed")), true);
+  }
+  assert.equal(panel.querySelector('[role="tab"], [role="tablist"]'), null);
+});
+
 test("the error switch replaces the curves and keeps the resource line", () => {
   const payload = benchmark();
   const curves = page.resultsComponent(payload);

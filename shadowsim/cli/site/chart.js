@@ -365,7 +365,6 @@ export function resultsComponent(payload) {
       "button",
       {
         type: "button",
-        role: "tab",
         "data-view": choice.key,
         "aria-pressed": choice.key === "curves" ? "true" : "false",
         onclick: () => {
@@ -381,7 +380,6 @@ export function resultsComponent(payload) {
       "button",
       {
         type: "button",
-        role: "tab",
         "data-observable": choice.key,
         "aria-pressed": choice.key === "all" ? "true" : "false",
         onclick: () => {
@@ -398,16 +396,12 @@ export function resultsComponent(payload) {
   const observableSwitcher = observableButtons.length
     ? el(
         "div",
-        { className: "chart-switch", role: "tablist", "aria-label": "Observable" },
+        { className: "chart-switch", role: "group", "aria-label": "Observable" },
         ...observableButtons,
       )
     : null;
   const viewSwitcher = viewButtons.length
-    ? el(
-        "div",
-        { className: "chart-switch", role: "tablist", "aria-label": "Chart" },
-        ...viewButtons,
-      )
+    ? el("div", { className: "chart-switch", role: "group", "aria-label": "Chart" }, ...viewButtons)
     : null;
   const actions = el(
     "div",
