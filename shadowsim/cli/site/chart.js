@@ -154,13 +154,45 @@ function formatMetric(value) {
   return String(Math.round(number * 10000) / 10000);
 }
 
-function legendText(curve) {
-  const metric = curve.metric;
-  if (!metric) return curve.label;
-  const max = formatMetric(metric.linf);
-  const rmse = formatMetric(metric.rmse);
-  if (!max || !rmse) return curve.label;
-  return `${curve.label}: max ${max}, RMSE ${rmse}`;
+function comparisonLines(payload) {
+  const series = Array.isArray(payload.series) ? payload.series : [];
+  if (series.length < 2) return [];
+  const errors = Array.isArray(payload.errors) ? payload.errors : [];
+  if (!errors.length) return [];
+  const reference = series[0]?.name ? String(series[0].name) : "reference";
+  const labels = Array.isArray(payload.labels) ? payload.labels : [];
+  const lines = [];
+  series.slice(1).forEach((challenger, challengerIndex) => {
+    const row = errors[challengerIndex];
+    const metrics = row && Array.isArray(row.observables) ? row.observables : [];
+    if (!metrics.length) return;
+    const name = challenger?.name ? String(challenger.name) : `challenger ${challengerIndex + 1}`;
+    const several = metrics.length > 1;
+    for (const metric of metrics) {
+      const max = formatMetric(metric.linf);
+      const rmse = formatMetric(metric.rmse);
+      if (!max || !rmse) continue;
+      const index = metric.index;
+      const observable =
+        typeof labels[index] === "string" && labels[index]
+          ? labels[index]
+          : Number.isInteger(index)
+            ? `Observable ${index}`
+            : "";
+      const head =
+        several && observable
+          ? `${name} vs ${reference} · ${observable}`
+          : `${name} vs ${reference}`;
+      lines.push(`${head}: max ${max}, RMSE ${rmse}`);
+    }
+  });
+  return lines;
+}
+
+function comparisonSummary(payload) {
+  const lines = comparisonLines(payload);
+  if (!lines.length) return null;
+  return el("p", { className: "comparison" }, lines.join(" · "));
 }
 
 function resourceName(record) {
@@ -214,12 +246,18 @@ function circuitMetrics(record) {
     ["t_count", "T"],
     ["toffoli_count", "Toffoli"],
   ];
-  return fields.map(([key, label]) => `${label} ${formatCircuitMetric(record[key])}`).join(", ");
+  return fields
+    .map(([key, label]) => {
+      const value = formatCircuitMetric(record[key]);
+      return value ? `${label} ${value}` : "";
+    })
+    .filter(Boolean)
+    .join(", ");
 }
 
 function formatCircuitMetric(value) {
   if (typeof value === "number" && Number.isInteger(value)) return String(value);
-  return "N/A";
+  return "";
 }
 
 export function savedNote(payload) {
@@ -265,8 +303,44 @@ function chartViews(payload) {
   return views;
 }
 
+function downloadBlob(filename, blob) {
+  const url = URL.createObjectURL(blob);
+  const link = el("a", { href: url, download: filename });
+  document.body.append(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
+}
+
+function downloadFigure(host) {
+  const svg = host.querySelector("svg.plot");
+  if (!svg) return;
+  const markup = new XMLSerializer().serializeToString(svg);
+  downloadBlob("shadowsim-figure.svg", new Blob([markup], { type: "image/svg+xml" }));
+}
+
+function seriesDownload(payload, view, observable) {
+  const times = Array.isArray(payload.times) ? payload.times : [];
+  const curves = shownCurves(payload, view, observable).map((curve) => ({
+    label: curve.label,
+    values: Array.isArray(curve.values) ? [...curve.values] : [],
+  }));
+  return {
+    times: [...times],
+    view,
+    observable: Number.isInteger(observable) ? observable : null,
+    curves,
+  };
+}
+
+function downloadSeries(payload, view, observable) {
+  const body = JSON.stringify(seriesDownload(payload, view, observable));
+  downloadBlob("shadowsim-series.json", new Blob([body], { type: "application/json" }));
+}
+
 export function resultsComponent(payload) {
   const note = savedNote(payload);
+  const comparison = comparisonSummary(payload);
   const views = chartViews(payload);
   const choices = observableChoices(payload);
   const host = el("div", { className: "chart-host" });
@@ -335,13 +409,36 @@ export function resultsComponent(payload) {
         ...viewButtons,
       )
     : null;
-  if (!note && !observableSwitcher && !viewSwitcher && !resources) return host.children[0];
+  const actions = el(
+    "div",
+    { className: "panel-actions" },
+    el(
+      "button",
+      {
+        type: "button",
+        className: "copy",
+        onclick: () => downloadFigure(host),
+      },
+      "Download figure",
+    ),
+    el(
+      "button",
+      {
+        type: "button",
+        className: "copy",
+        onclick: () => downloadSeries(payload, view, observable),
+      },
+      "Download series",
+    ),
+  );
   return el(
     "div",
     { className: "results" },
     note,
+    comparison,
     observableSwitcher,
     viewSwitcher,
+    actions,
     host,
     resources,
   );
@@ -484,7 +581,7 @@ function chartComponent(payload, view, observable) {
           "li",
           {},
           el("i", { style: `background:${curveColor(index, curves.length)}` }),
-          legendText(curve),
+          curve.label,
         ),
       ),
     ),
