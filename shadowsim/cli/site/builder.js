@@ -2124,10 +2124,42 @@ function clearResults() {
   setResults(resultsPlaceholder());
 }
 
+function resultsBody() {
+  const panel = document.querySelector('.panel[aria-label="Results"]');
+  return panel?.querySelector(":scope > .placeholder, :scope > .chart, :scope > .results") ?? null;
+}
+
+function staleBanner() {
+  return el("p", { className: "stale" }, "Out of date. Run again to refresh.");
+}
+
+function markResultsStale() {
+  const body = resultsBody();
+  if (!body || body.classList.contains("placeholder")) return;
+  if (!body.classList.contains("results")) {
+    const wrap = el("div", { className: "results stale" });
+    body.replaceWith(wrap);
+    wrap.append(staleBanner(), body);
+    return;
+  }
+  body.classList.add("stale");
+  if (!body.querySelector(":scope > .stale")) body.prepend(staleBanner());
+}
+
+function markResultsCurrent() {
+  const body = resultsBody();
+  if (!body?.classList.contains("results")) return;
+  body.classList.remove("stale");
+  body.querySelector(":scope > .stale")?.remove();
+}
+
 function clearStaleResults() {
   if (state.shownRun == null) return;
-  if (state.shownRun === shownRunKey()) return;
-  clearResults();
+  if (state.shownRun === shownRunKey()) {
+    markResultsCurrent();
+    return;
+  }
+  markResultsStale();
 }
 
 function requestedWritePaths(selection = runRequest()) {

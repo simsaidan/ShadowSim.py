@@ -199,6 +199,11 @@ function showingPlaceholder(window) {
   );
 }
 
+function staleBanner(window) {
+  const node = resultsNode(window);
+  return node?.querySelector(":scope > .stale") ?? null;
+}
+
 function operatorAlert(chip) {
   const alert = chip.querySelector(".chip-alert");
   const field = chip.querySelector("textarea");
@@ -242,6 +247,7 @@ module.exports = {
   setChecked,
   settle,
   showingPlaceholder,
+  staleBanner,
   toggleSite,
   typeInto,
 };
