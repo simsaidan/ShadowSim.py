@@ -37,6 +37,8 @@ test("loadPage runs the builder against a document", () => {
     "plotFraction",
     "hoverReadout",
     "nearestTimeIndex",
+    "niceTicks",
+    "seriesCsv",
   ]) {
     assert.equal(typeof page[name], "function");
   }

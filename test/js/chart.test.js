@@ -26,12 +26,18 @@ function points(line) {
 function axisLabels(root) {
   const texts = [...svgOf(root).children].filter((node) => node.localName === "text");
   const yTicks = texts
-    .filter((node) => node.getAttribute("dominant-baseline") === "middle")
+    .filter((node) => node.getAttribute("data-axis") === "y")
     .map((node) => node.textContent);
-  const xEnds = texts
-    .filter((node) => node.getAttribute("dominant-baseline") == null)
+  const xTicks = texts
+    .filter((node) => node.getAttribute("data-axis") === "x")
     .map((node) => node.textContent);
-  return [yTicks, xEnds];
+  return [yTicks, xTicks];
+}
+
+function gridlines(root) {
+  return [...svgOf(root).children].filter(
+    (node) => node.localName === "line" && node.getAttribute("class") === "grid",
+  );
 }
 
 function byClass(root, className) {
@@ -39,17 +45,25 @@ function byClass(root, className) {
 }
 
 function buttons(root) {
-  return [...root.querySelectorAll("button")];
+  return [...root.querySelectorAll("button")].filter(
+    (node) => !node.closest(".legend") && !node.classList.contains("chart-table-toggle"),
+  );
 }
 
 function pressed(root) {
-  return buttons(root)
+  return [...root.querySelectorAll(".chart-switch button")]
     .filter((node) => node.getAttribute("aria-pressed") === "true")
     .map((node) => node.textContent);
 }
 
 function legend(root) {
-  return [...byClass(root, "legend").children].map((item) => item.textContent);
+  return [...byClass(root, "legend").querySelectorAll("button")].map((item) => item.textContent);
+}
+
+function legendPressed(root) {
+  return [...byClass(root, "legend").querySelectorAll("button")].map((item) =>
+    item.getAttribute("aria-pressed"),
+  );
 }
 
 function lineTitles(root) {
@@ -57,8 +71,8 @@ function lineTitles(root) {
 }
 
 function swatches(root) {
-  return [...byClass(root, "legend").children].map((item) => {
-    const style = item.children[0].getAttribute("style");
+  return [...byClass(root, "legend").querySelectorAll("button i")].map((item) => {
+    const style = item.getAttribute("style");
     assert.equal(style.startsWith("background:"), true);
     return style.slice("background:".length);
   });
@@ -138,6 +152,14 @@ function benchmark() {
 const resources =
   "QuTiP#1 0.41 s · aer 1.2 s, 256 shots × 11, depth 4, width 2, gates 9, T 1, Toffoli 2";
 
+test("niceTicks covers a range with even steps", () => {
+  assert.deepEqual([...page.niceTicks(-1, 1)], [-1, -0.5, 0, 0.5, 1]);
+  assert.deepEqual([...page.niceTicks(0, 1)], [0, 0.2, 0.4, 0.6, 0.8, 1]);
+  assert.deepEqual([...page.niceTicks(0, 2)], [0, 0.5, 1, 1.5, 2]);
+  assert.deepEqual([...page.niceTicks(3, 3)], [2, 2.5, 3, 3.5, 4]);
+  assert.deepEqual([...page.ticksInDomain(0, 1.25)], [0, 0.5, 1, 1.25]);
+});
+
 test("two observables show both curves and scales", () => {
   const chart = page.chartComponent({
     times: [0, 1.25],
@@ -147,10 +169,10 @@ test("two observables show both curves and scales", () => {
     ],
   });
   assert.equal(polylines(chart).length, 2);
-  const [yTicks, xEnds] = axisLabels(chart);
-  assert.equal(yTicks[0], "-1");
-  assert.equal(yTicks.at(-1), "1");
-  assert.deepEqual(xEnds, ["0", "1.25"]);
+  const [yTicks, xTicks] = axisLabels(chart);
+  assert.deepEqual(yTicks, ["-1", "-0.5", "0", "0.5", "1"]);
+  assert.deepEqual(xTicks, ["0", "0.5", "1", "1.25"]);
+  assert.equal(gridlines(chart).length, 5);
 });
 
 test("mismatched series drop missing points", () => {
@@ -168,9 +190,10 @@ test("mismatched series drop missing points", () => {
   assert.equal(longer.length, 2);
   assert.equal(shorter.length, 1);
   assert.equal(longer[0][0] < shorter[0][0] && shorter[0][0] < longer[1][0], true);
-  const [yTicks, xEnds] = axisLabels(chart);
-  assert.deepEqual(yTicks, ["0", "0.5", "1"]);
-  assert.deepEqual(xEnds, ["0", "2"]);
+  const [yTicks, xTicks] = axisLabels(chart);
+  assert.deepEqual(yTicks, ["0", "0.2", "0.4", "0.6", "0.8", "1"]);
+  assert.deepEqual(xTicks, ["0", "0.5", "1", "1.5", "2"]);
+  assert.equal(gridlines(chart).length, 7);
 });
 
 test("six curves use six legend colors", () => {
@@ -232,10 +255,147 @@ test("hover readout names the nearest values", () => {
   assert.equal(page.hoverReadout(payload, 1), "t = 1 · ⟨Z⟩ on 1 = 0.5");
   assert.equal(page.hoverReadout(payload, 0), "t = 0 · ⟨Z⟩ on 0 = 1");
   assert.equal(page.hoverReadout(payload, 3), "");
+  assert.equal(
+    page.hoverReadout(payload, 0, null, null, [{ label: "⟨Z⟩ on 1", values: [null, 0.5, 1] }]),
+    "",
+  );
+  assert.equal(
+    page.hoverReadout(payload, 2, null, null, [{ label: "⟨Z⟩ on 1", values: [null, 0.5, 1] }]),
+    "t = 2 · ⟨Z⟩ on 1 = 1",
+  );
+});
+
+test("hover draws a crosshair and point markers", () => {
+  const chart = page.chartComponent({
+    times: [0, 1, 2],
+    observables: [
+      [1, Number.NaN, 0],
+      [null, 0.5, 1],
+    ],
+    labels: ["⟨Z⟩ on 0", "⟨Z⟩ on 1"],
+  });
+  const svg = svgOf(chart);
+  svg.getBoundingClientRect = () => ({ left: 0, top: 0, width: 640, height: 220 });
+  assert.equal(svg.querySelector(".crosshair"), null);
+  assert.equal(svg.querySelectorAll(".marker").length, 0);
+
+  svg.dispatchEvent(new window.PointerEvent("pointermove", { clientX: 56, clientY: 110 }));
+  const crosshair = svg.querySelector(".crosshair");
+  assert.ok(crosshair);
+  assert.equal(crosshair.getAttribute("x1"), crosshair.getAttribute("x2"));
+  assert.equal(crosshair.getAttribute("x1"), "56");
+  const markers = [...svg.querySelectorAll(".marker")];
+  assert.equal(markers.length, 1);
+  assert.equal(markers[0].getAttribute("cx"), "56");
+  assert.equal(byClass(chart, "readout").textContent, "t = 0 · ⟨Z⟩ on 0 = 1");
+
+  svg.dispatchEvent(new window.PointerEvent("pointermove", { clientX: 334, clientY: 110 }));
+  assert.equal(svg.querySelectorAll(".marker").length, 1);
+  assert.equal(byClass(chart, "readout").textContent, "t = 1 · ⟨Z⟩ on 1 = 0.5");
+
+  svg.dispatchEvent(new window.PointerEvent("pointerleave"));
+  assert.equal(svg.querySelector(".crosshair"), null);
+  assert.equal(svg.querySelectorAll(".marker").length, 0);
+  assert.equal(byClass(chart, "readout").textContent, "");
+});
+
+test("show data table lists visible series", () => {
+  const chart = page.chartComponent({
+    times: [0, 1],
+    observables: [
+      [1, -1],
+      [0, 1],
+    ],
+    labels: ["⟨Z⟩ on 0", "⟨Z⟩ on 1"],
+  });
+  const toggle = () => chart.querySelector(".chart-table-toggle");
+  assert.equal(toggle().textContent, "Show data table");
+  assert.equal(toggle().getAttribute("aria-expanded"), "false");
+  assert.equal(chart.querySelector(".chart-table"), null);
+
+  click(toggle());
+  assert.equal(toggle().textContent, "Hide data table");
+  assert.equal(toggle().getAttribute("aria-expanded"), "true");
+  const table = chart.querySelector(".chart-table");
+  assert.ok(table);
+  assert.deepEqual(
+    [...table.querySelectorAll("thead th")].map((node) => node.textContent),
+    ["Time", "⟨Z⟩ on 0", "⟨Z⟩ on 1"],
+  );
+  assert.deepEqual(
+    [...table.querySelectorAll("tbody tr")].map((row) =>
+      [...row.children].map((cell) => cell.textContent),
+    ),
+    [
+      ["0", "1", "0"],
+      ["1", "-1", "1"],
+    ],
+  );
+
+  click(byClass(chart, "legend").querySelectorAll("button")[0]);
+  assert.deepEqual(
+    [...chart.querySelectorAll(".chart-table thead th")].map((node) => node.textContent),
+    ["Time", "⟨Z⟩ on 1"],
+  );
+  assert.deepEqual(
+    [...chart.querySelectorAll(".chart-table tbody tr")].map((row) =>
+      [...row.children].map((cell) => cell.textContent),
+    ),
+    [
+      ["0", "0"],
+      ["1", "1"],
+    ],
+  );
+
+  click(toggle());
+  assert.equal(chart.querySelector(".chart-table"), null);
+  assert.equal(toggle().getAttribute("aria-expanded"), "false");
+});
+
+test("legend toggles hide and restore curves", () => {
+  const chart = page.chartComponent({
+    times: [0, 1],
+    observables: [
+      [1, -1],
+      [0, 1],
+    ],
+    labels: ["⟨Z⟩ on 0", "⟨Z⟩ on 1"],
+  });
+  assert.equal(polylines(chart).length, 2);
+  assert.deepEqual(legendPressed(chart), ["true", "true"]);
+  assert.deepEqual(axisLabels(chart)[0], ["-1", "-0.5", "0", "0.5", "1"]);
+
+  click(byClass(chart, "legend").querySelectorAll("button")[0]);
+  assert.equal(polylines(chart).length, 1);
+  assert.deepEqual(lineTitles(chart), ["⟨Z⟩ on 1"]);
+  assert.deepEqual(legendPressed(chart), ["false", "true"]);
+  assert.equal(byClass(chart, "legend").querySelector("button.off").textContent, "⟨Z⟩ on 0");
+  assert.deepEqual(axisLabels(chart)[0], ["0", "0.2", "0.4", "0.6", "0.8", "1"]);
+  assert.equal(polylines(chart)[0].getAttribute("stroke"), swatches(chart)[1]);
+
+  const svg = svgOf(chart);
+  svg.getBoundingClientRect = () => ({ left: 0, top: 0, width: 640, height: 220 });
+  svg.dispatchEvent(new window.PointerEvent("pointermove", { clientX: 56, clientY: 110 }));
+  assert.equal(byClass(chart, "readout").textContent, "t = 0 · ⟨Z⟩ on 1 = 0");
+  assert.equal(svg.querySelectorAll(".marker").length, 1);
+
+  click(byClass(chart, "legend").querySelectorAll("button")[0]);
+  assert.equal(polylines(chart).length, 2);
+  assert.deepEqual(legendPressed(chart), ["true", "true"]);
+  assert.deepEqual(axisLabels(chart)[0], ["-1", "-0.5", "0", "0.5", "1"]);
+
+  click(byClass(chart, "legend").querySelectorAll("button")[0]);
+  click(byClass(chart, "legend").querySelectorAll("button")[1]);
+  assert.equal(svgOf(chart), null);
+  assert.equal(byClass(chart, "placeholder").textContent, "The run returned no curves.");
+  assert.deepEqual(legendPressed(chart), ["false", "false"]);
+  click(byClass(chart, "legend").querySelectorAll("button")[1]);
+  assert.equal(polylines(chart).length, 1);
+  assert.deepEqual(lineTitles(chart), ["⟨Z⟩ on 1"]);
 });
 
 test("one simulator has no switch", () => {
-  const downloads = ["Download figure", "Download series"];
+  const downloads = ["Download PNG", "Download CSV"];
   const bare = page.resultsComponent({
     times: [0, 1],
     observables: [[1, 0]],
@@ -325,8 +485,8 @@ test("the error switch replaces the curves and keeps the resource line", () => {
       "QuTiP#1",
       "QuTiP#2",
       "Error",
-      "Download figure",
-      "Download series",
+      "Download PNG",
+      "Download CSV",
     ],
   );
   assert.deepEqual(pressed(curves), ["All", "Curves"]);
@@ -356,7 +516,7 @@ test("the error switch replaces the curves and keeps the resource line", () => {
     "QuTiP#2 vs QuTiP#1 · ⟨Z⟩ on 0: max 2, RMSE 1.5 · QuTiP#2 vs QuTiP#1 · ⟨Z⟩ on 1: max 1, RMSE 0.5",
   );
   const [yTicks] = axisLabels(error);
-  assert.deepEqual(yTicks, ["0", "1", "2"]);
+  assert.deepEqual(yTicks, ["0", "0.5", "1", "1.5", "2"]);
   const difference = points(polylines(error)[0]);
   assert.equal(difference[0][1] < difference[1][1], true);
   assert.equal(byClass(error, "resources").textContent, resources);
@@ -482,33 +642,71 @@ test("axis tabs and legend share QuTiP and Trotter titles", () => {
   assert.deepEqual(legend(error), ["Trotter · ⟨Z⟩ on 0"]);
 });
 
-test("results can download the figure and the on-screen series", async () => {
+test("seriesCsv builds a table for the on-screen curves", () => {
+  const payload = benchmark();
+  assert.equal(
+    page.seriesCsv(payload, "error", 1),
+    ["t,QuTiP#2 · ⟨Z⟩ on 1", "0,0", "1,1"].join("\n"),
+  );
+  assert.equal(
+    page.seriesCsv(
+      {
+        times: [0, 1],
+        labels: ["a,b", 'quote "x"'],
+        observables: [
+          [1, 2],
+          [3, 4],
+        ],
+      },
+      null,
+      null,
+    ),
+    ['t,"a,b","quote ""x"""', "0,1,3", "1,2,4"].join("\n"),
+  );
+});
+
+test("results can download the PNG and CSV", async () => {
   const downloads = installDownloads(window);
+  window.Image = class {
+    set src(_value) {
+      queueMicrotask(() => {
+        if (typeof this.onload === "function") this.onload();
+      });
+    }
+  };
+  window.HTMLCanvasElement.prototype.getContext = () => ({
+    fillStyle: "",
+    fillRect() {},
+    drawImage() {},
+  });
+  window.HTMLCanvasElement.prototype.toBlob = function toBlob(callback) {
+    callback(new window.Blob(["png-bytes"], { type: "image/png" }));
+  };
+
   const payload = benchmark();
   const panel = page.resultsComponent(payload);
-  click(buttons(panel).find((node) => node.textContent === "Download figure"));
-  const figureBlob = downloads.find((item) => item.type === "image/svg+xml");
-  const figureLink = downloads.find((item) => item.name === "shadowsim-figure.svg");
+  click(buttons(panel).find((node) => node.textContent === "Download PNG"));
+  for (
+    let step = 0;
+    step < 10 && !downloads.some((item) => item.name === "shadowsim-figure.png");
+    step++
+  ) {
+    await Promise.resolve();
+  }
+  const figureBlob = downloads.find((item) => item.type === "image/png");
+  const figureLink = downloads.find((item) => item.name === "shadowsim-figure.png");
   assert.ok(figureBlob);
   assert.ok(figureLink);
-  const markup = await figureBlob.blob.text();
-  assert.equal(markup.includes("<svg"), true);
-  assert.equal(markup.includes('class="plot"'), true);
+  assert.equal(await figureBlob.blob.text(), "png-bytes");
 
   downloads.length = 0;
   press(panel, ["⟨Z⟩ on 1", "Error"]);
-  click(buttons(panel).find((node) => node.textContent === "Download series"));
-  const seriesBlob = downloads.find((item) => item.type === "application/json");
-  const seriesLink = downloads.find((item) => item.name === "shadowsim-series.json");
+  click(buttons(panel).find((node) => node.textContent === "Download CSV"));
+  const seriesBlob = downloads.find((item) => item.type === "text/csv");
+  const seriesLink = downloads.find((item) => item.name === "shadowsim-series.csv");
   assert.ok(seriesBlob);
   assert.ok(seriesLink);
-  const body = JSON.parse(await seriesBlob.blob.text());
-  assert.deepEqual(body, {
-    times: [0, 1],
-    view: "error",
-    observable: 1,
-    curves: [{ label: "QuTiP#2 · ⟨Z⟩ on 1", values: [0, 1] }],
-  });
+  assert.equal(await seriesBlob.blob.text(), ["t,QuTiP#2 · ⟨Z⟩ on 1", "0,0", "1,1"].join("\n"));
 });
 
 test.after(() => {

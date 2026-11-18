@@ -10,6 +10,54 @@ function formatAxis(value) {
   return String(Math.round(value * 1000) / 1000);
 }
 
+function niceNum(range, round) {
+  if (!Number.isFinite(range) || range <= 0) return 1;
+  const exponent = Math.floor(Math.log10(range));
+  const fraction = range / 10 ** exponent;
+  let nice;
+  if (round) {
+    if (fraction < 1.5) nice = 1;
+    else if (fraction < 3) nice = 2;
+    else if (fraction < 7) nice = 5;
+    else nice = 10;
+  } else if (fraction <= 1) nice = 1;
+  else if (fraction <= 2) nice = 2;
+  else if (fraction <= 5) nice = 5;
+  else nice = 10;
+  return nice * 10 ** exponent;
+}
+
+function niceTicks(min, max, targetCount = 5) {
+  if (!Number.isFinite(min) || !Number.isFinite(max)) return [];
+  let lo = Number(min);
+  let hi = Number(max);
+  if (lo === hi) {
+    lo -= 1;
+    hi += 1;
+  } else if (lo > hi) {
+    [lo, hi] = [hi, lo];
+  }
+  const target = Math.max(2, Math.round(Number(targetCount)) || 5);
+  const range = niceNum(hi - lo, false);
+  const step = niceNum(range / (target - 1), true);
+  const start = Math.floor(lo / step) * step;
+  const end = Math.ceil(hi / step) * step;
+  const count = Math.round((end - start) / step);
+  const ticks = [];
+  for (let index = 0; index <= count; index++) {
+    ticks.push(Number((start + index * step).toPrecision(12)));
+  }
+  return ticks;
+}
+
+function ticksInDomain(min, max, targetCount = 5) {
+  const ticks = niceTicks(min, max, targetCount).filter((tick) => tick >= min && tick <= max);
+  if (!ticks.length) return [min, max];
+  if (ticks[0] !== min) ticks.unshift(min);
+  if (ticks[ticks.length - 1] !== max) ticks.push(max);
+  return ticks;
+}
+
 function chartCurves(payload) {
   const shared = Array.isArray(payload.labels) ? payload.labels : [];
   if (Array.isArray(payload.series) && payload.series.length) {
@@ -130,13 +178,14 @@ function shownCurves(payload, view, observable) {
   return matched.filter((curve) => curve.index === observable);
 }
 
-function hoverReadout(payload, index, view, observable) {
+function hoverReadout(payload, index, view, observable, curves) {
   const times = Array.isArray(payload.times) ? payload.times : [];
   if (!Number.isInteger(index) || index < 0 || index >= times.length) return "";
   const time = Number(times[index]);
   if (!Number.isFinite(time)) return "";
+  const listed = Array.isArray(curves) ? curves : shownCurves(payload, view, observable);
   const parts = [];
-  for (const curve of shownCurves(payload, view, observable)) {
+  for (const curve of listed) {
     const values = Array.isArray(curve.values) ? curve.values : [];
     const raw = values[index];
     if (raw == null) continue;
@@ -312,11 +361,10 @@ function downloadBlob(filename, blob) {
   URL.revokeObjectURL(url);
 }
 
-function downloadFigure(host) {
-  const svg = host.querySelector("svg.plot");
-  if (!svg) return;
-  const markup = new XMLSerializer().serializeToString(svg);
-  downloadBlob("shadowsim-figure.svg", new Blob([markup], { type: "image/svg+xml" }));
+function csvCell(value) {
+  const text = value == null ? "" : String(value);
+  if (/[",\n\r]/.test(text)) return `"${text.replaceAll('"', '""')}"`;
+  return text;
 }
 
 function seriesDownload(payload, view, observable) {
@@ -333,9 +381,70 @@ function seriesDownload(payload, view, observable) {
   };
 }
 
+function seriesCsv(payload, view, observable) {
+  const data = seriesDownload(payload, view, observable);
+  const header = ["t", ...data.curves.map((curve) => curve.label)].map(csvCell).join(",");
+  const rows = data.times.map((time, index) => {
+    const cells = [
+      time,
+      ...data.curves.map((curve) => {
+        const raw = curve.values[index];
+        if (raw == null) return "";
+        const value = Number(raw);
+        return Number.isFinite(value) ? value : "";
+      }),
+    ];
+    return cells.map(csvCell).join(",");
+  });
+  return [header, ...rows].join("\n");
+}
+
 function downloadSeries(payload, view, observable) {
-  const body = JSON.stringify(seriesDownload(payload, view, observable));
-  downloadBlob("shadowsim-series.json", new Blob([body], { type: "application/json" }));
+  const body = seriesCsv(payload, view, observable);
+  downloadBlob("shadowsim-series.csv", new Blob([body], { type: "text/csv" }));
+}
+
+function plotSize(svg) {
+  const box = svg.viewBox?.baseVal;
+  const width = box?.width ? box.width : Number(svg.getAttribute("width")) || 640;
+  const height = box?.height ? box.height : Number(svg.getAttribute("height")) || 220;
+  return { width, height };
+}
+
+function renderSvgPng(svg, done) {
+  if (!svg || typeof done !== "function") return;
+  const markup = new XMLSerializer().serializeToString(svg);
+  const url = URL.createObjectURL(new Blob([markup], { type: "image/svg+xml;charset=utf-8" }));
+  const image = new Image();
+  image.onload = () => {
+    const { width, height } = plotSize(svg);
+    const canvas = document.createElement("canvas");
+    canvas.width = width;
+    canvas.height = height;
+    const ctx = canvas.getContext("2d");
+    URL.revokeObjectURL(url);
+    if (!ctx || typeof canvas.toBlob !== "function") {
+      done(null);
+      return;
+    }
+    ctx.fillStyle = "#ffffff";
+    ctx.fillRect(0, 0, width, height);
+    ctx.drawImage(image, 0, 0);
+    canvas.toBlob((blob) => done(blob || null), "image/png");
+  };
+  image.onerror = () => {
+    URL.revokeObjectURL(url);
+    done(null);
+  };
+  image.src = url;
+}
+
+function downloadFigure(host) {
+  const svg = host.querySelector("svg.plot");
+  if (!svg) return;
+  renderSvgPng(svg, (blob) => {
+    if (blob) downloadBlob("shadowsim-figure.png", blob);
+  });
 }
 
 export function resultsComponent(payload) {
@@ -413,7 +522,7 @@ export function resultsComponent(payload) {
         className: "copy",
         onclick: () => downloadFigure(host),
       },
-      "Download figure",
+      "Download PNG",
     ),
     el(
       "button",
@@ -422,7 +531,7 @@ export function resultsComponent(payload) {
         className: "copy",
         onclick: () => downloadSeries(payload, view, observable),
       },
-      "Download series",
+      "Download CSV",
     ),
   );
   return el(
@@ -467,117 +576,288 @@ function chartComponent(payload, view, observable) {
   if (!times.length || !curves.length) {
     return el("p", { className: "placeholder" }, "The run returned no curves.");
   }
-  const plotted = curves.map((curve) => finitePairs(times, curve.values));
+  const hidden = new Set();
+  let showTable = false;
+  const root = el("div", { className: "chart" });
   const width = 640;
   const height = 220;
   const pad = 28;
   const padLeft = 56;
   const first = Number(times[0]);
   const last = Number(times[times.length - 1]);
-  let yMin = Infinity;
-  let yMax = -Infinity;
-  for (const pairs of plotted) {
-    for (const [, value] of pairs) {
-      yMin = Math.min(yMin, value);
-      yMax = Math.max(yMax, value);
-    }
-  }
-  if (!Number.isFinite(yMin) || !Number.isFinite(yMax)) {
-    return el("p", { className: "placeholder" }, "The run returned no curves.");
-  }
-  if (yMin === yMax) {
-    yMin -= 1;
-    yMax += 1;
-  }
-  const xSpan = last - first || 1;
-  const ySpan = yMax - yMin;
-  const plotLeft = padLeft;
-  const plotRight = width - pad;
-  const sx = (time) => plotLeft + ((Number(time) - first) / xSpan) * (plotRight - plotLeft);
-  const sy = (value) => height - pad - ((Number(value) - yMin) / ySpan) * (height - pad * 2);
-  const yTitle = error ? errorAxisTitle(payload) : yAxisTitle(curves);
-  const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
-  svg.setAttribute("class", "plot");
-  svg.setAttribute("viewBox", `0 0 ${width} ${height}`);
-  svg.setAttribute("role", "img");
-  svg.setAttribute("aria-label", `${yTitle} versus time`);
-  const axis = document.createElementNS("http://www.w3.org/2000/svg", "line");
-  axis.setAttribute("x1", String(padLeft));
-  axis.setAttribute("x2", String(width - pad));
-  axis.setAttribute("y1", String(height - pad));
-  axis.setAttribute("y2", String(height - pad));
-  const yAxis = document.createElementNS("http://www.w3.org/2000/svg", "line");
-  yAxis.setAttribute("x1", String(padLeft));
-  yAxis.setAttribute("x2", String(padLeft));
-  yAxis.setAttribute("y1", String(pad));
-  yAxis.setAttribute("y2", String(height - pad));
-  svg.append(axis, yAxis);
-  plotted.forEach((pairs, index) => {
-    if (!pairs.length) return;
-    const line = document.createElementNS("http://www.w3.org/2000/svg", "polyline");
-    line.setAttribute("fill", "none");
-    line.setAttribute("stroke", curveColor(index, curves.length));
-    line.setAttribute("stroke-width", "2");
-    line.setAttribute("points", pairs.map(([time, value]) => `${sx(time)},${sy(value)}`).join(" "));
-    const title = document.createElementNS("http://www.w3.org/2000/svg", "title");
-    title.textContent = curves[index].label;
-    line.append(title);
-    svg.append(line);
-  });
-  for (const tick of [yMin, (yMin + yMax) / 2, yMax]) {
-    const label = document.createElementNS("http://www.w3.org/2000/svg", "text");
-    label.setAttribute("x", String(padLeft - 6));
-    label.setAttribute("y", String(sy(tick)));
-    label.setAttribute("text-anchor", "end");
-    label.setAttribute("dominant-baseline", "middle");
-    label.textContent = formatAxis(tick);
-    svg.append(label);
-  }
-  const startLabel = document.createElementNS("http://www.w3.org/2000/svg", "text");
-  startLabel.setAttribute("x", String(padLeft));
-  startLabel.setAttribute("y", String(height - 8));
-  startLabel.textContent = formatAxis(first);
-  const endLabel = document.createElementNS("http://www.w3.org/2000/svg", "text");
-  endLabel.setAttribute("x", String(width - pad));
-  endLabel.setAttribute("y", String(height - 8));
-  endLabel.setAttribute("text-anchor", "end");
-  endLabel.textContent = formatAxis(last);
-  svg.append(startLabel, endLabel);
-  const readout = el("p", { className: "readout" });
-  svg.addEventListener("pointermove", (event) => {
-    const rect = svg.getBoundingClientRect();
-    if (!rect.width) return;
-    const x = ((event.clientX - rect.left) / rect.width) * width;
-    const fraction = plotFraction(x, plotLeft, plotRight);
-    readout.textContent =
-      fraction == null
-        ? ""
-        : hoverReadout(payload, nearestTimeIndex(payload, fraction), view, observable);
-  });
-  svg.addEventListener("pointerleave", () => {
-    readout.textContent = "";
-  });
-  return el(
-    "div",
-    { className: "chart" },
-    el(
-      "div",
-      { className: "plot-frame" },
-      el("span", { className: "y-title" }, yTitle),
-      el("div", { className: "plot-column" }, svg, el("p", { className: "x-title" }, "Time")),
-    ),
-    readout,
-    el(
+
+  function legendList() {
+    return el(
       "ul",
       { className: "legend" },
-      ...curves.map((curve, index) =>
-        el(
+      ...curves.map((curve, index) => {
+        const on = !hidden.has(index);
+        return el(
           "li",
           {},
-          el("i", { style: `background:${curveColor(index, curves.length)}` }),
-          curve.label,
+          el(
+            "button",
+            {
+              type: "button",
+              "aria-pressed": on ? "true" : "false",
+              className: on ? null : "off",
+              onclick: () => {
+                if (hidden.has(index)) hidden.delete(index);
+                else hidden.add(index);
+                render();
+              },
+            },
+            el("i", { style: `background:${curveColor(index, curves.length)}` }),
+            curve.label,
+          ),
+        );
+      }),
+    );
+  }
+
+  function tableToggle() {
+    return el(
+      "button",
+      {
+        type: "button",
+        className: "chart-table-toggle",
+        "aria-expanded": showTable ? "true" : "false",
+        onclick: () => {
+          showTable = !showTable;
+          render();
+        },
+      },
+      showTable ? "Hide data table" : "Show data table",
+    );
+  }
+
+  function dataTable(visible) {
+    if (!showTable) return null;
+    const listed = visible.map((entry) => entry.curve);
+    return el(
+      "table",
+      { className: "chart-table" },
+      el(
+        "thead",
+        {},
+        el(
+          "tr",
+          {},
+          el("th", { scope: "col" }, "Time"),
+          ...listed.map((curve) => el("th", { scope: "col" }, curve.label)),
         ),
       ),
-    ),
-  );
+      el(
+        "tbody",
+        {},
+        ...times.map((time, index) =>
+          el(
+            "tr",
+            {},
+            el("th", { scope: "row" }, formatAxis(Number(time))),
+            ...listed.map((curve) => {
+              const values = Array.isArray(curve.values) ? curve.values : [];
+              const raw = values[index];
+              if (raw == null) return el("td", {}, "");
+              const value = Number(raw);
+              return el("td", {}, Number.isFinite(value) ? formatAxis(value) : "");
+            }),
+          ),
+        ),
+      ),
+    );
+  }
+
+  function chartChrome(visible) {
+    return [legendList(), tableToggle(), dataTable(visible)].filter(Boolean);
+  }
+
+  function render() {
+    const visible = curves
+      .map((curve, index) => ({ curve, index }))
+      .filter((entry) => !hidden.has(entry.index));
+    if (!visible.length) {
+      root.replaceChildren(
+        el("p", { className: "placeholder" }, "The run returned no curves."),
+        ...chartChrome(visible),
+      );
+      return;
+    }
+    const plotted = visible.map((entry) => ({
+      ...entry,
+      pairs: finitePairs(times, entry.curve.values),
+    }));
+    let yMin = Infinity;
+    let yMax = -Infinity;
+    for (const entry of plotted) {
+      for (const [, value] of entry.pairs) {
+        yMin = Math.min(yMin, value);
+        yMax = Math.max(yMax, value);
+      }
+    }
+    if (!Number.isFinite(yMin) || !Number.isFinite(yMax)) {
+      root.replaceChildren(
+        el("p", { className: "placeholder" }, "The run returned no curves."),
+        ...chartChrome(visible),
+      );
+      return;
+    }
+    if (yMin === yMax) {
+      yMin -= 1;
+      yMax += 1;
+    }
+    const yTicks = niceTicks(yMin, yMax);
+    yMin = yTicks[0];
+    yMax = yTicks[yTicks.length - 1];
+    const xTicks = ticksInDomain(first, last);
+    const xSpan = last - first || 1;
+    const ySpan = yMax - yMin || 1;
+    const plotLeft = padLeft;
+    const plotRight = width - pad;
+    const plotTop = pad;
+    const plotBottom = height - pad;
+    const sx = (time) => plotLeft + ((Number(time) - first) / xSpan) * (plotRight - plotLeft);
+    const sy = (value) => plotBottom - ((Number(value) - yMin) / ySpan) * (plotBottom - plotTop);
+    const listed = visible.map((entry) => entry.curve);
+    const yTitle = error ? errorAxisTitle(payload) : yAxisTitle(listed);
+    const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+    svg.setAttribute("class", "plot");
+    svg.setAttribute("viewBox", `0 0 ${width} ${height}`);
+    svg.setAttribute("role", "img");
+    svg.setAttribute("aria-label", `${yTitle} versus time`);
+    for (const tick of yTicks) {
+      if (tick === yMin || tick === yMax) continue;
+      const grid = document.createElementNS("http://www.w3.org/2000/svg", "line");
+      grid.setAttribute("class", "grid");
+      grid.setAttribute("x1", String(plotLeft));
+      grid.setAttribute("x2", String(plotRight));
+      grid.setAttribute("y1", String(sy(tick)));
+      grid.setAttribute("y2", String(sy(tick)));
+      svg.append(grid);
+    }
+    for (const tick of xTicks) {
+      if (tick === first || tick === last) continue;
+      const grid = document.createElementNS("http://www.w3.org/2000/svg", "line");
+      grid.setAttribute("class", "grid");
+      grid.setAttribute("x1", String(sx(tick)));
+      grid.setAttribute("x2", String(sx(tick)));
+      grid.setAttribute("y1", String(plotTop));
+      grid.setAttribute("y2", String(plotBottom));
+      svg.append(grid);
+    }
+    const axis = document.createElementNS("http://www.w3.org/2000/svg", "line");
+    axis.setAttribute("x1", String(padLeft));
+    axis.setAttribute("x2", String(width - pad));
+    axis.setAttribute("y1", String(height - pad));
+    axis.setAttribute("y2", String(height - pad));
+    const yAxis = document.createElementNS("http://www.w3.org/2000/svg", "line");
+    yAxis.setAttribute("x1", String(padLeft));
+    yAxis.setAttribute("x2", String(padLeft));
+    yAxis.setAttribute("y1", String(pad));
+    yAxis.setAttribute("y2", String(height - pad));
+    svg.append(axis, yAxis);
+    for (const entry of plotted) {
+      if (!entry.pairs.length) continue;
+      const line = document.createElementNS("http://www.w3.org/2000/svg", "polyline");
+      line.setAttribute("fill", "none");
+      line.setAttribute("stroke", curveColor(entry.index, curves.length));
+      line.setAttribute("stroke-width", "2");
+      line.setAttribute(
+        "points",
+        entry.pairs.map(([time, value]) => `${sx(time)},${sy(value)}`).join(" "),
+      );
+      const title = document.createElementNS("http://www.w3.org/2000/svg", "title");
+      title.textContent = entry.curve.label;
+      line.append(title);
+      svg.append(line);
+    }
+    for (const tick of yTicks) {
+      const label = document.createElementNS("http://www.w3.org/2000/svg", "text");
+      label.setAttribute("data-axis", "y");
+      label.setAttribute("x", String(padLeft - 6));
+      label.setAttribute("y", String(sy(tick)));
+      label.setAttribute("text-anchor", "end");
+      label.setAttribute("dominant-baseline", "middle");
+      label.textContent = formatAxis(tick);
+      svg.append(label);
+    }
+    for (const [index, tick] of xTicks.entries()) {
+      const label = document.createElementNS("http://www.w3.org/2000/svg", "text");
+      label.setAttribute("data-axis", "x");
+      label.setAttribute("x", String(sx(tick)));
+      label.setAttribute("y", String(height - 8));
+      if (index === xTicks.length - 1) label.setAttribute("text-anchor", "end");
+      else if (index > 0) label.setAttribute("text-anchor", "middle");
+      label.textContent = formatAxis(tick);
+      svg.append(label);
+    }
+    const hover = document.createElementNS("http://www.w3.org/2000/svg", "g");
+    hover.setAttribute("class", "hover");
+    svg.append(hover);
+    const readout = el("p", { className: "readout" });
+    function clearHover() {
+      hover.replaceChildren();
+      readout.textContent = "";
+    }
+    function showHover(index) {
+      hover.replaceChildren();
+      if (!Number.isInteger(index) || index < 0 || index >= times.length) {
+        readout.textContent = "";
+        return;
+      }
+      const time = Number(times[index]);
+      if (!Number.isFinite(time)) {
+        readout.textContent = "";
+        return;
+      }
+      const x = sx(time);
+      const crosshair = document.createElementNS("http://www.w3.org/2000/svg", "line");
+      crosshair.setAttribute("class", "crosshair");
+      crosshair.setAttribute("x1", String(x));
+      crosshair.setAttribute("x2", String(x));
+      crosshair.setAttribute("y1", String(plotTop));
+      crosshair.setAttribute("y2", String(plotBottom));
+      hover.append(crosshair);
+      for (const entry of visible) {
+        const values = Array.isArray(entry.curve.values) ? entry.curve.values : [];
+        const raw = values[index];
+        if (raw == null) continue;
+        const value = Number(raw);
+        if (!Number.isFinite(value)) continue;
+        const marker = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+        marker.setAttribute("class", "marker");
+        marker.setAttribute("cx", String(x));
+        marker.setAttribute("cy", String(sy(value)));
+        marker.setAttribute("r", "4");
+        marker.setAttribute("fill", curveColor(entry.index, curves.length));
+        hover.append(marker);
+      }
+      readout.textContent = hoverReadout(payload, index, view, observable, listed);
+    }
+    svg.addEventListener("pointermove", (event) => {
+      const rect = svg.getBoundingClientRect();
+      if (!rect.width) return;
+      const x = ((event.clientX - rect.left) / rect.width) * width;
+      const fraction = plotFraction(x, plotLeft, plotRight);
+      if (fraction == null) {
+        clearHover();
+        return;
+      }
+      showHover(nearestTimeIndex(payload, fraction));
+    });
+    svg.addEventListener("pointerleave", clearHover);
+    root.replaceChildren(
+      el(
+        "div",
+        { className: "plot-frame" },
+        el("span", { className: "y-title" }, yTitle),
+        el("div", { className: "plot-column" }, svg, el("p", { className: "x-title" }, "Time")),
+      ),
+      readout,
+      ...chartChrome(visible),
+    );
+  }
+
+  render();
+  return root;
 }
