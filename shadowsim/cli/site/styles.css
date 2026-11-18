@@ -463,6 +463,7 @@ body {
 .run:focus-visible,
 .clear:focus-visible,
 .board-file:focus-visible,
+.undo-clear:focus-visible,
 .block:focus-visible,
 .remove:focus-visible,
 .done:focus-visible,
@@ -664,6 +665,33 @@ body {
 
 .status-clock {
   display: block;
+}
+
+.clear-undo {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0 0 16px;
+  border-radius: 10px;
+  background: var(--status);
+  color: var(--muted);
+  padding: 12px 14px;
+  font-size: 14.5px;
+}
+
+.undo-clear {
+  appearance: none;
+  border: 1px solid var(--line);
+  background: var(--white);
+  color: var(--ink);
+  border-radius: 999px;
+  padding: 8px 14px;
+  font: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  white-space: nowrap;
+  cursor: pointer;
 }
 
 .panels {
