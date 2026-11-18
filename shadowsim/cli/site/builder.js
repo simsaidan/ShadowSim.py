@@ -170,11 +170,87 @@ function previewText() {
   return checks.previewText(currentPage());
 }
 
+function fieldError(id, message) {
+  return el(
+    "p",
+    {
+      className: "field-error",
+      id,
+      hidden: !message || null,
+    },
+    message || "",
+  );
+}
+
+function chipAlert({ className = "chip-alert", id = null, hidden = false } = {}) {
+  return el(
+    "span",
+    {
+      className,
+      id,
+      hidden: hidden || null,
+      "aria-hidden": "true",
+    },
+    "!",
+  );
+}
+
+function setChipAlert(alert, shown) {
+  if (!alert) return;
+  alert.hidden = !shown;
+  alert.setAttribute("aria-hidden", "true");
+  alert.removeAttribute("aria-label");
+  alert.removeAttribute("role");
+  alert.removeAttribute("title");
+  alert.removeAttribute("id");
+}
+
+function setFieldValidity(field, errorId, message) {
+  if (!field) return;
+  if (message) {
+    field.setAttribute("aria-invalid", "true");
+    field.setAttribute("aria-describedby", errorId);
+    return;
+  }
+  field.removeAttribute("aria-invalid");
+  field.removeAttribute("aria-describedby");
+}
+
+function syncFieldError(host, id, message) {
+  if (!host) return null;
+  let error = host.querySelector(":scope > .field-error");
+  if (!message) {
+    if (error) {
+      error.hidden = true;
+      error.textContent = "";
+      error.removeAttribute("id");
+    }
+    return null;
+  }
+  if (!error) {
+    error = fieldError(id, message);
+    host.append(error);
+  } else {
+    error.id = id;
+    error.hidden = false;
+    error.textContent = message;
+  }
+  return error;
+}
+
 function modelChoiceBlocked(block) {
-  if (!block) return false;
-  if (block.id === "preexisting") return state.modelTerms.length > 0;
-  if (block.adds) return state.selection.model === "preexisting";
-  return false;
+  return blockedReason(block) != null;
+}
+
+function blockedReason(block) {
+  if (!block) return null;
+  if (block.id === "preexisting" && state.modelTerms.length > 0) {
+    return "Remove added operators to use a preexisting model.";
+  }
+  if (block.adds && state.selection.model === "preexisting") {
+    return "Remove the preexisting model to add operators.";
+  }
+  return null;
 }
 
 function blockCard(lane, block, { inSlot, onPlace, onRemove, blocked }) {
@@ -203,6 +279,8 @@ function blockCard(lane, block, { inSlot, onPlace, onRemove, blocked }) {
     );
   }
 
+  const reason = blocked ? blockedReason(block) : null;
+  const reasonId = reason ? `block-reason-${lane.id}-${block.id}` : null;
   const card = el(
     "button",
     {
@@ -210,6 +288,7 @@ function blockCard(lane, block, { inSlot, onPlace, onRemove, blocked }) {
       type: "button",
       draggable: blocked ? "false" : "true",
       disabled: Boolean(blocked),
+      "aria-describedby": reasonId,
       "data-lane": lane.id,
       "data-block": block.id,
       ondragstart: (event) => {
@@ -228,7 +307,13 @@ function blockCard(lane, block, { inSlot, onPlace, onRemove, blocked }) {
         if (!blocked) onPlace();
       },
     },
-    el("div", {}, el("strong", {}, block.title), el("span", {}, block.detail)),
+    el(
+      "div",
+      {},
+      el("strong", {}, block.title),
+      el("span", {}, block.detail),
+      reason ? el("span", { className: "block-reason", id: reasonId }, reason) : null,
+    ),
   );
   return card;
 }
@@ -291,9 +376,10 @@ function rememberFactoryText(name, value) {
   state.factoryText[name] = value;
 }
 
-function factoryField(param) {
+function factoryField(param, errorMessage = null) {
   const value = paramText(param);
   const locked = fieldLocked(param);
+  const errorId = `factory-error-${param.name}`;
   if (param.kind === "choice") {
     return el(
       "label",
@@ -304,6 +390,8 @@ function factoryField(param) {
         {
           "aria-label": param.label,
           "data-param": param.name,
+          "aria-invalid": errorMessage ? "true" : null,
+          "aria-describedby": errorMessage ? errorId : null,
           disabled: locked || null,
           onchange: (event) => {
             update(() => {
@@ -317,6 +405,7 @@ function factoryField(param) {
           el("option", { value: choice, selected: choice === value }, choice),
         ),
       ),
+      fieldError(errorId, errorMessage),
     );
   }
   const integer = param.kind === "integer";
@@ -330,6 +419,8 @@ function factoryField(param) {
       inputmode: integer ? "numeric" : numeric ? "decimal" : "text",
       "aria-label": param.label,
       "data-param": param.name,
+      "aria-invalid": errorMessage ? "true" : null,
+      "aria-describedby": errorMessage ? errorId : null,
       value,
       disabled: locked || null,
       spellcheck: "false",
@@ -344,6 +435,7 @@ function factoryField(param) {
         });
       },
     }),
+    fieldError(errorId, errorMessage),
   );
 }
 
@@ -367,21 +459,42 @@ function paintFactoryDetail() {
 }
 
 function paintModelAlert() {
-  const alert = document.querySelector(".preexisting-alert");
-  if (!alert) return;
+  const chip = document.querySelector(".chip.preexisting");
   const text = modelAlert();
-  alert.hidden = !text;
-  if (!text) return;
-  alert.setAttribute("aria-label", text);
-  alert.title = text;
+  setChipAlert(chip?.querySelector(".preexisting-alert"), Boolean(text));
+  if (!chip) return;
+  for (const control of chip.querySelectorAll("[data-param], select[aria-label='Model']")) {
+    setFieldValidity(control, null, null);
+  }
+  for (const error of chip.querySelectorAll(".field-error")) {
+    error.hidden = true;
+    error.textContent = "";
+    error.removeAttribute("id");
+  }
+  if (!text || !state.preexistingOpen) return;
+  const detail = state.checkError ? null : checks.paramAlertDetail(currentPage());
+  const name = detail?.name ?? null;
+  const errorId = name ? `factory-error-${name}` : "factory-error-model";
+  const control = name
+    ? chip.querySelector(`[data-param="${name}"]`)
+    : chip.querySelector('select[aria-label="Model"]');
+  const host = control?.closest("label");
+  syncFieldError(host, errorId, text);
+  setFieldValidity(control, errorId, text);
 }
 
 function preexistingChip() {
   const factory = checks.chosenFactory(currentPage());
+  const alertText = modelAlert();
+  const detail = state.checkError ? null : checks.paramAlertDetail(currentPage());
+  const modelError = state.checkError ? alertText : null;
+  const modelErrorId = "factory-error-model";
   const select = el(
     "select",
     {
       "aria-label": "Model",
+      "aria-invalid": modelError ? "true" : null,
+      "aria-describedby": modelError ? modelErrorId : null,
       onchange: (event) => {
         update(
           () => {
@@ -397,7 +510,6 @@ function preexistingChip() {
       el("option", { value: item.id, selected: item.id === factory?.id }, item.title),
     ),
   );
-  const alertText = modelAlert() ?? "Check the model arguments";
   return el(
     "div",
     {
@@ -431,17 +543,10 @@ function preexistingChip() {
       el(
         "div",
         { className: "chip-actions" },
-        el(
-          "span",
-          {
-            className: "chip-alert preexisting-alert",
-            role: "img",
-            "aria-label": alertText,
-            title: alertText,
-            hidden: !modelAlert(),
-          },
-          "!",
-        ),
+        chipAlert({
+          className: "chip-alert preexisting-alert",
+          hidden: !alertText,
+        }),
         state.preexistingOpen
           ? el(
               "button",
@@ -479,8 +584,20 @@ function preexistingChip() {
         ),
       ),
     ),
-    state.preexistingOpen ? el("label", { className: "chip-field" }, "Model", select) : null,
-    ...(state.preexistingOpen ? factoryParams().map(factoryField) : []),
+    state.preexistingOpen
+      ? el(
+          "label",
+          { className: "chip-field" },
+          "Model",
+          select,
+          fieldError(modelErrorId, modelError),
+        )
+      : null,
+    ...(state.preexistingOpen
+      ? factoryParams().map((param) =>
+          factoryField(param, detail?.name === param.name ? detail.message : null),
+        )
+      : []),
   );
 }
 
@@ -551,22 +668,31 @@ function stateAlertLabel(id) {
 function paintStateChip() {
   const detail = document.querySelector(".basis-detail");
   if (detail && state.selection.state) detail.textContent = stateDetail(state.selection.state);
-  const alert = document.querySelector(".chip.tone-gold .chip-alert");
-  if (!alert || !state.selection.state) return;
-  const label = stateAlertLabel(state.selection.state);
-  alert.hidden =
-    stateReady(state.selection.state) && checks.stateSizeProblem(currentPage()) == null;
-  alert.title = label;
-  alert.setAttribute("aria-label", label);
+  const chip = document.querySelector(".chip.tone-gold");
+  if (!chip || !state.selection.state) return;
+  const id = state.selection.state;
+  const invalid = !(stateReady(id) && checks.stateSizeProblem(currentPage()) == null);
+  const label = invalid ? stateAlertLabel(id) : null;
+  const errorId = `state-error-${id}`;
+  setChipAlert(chip.querySelector(".chip-alert"), invalid);
+  const field = chip.querySelector(".chip-field input");
+  const host = field?.closest("label");
+  syncFieldError(host, errorId, label);
+  setFieldValidity(field, errorId, label);
 }
 
 function stateChip(options) {
   const open = state.stateOpen;
+  const invalid = !(stateReady(options.id) && checks.stateSizeProblem(currentPage()) == null);
+  const message = invalid ? stateAlertLabel(options.id) : null;
+  const errorId = `state-error-${options.id}`;
   const input = el("input", {
     type: "text",
     inputmode: options.bits ? "numeric" : "decimal",
     ...(options.bits ? { maxlength: String(options.cap) } : {}),
     "aria-label": options.aria,
+    "aria-invalid": message ? "true" : null,
+    "aria-describedby": message ? errorId : null,
     value: options.value,
     spellcheck: "false",
     autocomplete: "off",
@@ -606,17 +732,7 @@ function stateChip(options) {
       el(
         "div",
         { className: "chip-actions" },
-        el(
-          "span",
-          {
-            className: "chip-alert",
-            role: "img",
-            "aria-label": stateAlertLabel(options.id),
-            title: stateAlertLabel(options.id),
-            hidden: stateReady(options.id) && checks.stateSizeProblem(currentPage()) == null,
-          },
-          "!",
-        ),
+        chipAlert({ hidden: !invalid }),
         open
           ? el(
               "button",
@@ -654,7 +770,9 @@ function stateChip(options) {
         ),
       ),
     ),
-    open ? el("label", { className: "chip-field" }, options.field, input) : null,
+    open
+      ? el("label", { className: "chip-field" }, options.field, input, fieldError(errorId, message))
+      : null,
   );
 }
 
@@ -689,8 +807,8 @@ function timeStepMessage(entry) {
   return message;
 }
 
-function simField(params, key, label, seed, describedBy) {
-  const message = describedBy ? checks.timeStepMismatch(currentPage()) : null;
+function simField(params, key, label, seed, errorId) {
+  const message = errorId ? checks.timeStepMismatch(currentPage()) : null;
   return el(
     "label",
     {},
@@ -700,8 +818,7 @@ function simField(params, key, label, seed, describedBy) {
       inputmode: seed ? "text" : "numeric",
       "aria-label": label,
       "aria-invalid": message ? "true" : null,
-      "aria-describedby": message ? describedBy : null,
-      title: message,
+      "aria-describedby": message ? errorId : null,
       value: params[key],
       spellcheck: "false",
       oninput: (event) => {
@@ -714,10 +831,11 @@ function simField(params, key, label, seed, describedBy) {
         });
       },
     }),
+    errorId ? fieldError(errorId, message) : null,
   );
 }
 
-function simulatorControl(params, field, describedBy) {
+function simulatorControl(params, field, errorId) {
   const value = String(params[field.name] ?? field.default ?? "");
   if (field.kind === "choice") {
     const choices = Array.isArray(field.choices) ? field.choices : [];
@@ -741,7 +859,7 @@ function simulatorControl(params, field, describedBy) {
       ),
     );
   }
-  const mismatch = field.name === "time_steps" ? describedBy : null;
+  const mismatch = field.name === "time_steps" ? errorId : null;
   return simField(params, field.name, field.label, !Number.isInteger(field.minimum), mismatch);
 }
 
@@ -750,9 +868,9 @@ function simulatorChip(entry) {
   const params = entry.params;
   if (!block) return null;
   const mismatch = timeStepMessage(entry);
-  const alertId = `time-steps-alert-${entry.key}`;
+  const errorId = `time-steps-error-${entry.key}`;
   const controls = (block.fields ?? []).map((field) =>
-    simulatorControl(params, field, field.name === "time_steps" && mismatch ? alertId : null),
+    simulatorControl(params, field, field.name === "time_steps" && mismatch ? errorId : null),
   );
   return el(
     "div",
@@ -788,18 +906,7 @@ function simulatorChip(entry) {
       el(
         "div",
         { className: "chip-actions" },
-        el(
-          "span",
-          {
-            className: "chip-alert",
-            role: "img",
-            id: alertId,
-            "aria-label": mismatch ?? "",
-            title: mismatch ?? "",
-            hidden: !mismatch,
-          },
-          "!",
-        ),
+        chipAlert({ hidden: !mismatch }),
         entry.open
           ? el(
               "button",
@@ -1174,6 +1281,7 @@ function paintHamiltonianChips() {
 }
 
 function hamiltonianChip(term) {
+  const errorId = `operator-error-${term.key}`;
   const input = el("textarea", {
     "aria-label": "Hamiltonian matrix",
     spellcheck: "false",
@@ -1205,7 +1313,7 @@ function hamiltonianChip(term) {
       el(
         "div",
         { className: "chip-actions" },
-        el("span", { className: "chip-alert", role: "img" }, "!"),
+        chipAlert(),
         el(
           "button",
           {
@@ -1221,7 +1329,7 @@ function hamiltonianChip(term) {
         ),
       ),
     ),
-    el("label", { className: "chip-field" }, "Matrix", input),
+    el("label", { className: "chip-field" }, "Matrix", input, fieldError(errorId, null)),
   );
   paintOperatorAlert(chip, term);
   return chip;
@@ -1279,6 +1387,7 @@ function localSiteFields(term) {
 }
 
 function localFields(term) {
+  const errorId = `operator-error-${term.key}`;
   const input = el("textarea", {
     "aria-label": term.id === "lindblad" ? "Lindblad matrix" : "Local Hamiltonian matrix",
     spellcheck: "false",
@@ -1293,7 +1402,7 @@ function localFields(term) {
   return el(
     "div",
     { className: "local-fields" },
-    el("label", { className: "chip-field" }, "Matrix", input),
+    el("label", { className: "chip-field" }, "Matrix", input, fieldError(errorId, null)),
     localSiteFields(term),
   );
 }
@@ -1308,21 +1417,13 @@ function paintOperatorAlert(chip, term) {
   const problem = operatorProblem(term);
   const shown =
     Boolean(problem) && (term.id === "hamiltonian" || checks.qubitCount(currentPage()) != null);
-  const alert = chip.querySelector(".chip-alert");
+  const message = shown ? problem : null;
+  const errorId = `operator-error-${term.key}`;
+  setChipAlert(chip.querySelector(".chip-alert"), shown);
   const field = chip.querySelector("textarea");
-  const alertId = `operator-alert-${term.key}`;
-  if (alert) {
-    alert.hidden = !shown;
-    alert.setAttribute("id", alertId);
-    if (problem) {
-      alert.setAttribute("aria-label", problem);
-      alert.setAttribute("title", problem);
-      alert.title = problem;
-    }
-  }
-  if (!field) return;
-  if (shown && alert) field.setAttribute("aria-describedby", alertId);
-  else field.removeAttribute("aria-describedby");
+  const host = field?.closest("label");
+  syncFieldError(host, errorId, message);
+  setFieldValidity(field, errorId, message);
 }
 
 function paintLocalHamiltonianChips() {
@@ -1366,7 +1467,7 @@ function actedQubitChip(term) {
       el(
         "div",
         { className: "chip-actions" },
-        el("span", { className: "chip-alert", role: "img" }, "!"),
+        chipAlert(),
         el(
           "button",
           {
@@ -2070,25 +2171,13 @@ function paintTimeSteps() {
   document.querySelectorAll(".chip.simulator").forEach((chip) => {
     const entry = state.placedSims.find((item) => String(item.key) === chip.dataset.key);
     const shown = Boolean(message) && String(entry?.params?.time_steps ?? "") !== "";
-    const alert = chip.querySelector(".chip-alert");
+    const errorId = `time-steps-error-${chip.dataset.key}`;
+    const text = shown ? message : null;
+    setChipAlert(chip.querySelector(".chip-alert"), shown);
     const field = chip.querySelector('input[aria-label="Time steps"]');
-    const alertId = `time-steps-alert-${chip.dataset.key}`;
-    if (alert) {
-      alert.hidden = !shown;
-      alert.setAttribute("id", alertId);
-      alert.setAttribute("aria-label", shown ? message : "");
-      alert.title = shown ? message : "";
-    }
-    if (!field) return;
-    if (shown) {
-      field.setAttribute("aria-invalid", "true");
-      field.setAttribute("aria-describedby", alertId);
-      field.title = message;
-      return;
-    }
-    field.removeAttribute("aria-invalid");
-    field.removeAttribute("aria-describedby");
-    field.removeAttribute("title");
+    const host = field?.closest("label");
+    syncFieldError(host, errorId, text);
+    setFieldValidity(field, errorId, text);
   });
 }
 
