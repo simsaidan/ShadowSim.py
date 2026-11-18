@@ -1,5 +1,13 @@
 const { catalog, loadPage } = require("./load-page");
-const { click, installDownloads, setChange, setChecked, settle, typeInto } = require("./dom");
+const {
+  click,
+  insertAt,
+  installDownloads,
+  setChange,
+  setChecked,
+  settle,
+  typeInto,
+} = require("./dom");
 
 const QUTIP_SETUP = [
   "{name} = QutipSimulator({hamiltonians}, {lindblads}, state,",
@@ -258,6 +266,7 @@ module.exports = {
   fieldAlert,
   fillCircuit,
   fillIsing,
+  insertAt,
   installDownloads,
   labeled,
   mount,

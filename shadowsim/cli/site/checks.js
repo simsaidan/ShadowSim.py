@@ -42,14 +42,24 @@
   }
 
   function fieldReady(field, text) {
+    return simFieldProblem(field, text) == null;
+  }
+
+  function simFieldProblem(field, text) {
     const value = String(text ?? "");
-    if (field.kind === "choice") return (field.choices ?? []).includes(value);
-    if (Number.isInteger(field.maximum)) {
-      if (!positiveIntAtMost(value, field.maximum)) return false;
-      const minimum = Number.isInteger(field.minimum) ? field.minimum : 1;
-      return BigInt(value) >= BigInt(minimum);
+    if (field.kind === "choice") {
+      if ((field.choices ?? []).includes(value)) return null;
+      return `Choose a value for ${field.label}`;
     }
-    return /^-?\d+$/.test(value);
+    if (Number.isInteger(field.maximum)) {
+      const minimum = Number.isInteger(field.minimum) ? field.minimum : 1;
+      if (positiveIntAtMost(value, field.maximum) && BigInt(value) >= BigInt(minimum)) return null;
+      const oversize = oversizePositiveInt(value, field.label, field.maximum, false);
+      if (oversize) return oversize.replace(/\.$/, "");
+      return `Enter an integer from ${minimum} to ${field.maximum} for ${field.label}`;
+    }
+    if (/^-?\d+$/.test(value)) return null;
+    return `Enter an integer for ${field.label}`;
   }
 
   function needsBackend(state) {
@@ -457,6 +467,18 @@
     return null;
   }
 
+  function shotsFieldProblem(text, maxShots) {
+    const raw = String(text ?? "").trim();
+    if (maxShots == null) {
+      if (positiveIntText(raw)) return null;
+      return "Enter a shot count";
+    }
+    if (positiveIntAtMost(raw, maxShots)) return null;
+    const oversize = oversizePositiveInt(raw, "Shots", maxShots, false);
+    if (oversize) return oversize.replace(/\.$/, "");
+    return "Enter a shot count";
+  }
+
   function backendFieldNumber(field, text) {
     const raw = String(text ?? "").trim();
     if (field?.allow_inf && /^inf(?:inity)?$/i.test(raw)) return Infinity;
@@ -464,6 +486,12 @@
     const number = Number(raw);
     if (!Number.isFinite(number) || number < 0) return null;
     return number;
+  }
+
+  function backendNumberProblem(field, text) {
+    if (backendFieldNumber(field, text) != null) return null;
+    if (field?.allow_inf) return `Enter a non-negative number or inf for ${field.label}`;
+    return `Enter a non-negative number for ${field.label}`;
   }
 
   function gateNames(text) {
@@ -498,9 +526,12 @@
         if (field.kind === "gates") {
           const problem = gateFieldProblem(field, text);
           if (problem) return problem;
-        } else if (backendFieldNumber(field, text) == null) {
-          return "";
+          continue;
         }
+        const problem = backendNumberProblem(field, text);
+        if (!problem) continue;
+        if (!String(text ?? "").trim()) return "";
+        return `${problem}.`;
       }
     }
     return null;
@@ -1411,6 +1442,7 @@
     backendFieldNumber: (_state, field, text) => backendFieldNumber(field, text),
     backendFieldStatus,
     backendFieldsReady,
+    backendNumberProblem: (_state, field, text) => backendNumberProblem(field, text),
     gateFieldProblem: (_state, field, text) => gateFieldProblem(field, text),
     gateNames: (_state, text) => gateNames(text),
     backendFits,
@@ -1443,8 +1475,10 @@
     selectedSites,
     settingNumber,
     settingsReady,
+    shotsFieldProblem: (_state, text, maxShots) => shotsFieldProblem(text, maxShots),
     shotsProblem,
     shotsReady,
+    simFieldProblem: (_state, field, text) => simFieldProblem(field, text),
     simParamProblem,
     simParamsReady,
     socketStatus,

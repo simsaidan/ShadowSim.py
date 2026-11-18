@@ -354,6 +354,7 @@ body {
 }
 
 .chip-field :is(input, textarea, select)[aria-invalid="true"],
+.backend-fields :is(input, textarea, select)[aria-invalid="true"],
 .sim-fields :is(input, textarea, select)[aria-invalid="true"] {
   border-color: var(--alert-ink);
 }

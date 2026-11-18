@@ -8,6 +8,16 @@ function typeInto(node, value) {
   node.dispatchEvent(new node.ownerDocument.defaultView.Event("input"));
 }
 
+function insertAt(node, index, text) {
+  const value = String(node.value ?? "");
+  const next = value.slice(0, index) + text + value.slice(index);
+  const caret = index + text.length;
+  node.focus();
+  node.value = next;
+  node.setSelectionRange(caret, caret);
+  node.dispatchEvent(new node.ownerDocument.defaultView.Event("input"));
+}
+
 function setChange(node, value) {
   if (value != null) node.value = value;
   node.dispatchEvent(new node.ownerDocument.defaultView.Event("change"));
@@ -38,4 +48,4 @@ async function settle() {
   for (let step = 0; step < 8; step += 1) await Promise.resolve();
 }
 
-module.exports = { click, installDownloads, setChange, setChecked, settle, typeInto };
+module.exports = { click, insertAt, installDownloads, setChange, setChecked, settle, typeInto };
