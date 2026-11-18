@@ -481,7 +481,8 @@ body {
   font-weight: 500;
 }
 
-.lane .hint {
+.lane .hint,
+.lane .placeholder {
   margin: -4px 0 10px;
   color: var(--muted);
   font-size: 12.5px;

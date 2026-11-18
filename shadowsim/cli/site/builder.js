@@ -118,7 +118,24 @@ const state = {
   checkSerial: 0,
   pendingBody: null,
   checkInFlight: false,
-  laneNotes: { model: "", simulator: "", backend: "" },
+  laneNotes: { state: "", model: "", simulator: "", backend: "", measure: "", then: "" },
+  laneStatus: {
+    state: "ready",
+    model: "ready",
+    simulator: "ready",
+    backend: "ready",
+    measure: "ready",
+    then: "ready",
+  },
+};
+
+const LANE_CATALOG = {
+  state: { path: "/states", key: "states" },
+  model: { path: "/models", key: "models" },
+  simulator: { path: "/simulators", key: "simulators" },
+  backend: { path: "/backends", key: "backends" },
+  measure: { path: "/measurements", key: "measurements" },
+  then: { path: "/actions", key: "actions" },
 };
 
 function currentPage() {
@@ -138,15 +155,31 @@ function currentPage() {
     measureSites: state.measureSites,
     expressionText: state.expressionText,
     qubitsSource: state.qubitsSource,
-    stateLimits: state.limits.states,
-    maxOperatorQubits: state.limits.operatorQubits,
-    maxTimeSteps: state.limits.timeSteps,
-    maxNumSteps: state.limits.numSteps,
-    maxTrotterDepth: state.limits.trotterDepth,
-    maxShots: state.limits.shots,
+    stateLimits: state.limits?.states ?? {},
+    maxOperatorQubits: state.limits?.operatorQubits ?? 0,
+    maxTimeSteps: state.limits?.timeSteps ?? 0,
+    maxNumSteps: state.limits?.numSteps ?? 0,
+    maxTrotterDepth: state.limits?.trotterDepth ?? 0,
+    maxShots: state.limits?.shots ?? 0,
     checkedQubits:
       state.checkError == null && state.acceptedBody != null ? state.acceptedQubits : null,
   };
+}
+
+function loadingNote(key) {
+  return el("p", { className: "placeholder" }, `Loading ${key}…`);
+}
+
+function errorNote(message) {
+  return el("p", { className: "hint" }, message);
+}
+
+function laneNote(laneId) {
+  if (state.laneStatus[laneId] === "loading") {
+    return loadingNote(LANE_CATALOG[laneId].key);
+  }
+  if (state.laneNotes[laneId]) return errorNote(state.laneNotes[laneId]);
+  return null;
 }
 
 function freshParams(block) {
@@ -1544,46 +1577,60 @@ function slotAcceptsDrag(laneId) {
   return laneId === "simulator" && state.dragging.lane === "backend";
 }
 
+function laneIsLoading(laneId) {
+  if (laneId === "simulator") {
+    return state.laneStatus.simulator === "loading" || state.laneStatus.backend === "loading";
+  }
+  return state.laneStatus[laneId] === "loading";
+}
+
 function slotComponent(lane) {
+  const loading = laneIsLoading(lane.id);
   const slot = el(
     "section",
     {
       className: `slot tone-${lane.tone}`,
       "data-slot": lane.id,
       ondragover: (event) => {
-        if (!slotAcceptsDrag(lane.id)) return;
+        if (loading || !slotAcceptsDrag(lane.id)) return;
         event.preventDefault();
         slot.classList.add("is-over");
       },
       ondragleave: () => slot.classList.remove("is-over"),
       ondrop: (event) => {
-        if (!slotAcceptsDrag(lane.id)) return;
+        if (loading || !slotAcceptsDrag(lane.id)) return;
         event.preventDefault();
         if (state.dragging.lane === "backend") attachBackend(state.dragging.id);
         else place(lane.id, state.dragging.id);
       },
     },
     el("h2", { tabindex: "-1" }, lane.title),
-    el("p", { className: "hint" }, lane.hint),
-    ...slotChips(lane),
+    loading ? null : el("p", { className: "hint" }, lane.hint),
+    ...(loading ? [] : slotChips(lane)),
   );
   return placeOnGrid(slot, lane, "1");
 }
 
 function methodPalette(lane, onPlace) {
-  const noteText = state.laneNotes.simulator || state.laneNotes.backend;
-  const note = noteText ? el("p", { className: "hint" }, noteText) : null;
-  const groups = [
-    ["Classical references", state.blocks.simulator.filter((block) => block.observables), lane],
-    ["Simulators", state.blocks.simulator.filter((block) => !block.observables), lane],
-    ["Backends", state.blocks.backend, { id: "backend", tone: "violet" }],
-  ];
+  const notes = [laneNote("simulator"), laneNote("backend")].filter(Boolean);
+  const simulatorReady = state.laneStatus.simulator === "ready";
+  const backendReady = state.laneStatus.backend === "ready";
+  const groups = [];
+  if (simulatorReady) {
+    groups.push(
+      ["Classical references", state.blocks.simulator.filter((block) => block.observables), lane],
+      ["Simulators", state.blocks.simulator.filter((block) => !block.observables), lane],
+    );
+  }
+  if (backendReady) {
+    groups.push(["Backends", state.blocks.backend, { id: "backend", tone: "violet" }]);
+  }
   return placeOnGrid(
     el(
       "section",
       { className: "lane", "data-palette": lane.id },
       el("h2", {}, lane.pick),
-      note,
+      ...notes,
       ...groups
         .filter(([, blocks]) => blocks.length)
         .map(([title, blocks, cardLane]) =>
@@ -1613,26 +1660,28 @@ function methodPalette(lane, onPlace) {
 
 function paletteComponent(lane, onPlace) {
   if (lane.id === "simulator") return methodPalette(lane, onPlace);
-  const note = state.laneNotes[lane.id]
-    ? el("p", { className: "hint" }, state.laneNotes[lane.id])
-    : null;
+  const note = laneNote(lane.id);
+  const cards =
+    state.laneStatus[lane.id] === "loading"
+      ? null
+      : el(
+          "div",
+          { className: "cards" },
+          ...state.blocks[lane.id].map((block) =>
+            blockCard(lane, block, {
+              inSlot: false,
+              blocked: lane.id === "model" && modelChoiceBlocked(block),
+              onPlace: () => onPlace(block.id),
+            }),
+          ),
+        );
   return placeOnGrid(
     el(
       "section",
       { className: "lane", "data-palette": lane.id },
       el("h2", {}, lane.pick),
       note,
-      el(
-        "div",
-        { className: "cards" },
-        ...state.blocks[lane.id].map((block) =>
-          blockCard(lane, block, {
-            inSlot: false,
-            blocked: lane.id === "model" && modelChoiceBlocked(block),
-            onPlace: () => onPlace(block.id),
-          }),
-        ),
-      ),
+      cards,
     ),
     lane,
     "2",
@@ -1828,6 +1877,7 @@ function dropAcceptance() {
 }
 
 function scheduleCheck() {
+  if (state.limits == null) return;
   if (state.pendingWrite != null && state.pendingWrite !== documentBody()) {
     state.pendingWrite = null;
   }
@@ -2197,6 +2247,7 @@ function paintDerived() {
 
 function statusMessage() {
   if (state.statusHold) return state.statusHold;
+  if (state.limits == null) return "Loading limits…";
   const problem = checks.firstProblem(currentPage());
   if (problem) return problem.message;
   if (state.checkError) return `${state.checkError.replace(/[.!?]$/, "")}.`;
@@ -3723,7 +3774,14 @@ function mount(root) {
   draw(board);
 }
 
+function paintLoadedLane(lane) {
+  if (!document.querySelector(".board")) return;
+  const laneId = lane === "backend" ? "simulator" : lane;
+  update(null, { lanes: [laneId], palettes: [laneId], chrome: false });
+}
+
 async function loadLane(path, lane, key) {
+  state.laneStatus[lane] = "loading";
   try {
     const response = await fetch(path);
     let payload = {};
@@ -3735,6 +3793,7 @@ async function loadLane(path, lane, key) {
     const items = payload[key];
     if (!response.ok || !Array.isArray(items)) {
       state.laneNotes[lane] = payload.error || `Could not load ${key}.`;
+      state.laneStatus[lane] = "error";
       state.blocks[lane] = [];
       if (lane === "measure") state.catalogMeasures = [];
       state.selection[lane] = null;
@@ -3766,6 +3825,7 @@ async function loadLane(path, lane, key) {
       }
     }
     state.laneNotes[lane] = "";
+    state.laneStatus[lane] = "ready";
     if (
       state.selection[lane] != null &&
       !checks.blockById(currentPage(), lane, state.selection[lane])
@@ -3773,29 +3833,46 @@ async function loadLane(path, lane, key) {
       state.selection[lane] = null;
   } catch {
     state.laneNotes[lane] = `Could not load ${key}.`;
+    state.laneStatus[lane] = "error";
     state.blocks[lane] = [];
     if (lane === "measure") state.catalogMeasures = [];
     state.selection[lane] = null;
   }
 }
 
-const builder = document.querySelector("#builder");
-if (builder) {
-  Promise.all([
-    loadLane("/models", "model", "models"),
-    loadLane("/simulators", "simulator", "simulators"),
-    loadLane("/backends", "backend", "backends"),
-    loadLane("/states", "state", "states"),
-    loadLane("/measurements", "measure", "measurements"),
-    loadLane("/actions", "then", "actions"),
-    loadLimits(),
-  ]).then(async (results) => {
-    if (!results[6]) {
-      builder.append(el("p", { className: "placeholder" }, "Could not load limits."));
-      return;
-    }
-    await restoreBoard();
-    state.boardReady = true;
-    mount(builder);
-  });
+async function bootBuilder() {
+  const laneLoads = Object.entries(LANE_CATALOG).map(([lane, { path, key }]) =>
+    loadLane(path, lane, key).then(() => paintLoadedLane(lane)),
+  );
+  const limitsOk = await loadLimits();
+  if (!limitsOk) {
+    state.statusHold = "Could not load limits.";
+    setStatus(state.statusHold);
+  } else {
+    setStatus(statusMessage(), runAllowed());
+  }
+  await Promise.all(laneLoads);
+  if (!limitsOk) return;
+  await restoreBoard();
+  state.boardReady = true;
+  update(null, { board: true });
 }
+
+function startBuilder(root) {
+  for (const lane of Object.keys(state.laneStatus)) {
+    state.laneStatus[lane] = "loading";
+    state.laneNotes[lane] = "";
+    state.blocks[lane] = [];
+    state.selection[lane] = null;
+  }
+  state.modelFactories = [];
+  state.catalogMeasures = [];
+  state.modelTerms.splice(0, state.modelTerms.length);
+  state.placedSims.splice(0, state.placedSims.length);
+  state.placedThens.splice(0, state.placedThens.length);
+  mount(root);
+  void bootBuilder();
+}
+
+const builder = document.querySelector("#builder");
+if (builder) startBuilder(builder);
