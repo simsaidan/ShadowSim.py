@@ -181,7 +181,11 @@ function blockCard(lane, block, { inSlot, onPlace, onRemove, blocked }) {
   if (inSlot) {
     return el(
       "div",
-      { className: `chip tone-${lane.tone}` },
+      {
+        className: `chip tone-${lane.tone}`,
+        "data-block": block.id,
+        tabindex: "-1",
+      },
       el("div", {}, el("strong", {}, block.title), el("span", {}, block.detail)),
       el(
         "button",
@@ -396,7 +400,10 @@ function preexistingChip() {
   const alertText = modelAlert() ?? "Check the model arguments";
   return el(
     "div",
-    { className: `chip tone-teal preexisting${state.preexistingOpen ? " is-editing" : ""}` },
+    {
+      className: `chip tone-teal preexisting${state.preexistingOpen ? " is-editing" : ""}`,
+      tabindex: "-1",
+    },
     el(
       "div",
       { className: "chip-head" },
@@ -410,7 +417,11 @@ function preexistingChip() {
               () => {
                 state.preexistingOpen = true;
               },
-              { lanes: ["model"], chrome: false },
+              {
+                lanes: ["model"],
+                chrome: false,
+                focus: { kind: "first-field", chip: ".chip.preexisting" },
+              },
             );
           },
         },
@@ -442,7 +453,11 @@ function preexistingChip() {
                     () => {
                       state.preexistingOpen = false;
                     },
-                    { lanes: ["model"], chrome: false },
+                    {
+                      lanes: ["model"],
+                      chrome: false,
+                      focus: { kind: "header", chip: ".chip.preexisting" },
+                    },
                   );
                 },
               },
@@ -557,9 +572,13 @@ function stateChip(options) {
     autocomplete: "off",
     oninput: options.oninput,
   });
+  const chipSelector = `.chip.state.${options.id}`;
   return el(
     "div",
-    { className: `chip tone-gold state ${options.id}${open ? " is-editing" : ""}` },
+    {
+      className: `chip tone-gold state ${options.id}${open ? " is-editing" : ""}`,
+      tabindex: "-1",
+    },
     el(
       "div",
       { className: "chip-head" },
@@ -573,7 +592,11 @@ function stateChip(options) {
               () => {
                 state.stateOpen = true;
               },
-              { lanes: ["state"], chrome: false },
+              {
+                lanes: ["state"],
+                chrome: false,
+                focus: { kind: "first-field", chip: chipSelector },
+              },
             );
           },
         },
@@ -605,7 +628,11 @@ function stateChip(options) {
                     () => {
                       state.stateOpen = false;
                     },
-                    { lanes: ["state"], chrome: false },
+                    {
+                      lanes: ["state"],
+                      chrome: false,
+                      focus: { kind: "header", chip: chipSelector },
+                    },
                   );
                 },
               },
@@ -732,6 +759,7 @@ function simulatorChip(entry) {
     {
       className: `chip tone-blue simulator${entry.open ? " is-editing" : ""}`,
       "data-key": String(entry.key),
+      tabindex: "-1",
     },
     el(
       "div",
@@ -746,7 +774,11 @@ function simulatorChip(entry) {
               () => {
                 entry.open = true;
               },
-              { lanes: ["simulator"], chrome: false },
+              {
+                lanes: ["simulator"],
+                chrome: false,
+                focus: { kind: "first-field", chip: ".chip.simulator", key: entry.key },
+              },
             );
           },
         },
@@ -779,7 +811,11 @@ function simulatorChip(entry) {
                     () => {
                       entry.open = false;
                     },
-                    { lanes: ["simulator"], chrome: false },
+                    {
+                      lanes: ["simulator"],
+                      chrome: false,
+                      focus: { kind: "header", chip: ".chip.simulator", key: entry.key },
+                    },
                   );
                 },
               },
@@ -815,9 +851,13 @@ function pathChip(block) {
   const open = Boolean(state.pathOpen[block.id]);
   const path = pathValue(block.id);
   const shown = path.trim();
+  const chipSelector = `.chip.path.${block.id}`;
   return el(
     "div",
-    { className: `chip tone-rose path ${block.id}${open ? " is-editing" : ""}` },
+    {
+      className: `chip tone-rose path ${block.id}${open ? " is-editing" : ""}`,
+      tabindex: "-1",
+    },
     el(
       "div",
       { className: "chip-head" },
@@ -831,7 +871,11 @@ function pathChip(block) {
               () => {
                 state.pathOpen[block.id] = true;
               },
-              { lanes: ["then"], chrome: false },
+              {
+                lanes: ["then"],
+                chrome: false,
+                focus: { kind: "first-field", chip: chipSelector },
+              },
             );
           },
         },
@@ -852,7 +896,11 @@ function pathChip(block) {
                     () => {
                       state.pathOpen[block.id] = false;
                     },
-                    { lanes: ["then"], chrome: false },
+                    {
+                      lanes: ["then"],
+                      chrome: false,
+                      focus: { kind: "header", chip: chipSelector },
+                    },
                   );
                   if (block.id === "save" || block.id === "export") queueWrite();
                 },
@@ -934,7 +982,11 @@ function backendChip(entry) {
   const shown = backendSummary(block, entry);
   return el(
     "div",
-    { className: `chip tone-violet backend${editing ? " is-editing" : ""}` },
+    {
+      className: `chip tone-violet backend${editing ? " is-editing" : ""}`,
+      "data-key": String(entry.key),
+      tabindex: "-1",
+    },
     el(
       "div",
       { className: "chip-head" },
@@ -949,7 +1001,11 @@ function backendChip(entry) {
                 if (samples) entry.shotsOpen = true;
                 else entry.backendOpen = true;
               },
-              { lanes: ["simulator"], chrome: false },
+              {
+                lanes: ["simulator"],
+                chrome: false,
+                focus: { kind: "first-field", chip: ".chip.backend", key: entry.key },
+              },
             );
           },
         },
@@ -971,7 +1027,11 @@ function backendChip(entry) {
                       entry.shotsOpen = false;
                       entry.backendOpen = false;
                     },
-                    { lanes: ["simulator"], chrome: false },
+                    {
+                      lanes: ["simulator"],
+                      chrome: false,
+                      focus: { kind: "header", chip: ".chip.backend", key: entry.key },
+                    },
                   );
                 },
               },
@@ -1128,7 +1188,11 @@ function hamiltonianChip(term) {
   input.value = term.matrix;
   const chip = el(
     "div",
-    { className: "chip tone-teal hamiltonian is-editing", "data-key": String(term.key) },
+    {
+      className: "chip tone-teal hamiltonian is-editing",
+      "data-key": String(term.key),
+      tabindex: "-1",
+    },
     el(
       "div",
       { className: "chip-head" },
@@ -1288,6 +1352,7 @@ function actedQubitChip(term) {
     {
       className: `chip tone-teal ${lindblad ? "lindblad" : "local-hamiltonian"}${open ? " is-editing" : ""}`,
       "data-key": String(term.key),
+      tabindex: "-1",
     },
     el(
       "div",
@@ -1397,7 +1462,7 @@ function slotComponent(lane) {
         else place(lane.id, state.dragging.id);
       },
     },
-    el("h2", {}, lane.title),
+    el("h2", { tabindex: "-1" }, lane.title),
     el("p", { className: "hint" }, lane.hint),
     ...slotChips(lane),
   );
@@ -1802,6 +1867,52 @@ function applyCheck(qubits) {
   return true;
 }
 
+function findChip({ chip, key, block } = {}) {
+  if (!chip) return null;
+  const nodes = [...document.querySelectorAll(chip)];
+  if (key != null) {
+    return nodes.find((node) => node.dataset.key === String(key)) ?? null;
+  }
+  if (block != null) {
+    return nodes.find((node) => node.dataset.block === String(block)) ?? null;
+  }
+  return nodes[0] ?? null;
+}
+
+function firstField(chip) {
+  return chip?.querySelector("input, select, textarea") ?? null;
+}
+
+function headerButton(chip) {
+  return chip?.querySelector(".chip-head > button") ?? null;
+}
+
+function slotHeading(laneId) {
+  return document.querySelector(`.slot[data-slot="${laneId}"] > h2`);
+}
+
+function slotItems(laneId) {
+  const slot = document.querySelector(`.slot[data-slot="${laneId}"]`);
+  if (!slot) return [];
+  if (laneId === "simulator") {
+    return [...slot.querySelectorAll(":scope > .method-row > .chip.simulator")];
+  }
+  return [...slot.querySelectorAll(":scope > .chip")];
+}
+
+function applyFocusHint(hint) {
+  if (!hint) return;
+  let target = null;
+  if (hint.kind === "first-field") target = firstField(findChip(hint));
+  else if (hint.kind === "header") target = headerButton(findChip(hint));
+  else if (hint.kind === "chip") target = findChip(hint);
+  else if (hint.kind === "after-remove") {
+    const items = slotItems(hint.slot);
+    target = items[hint.index] ?? slotHeading(hint.slot);
+  }
+  target?.focus?.();
+}
+
 function update(mutate, scope = {}) {
   if (typeof mutate === "function") mutate(state);
   if (scope.deriveState) deriveStateQubits();
@@ -1812,12 +1923,13 @@ function render(scope = {}) {
   if (scope.board) {
     const board = scope.root ?? document.querySelector(".board");
     if (board) draw(board);
+    applyFocusHint(scope.focus);
     return;
   }
   for (const laneId of scope.lanes ?? []) renderLane(laneId);
   for (const laneId of scope.palettes ?? []) renderPalette(laneId);
-  if (scope.chrome === false) return;
-  renderChrome(scope);
+  if (scope.chrome !== false) renderChrome(scope);
+  applyFocusHint(scope.focus);
 }
 
 function renderLane(laneId) {
@@ -2666,7 +2778,7 @@ function measureChip(block) {
   if (block.kind === "model") {
     return el(
       "div",
-      { className: "chip tone-green measure" },
+      { className: "chip tone-green measure", tabindex: "-1" },
       el(
         "div",
         { className: "chip-head" },
@@ -2696,7 +2808,10 @@ function measureChip(block) {
   const open = state.measureOpen && count != null;
   return el(
     "div",
-    { className: `chip tone-green measure${open ? " is-editing" : ""}` },
+    {
+      className: `chip tone-green measure${open ? " is-editing" : ""}`,
+      tabindex: "-1",
+    },
     el(
       "div",
       { className: "chip-head" },
@@ -2710,7 +2825,11 @@ function measureChip(block) {
               () => {
                 state.measureOpen = true;
               },
-              { lanes: ["measure"], chrome: false },
+              {
+                lanes: ["measure"],
+                chrome: false,
+                focus: { kind: "first-field", chip: ".chip.measure" },
+              },
             );
           },
         },
@@ -2731,7 +2850,11 @@ function measureChip(block) {
                     () => {
                       state.measureOpen = false;
                     },
-                    { lanes: ["measure"], chrome: false },
+                    {
+                      lanes: ["measure"],
+                      chrome: false,
+                      focus: { kind: "header", chip: ".chip.measure" },
+                    },
                   );
                 },
               },
@@ -2794,6 +2917,41 @@ function laneById(laneId) {
   return LANES.find((lane) => lane.id === laneId);
 }
 
+function placeFocus(laneId, blockId, block) {
+  if (laneId === "simulator") {
+    const entry = state.placedSims[state.placedSims.length - 1];
+    return { kind: "first-field", chip: ".chip.simulator", key: entry.key };
+  }
+  if (laneId === "model" && block?.adds) {
+    const term = state.modelTerms[state.modelTerms.length - 1];
+    const chip =
+      term.id === "hamiltonian"
+        ? ".chip.hamiltonian"
+        : term.id === "lindblad"
+          ? ".chip.lindblad"
+          : ".chip.local-hamiltonian";
+    return { kind: "first-field", chip, key: term.key };
+  }
+  if (laneId === "model" && blockId === "preexisting") {
+    return { kind: "first-field", chip: ".chip.preexisting" };
+  }
+  if (laneId === "state") {
+    return { kind: "first-field", chip: `.chip.state.${blockId}` };
+  }
+  if (laneId === "measure") {
+    if (block?.kind === "model") return { kind: "chip", chip: ".chip.measure" };
+    if (state.measureOpen) return { kind: "first-field", chip: ".chip.measure" };
+    return { kind: "header", chip: ".chip.measure" };
+  }
+  if (laneId === "then") {
+    if (block?.field?.kind === "path") {
+      return { kind: "first-field", chip: `.chip.path.${blockId}` };
+    }
+    return { kind: "chip", chip: ".chip", block: blockId };
+  }
+  return { kind: "chip", chip: ".chip", block: blockId };
+}
+
 function place(laneId, blockId) {
   if (state.running) return;
   const block = checks.blockById(currentPage(), laneId, blockId);
@@ -2838,20 +2996,26 @@ function place(laneId, blockId) {
     lanes.push("measure");
     palettes.push("measure");
   }
-  update(null, { lanes, palettes, clearResults: laneId !== "then" });
+  update(null, {
+    lanes,
+    palettes,
+    clearResults: laneId !== "then",
+    focus: placeFocus(laneId, blockId, block),
+  });
   if (laneId === "then" && (blockId === "save" || blockId === "export")) queueWrite();
 }
 
 function removeThen(id) {
   if (state.running) return;
+  const index = state.placedThens.indexOf(id);
+  if (index < 0) return;
   update(
     () => {
-      const index = state.placedThens.indexOf(id);
-      if (index >= 0) state.placedThens.splice(index, 1);
+      state.placedThens.splice(index, 1);
       state.selection.then = state.placedThens[0] ?? null;
       releaseStatusHold();
     },
-    { lanes: ["then"] },
+    { lanes: ["then"], focus: { kind: "after-remove", slot: "then", index } },
   );
 }
 
@@ -2913,12 +3077,19 @@ function attachBackend(backendId, key) {
     target.shotsOpen = false;
     target.backendOpen = false;
   }
+  const opens = Boolean(backend.shots || backend.fields?.length);
   update(
     () => {
       state.dragging = null;
       releaseStatusHold();
     },
-    { lanes: ["simulator"], clearResults: true },
+    {
+      lanes: ["simulator"],
+      clearResults: true,
+      focus: opens
+        ? { kind: "first-field", chip: ".chip.backend", key: target.key }
+        : { kind: "header", chip: ".chip.backend", key: target.key },
+    },
   );
 }
 
@@ -2933,29 +3104,39 @@ function removeBackend(key) {
       entry.backendOpen = false;
       releaseStatusHold();
     },
-    { lanes: ["simulator"], clearResults: true },
+    {
+      lanes: ["simulator"],
+      clearResults: true,
+      focus: { kind: "header", chip: ".chip.simulator", key },
+    },
   );
 }
 
 function removeSimulator(key) {
   if (state.running) return;
+  const index = state.placedSims.findIndex((entry) => entry.key === key);
+  if (index < 0) return;
   update(
     () => {
-      const index = state.placedSims.findIndex((entry) => entry.key === key);
-      if (index >= 0) state.placedSims.splice(index, 1);
+      state.placedSims.splice(index, 1);
       state.selection.simulator = state.placedSims[0]?.id ?? null;
       releaseStatusHold();
     },
-    { lanes: ["simulator"], clearResults: true },
+    {
+      lanes: ["simulator"],
+      clearResults: true,
+      focus: { kind: "after-remove", slot: "simulator", index },
+    },
   );
 }
 
 function removeTerm(key) {
   if (state.running) return;
+  const index = state.modelTerms.findIndex((term) => term.key === key);
+  if (index < 0) return;
   update(
     () => {
-      const index = state.modelTerms.findIndex((term) => term.key === key);
-      if (index >= 0) state.modelTerms.splice(index, 1);
+      state.modelTerms.splice(index, 1);
       if (
         !state.modelTerms.some((term) => term.id === "hamiltonian") &&
         state.qubitsSource === "hamiltonian"
@@ -2966,7 +3147,12 @@ function removeTerm(key) {
       } else deriveHamiltonianQubits();
       releaseStatusHold();
     },
-    { lanes: ["model"], palettes: ["model"], clearResults: true },
+    {
+      lanes: ["model"],
+      palettes: ["model"],
+      clearResults: true,
+      focus: { kind: "after-remove", slot: "model", index },
+    },
   );
 }
 
@@ -3010,7 +3196,12 @@ function clearLane(laneId) {
       state.selection[laneId] = null;
       releaseStatusHold();
     },
-    { lanes, palettes, clearResults: true },
+    {
+      lanes,
+      palettes,
+      clearResults: true,
+      focus: { kind: "after-remove", slot: laneId, index: 0 },
+    },
   );
 }
 
