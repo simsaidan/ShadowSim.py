@@ -92,7 +92,7 @@ Override with `kind=` when needed (e.g. `kind="hamiltonian"` for a unit-trace pr
 
 ### PauliPropagation
 
-`PauliPropagationBackend` returns ⟨Z⟩ and ⟨X⟩ for selected qubits of one program. It translates that program to OpenQASM 2, so the `qiskit` extra is required as well. The `pauli_propagation` extra installs `juliacall` 0.9.36. Julia 1.10 or newer has to be available already. That juliacall release is the one that resolves next to the PauliPropagation revision below.
+`PauliPropagationBackend` returns ⟨Z⟩ and ⟨X⟩ for selected qubits of one program, following [Rudolph et al., arXiv:2505.21606](https://arxiv.org/abs/2505.21606). It translates that program to OpenQASM 2, so the `qiskit` extra is required as well. The `pauli_propagation` extra installs `juliacall` 0.9.36. Julia 1.10 or newer has to be available already. That juliacall release is the one that resolves next to the PauliPropagation revision below.
 
 In the Julia project juliacall uses for this Python environment, install the OpenQASM reader:
 

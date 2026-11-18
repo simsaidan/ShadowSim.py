@@ -101,6 +101,7 @@ plugins:
 
 hooks:
   - docs/hooks/full_bibliography.py
+  - docs/hooks/pauli_propagation_cite.py
 
 extra_css:
   - stylesheets/extra.css
