@@ -56,6 +56,7 @@ const DOCUMENT_KEYS = new Set([
   "actions",
 ]);
 const CHECK_DELAY = 200;
+const CLEAR_UNDO_MS = 8000;
 
 const state = {
   blocks: {
@@ -101,6 +102,8 @@ const state = {
   copyTimer: 0,
   copiedButton: null,
   copiedLabel: "Copy",
+  clearUndo: null,
+  clearUndoTimer: 0,
   statusHold: null,
   runStartedAt: 0,
   runTimer: null,
@@ -2321,6 +2324,55 @@ function statusComponent() {
   );
 }
 
+function clearUndoToast() {
+  if (!state.clearUndo) return null;
+  return el(
+    "div",
+    { className: "clear-undo", role: "status" },
+    el("span", {}, "Board cleared."),
+    el(
+      "button",
+      {
+        className: "undo-clear",
+        type: "button",
+        onclick: () => undoClear(),
+      },
+      "Undo",
+    ),
+  );
+}
+
+function dismissClearUndo() {
+  if (state.clearUndoTimer) clearTimeout(state.clearUndoTimer);
+  state.clearUndoTimer = 0;
+  state.clearUndo = null;
+}
+
+function showClearUndo(snapshot) {
+  dismissClearUndo();
+  state.clearUndo = snapshot;
+  state.clearUndoTimer = setTimeout(() => {
+    state.clearUndoTimer = 0;
+    state.clearUndo = null;
+    const board = document.querySelector(".board");
+    if (!board) return;
+    const toast = board.querySelector(".clear-undo");
+    if (toast) toast.remove();
+  }, CLEAR_UNDO_MS);
+}
+
+function undoClear() {
+  if (state.running || !state.clearUndo) return;
+  const snapshot = state.clearUndo;
+  dismissClearUndo();
+  update(
+    () => {
+      applyBoard(snapshot);
+    },
+    { board: true },
+  );
+}
+
 function showCopied(button, label = "Copy") {
   if (state.copiedButton && state.copiedButton !== button && state.copiedButton.isConnected) {
     state.copiedButton.textContent = state.copiedLabel;
@@ -2748,6 +2800,10 @@ function runRequest() {
   };
 }
 
+function boardSnapshot() {
+  return JSON.parse(JSON.stringify(runRequest()));
+}
+
 function shownRunKey(document = runRequest()) {
   const { actions: _actions, ...simulation } = document;
   return JSON.stringify(simulation);
@@ -2866,11 +2922,14 @@ function draw(board) {
   state.pendingWrite = null;
   state.writeSerial += 1;
   board.replaceChildren(
-    layoutComponent(),
-    settingsComponent(),
-    summaryComponent(),
-    statusComponent(),
-    panelsComponent(),
+    ...[
+      layoutComponent(),
+      settingsComponent(),
+      summaryComponent(),
+      statusComponent(),
+      clearUndoToast(),
+      panelsComponent(),
+    ].filter(Boolean),
   );
   rememberBoard();
   scheduleCheck();
@@ -3642,6 +3701,10 @@ function applyDocument(saved) {
   applyActions(saved.actions);
 }
 
+function applyBoard(saved) {
+  applyDocument(saved);
+}
+
 function forgetBoard() {
   try {
     localStorage.removeItem(BOARD_KEY);
@@ -3777,11 +3840,13 @@ async function importBoardText(raw) {
 
 function emptyBoard() {
   if (state.running) return;
+  const snapshot = boardSnapshot();
   update(
     () => {
       resetBoard();
       forgetBoard();
       releaseStatusHold();
+      showClearUndo(snapshot);
     },
     { board: true },
   );

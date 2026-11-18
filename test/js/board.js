@@ -1,6 +1,7 @@
 const { catalog, loadPage } = require("./load-page");
 const {
   click,
+  deferTimeouts,
   insertAt,
   installDownloads,
   setChange,
@@ -263,6 +264,7 @@ module.exports = {
   catalog,
   chipByClass,
   click,
+  deferTimeouts,
   fieldAlert,
   fillCircuit,
   fillIsing,

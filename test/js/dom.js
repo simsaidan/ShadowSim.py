@@ -48,4 +48,39 @@ async function settle() {
   for (let step = 0; step < 8; step += 1) await Promise.resolve();
 }
 
-module.exports = { click, insertAt, installDownloads, setChange, setChecked, settle, typeInto };
+function deferTimeouts(window) {
+  const pending = [];
+  let nextId = 1;
+  window.setTimeout = (fn, ms = 0) => {
+    const id = nextId;
+    nextId += 1;
+    pending.push({ id, fn, ms: Number(ms) || 0 });
+    return id;
+  };
+  window.clearTimeout = (id) => {
+    const index = pending.findIndex((entry) => entry.id === id);
+    if (index >= 0) pending.splice(index, 1);
+  };
+  return {
+    pending,
+    flush(ms) {
+      const due = pending.filter((entry) => entry.ms === ms);
+      for (const entry of due) {
+        const index = pending.indexOf(entry);
+        if (index >= 0) pending.splice(index, 1);
+        entry.fn();
+      }
+    },
+  };
+}
+
+module.exports = {
+  click,
+  deferTimeouts,
+  insertAt,
+  installDownloads,
+  setChange,
+  setChecked,
+  settle,
+  typeInto,
+};

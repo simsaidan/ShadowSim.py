@@ -4,6 +4,7 @@ const {
   catalog,
   chipByClass,
   click,
+  deferTimeouts,
   fieldAlert,
   fillCircuit,
   fillIsing,
@@ -391,6 +392,7 @@ test("a new server keeps the saved document", async () => {
 
 test("clear empties the board", () => {
   const { window, page } = prepare();
+  const timers = deferTimeouts(window);
   fillIsing(page);
   page.state.boardReady = true;
   page.applyCheck();
@@ -399,10 +401,11 @@ test("clear empties the board", () => {
   page.emptyBoard();
   assert.equal(page.state.selection.state, "basis");
   assert.equal(window.localStorage.getItem("shadowsim.builder.board"), saved);
+  assert.equal(page.state.clearUndo, null);
   page.state.running = false;
-  mount(window);
-  const settings = page.settingsComponent();
-  click(settings.querySelector(".clear"));
+  const board = mount(window);
+  page.draw(board);
+  click(board.querySelector(".clear"));
   assert.notEqual(saved, null);
   assert.equal(page.state.selection.state, null);
   assert.equal(page.state.settings.qubits, "");
@@ -412,6 +415,59 @@ test("clear empties the board", () => {
   assert.equal(page.state.placedThens.length, 0);
   assert.equal(page.state.preexistingId, null);
   assert.equal(window.localStorage.getItem("shadowsim.builder.board"), null);
+  assert.ok(board.querySelector(".clear-undo"));
+  assert.equal(
+    timers.pending.some((entry) => entry.ms === 8000),
+    true,
+  );
+  window.close();
+});
+
+test("clear undo restores the board", () => {
+  const { window, page } = prepare();
+  deferTimeouts(window);
+  fillIsing(page);
+  page.state.boardReady = true;
+  page.applyCheck();
+  const before = page.boardSnapshot();
+  const board = mount(window);
+  page.draw(board);
+  click(board.querySelector(".clear"));
+  assert.equal(page.state.selection.state, null);
+  assert.equal(window.localStorage.getItem("shadowsim.builder.board"), null);
+  const toast = board.querySelector(".clear-undo");
+  assert.equal(toast?.getAttribute("role"), "status");
+  const undo = toast.querySelector("button.undo-clear");
+  assert.equal(undo?.type, "button");
+  click(undo);
+  assert.equal(page.state.selection.state, "basis");
+  assert.equal(page.state.settings.total, "1");
+  assert.equal(page.state.settings.qubits, "2");
+  assert.equal(page.state.stateText.basis || "", "01");
+  assert.equal(page.state.actionText.save, "results/kept");
+  assert.equal(page.state.preexistingId, "ising");
+  assert.equal(page.state.placedSims.length, 1);
+  assert.deepEqual(page.boardSnapshot(), before);
+  assert.equal(board.querySelector(".clear-undo"), null);
+  page.applyCheck();
+  assert.equal(window.localStorage.getItem("shadowsim.builder.board"), JSON.stringify(before));
+  window.close();
+});
+
+test("clear undo toast expires", () => {
+  const { window, page } = prepare();
+  const timers = deferTimeouts(window);
+  fillIsing(page);
+  const board = mount(window);
+  page.draw(board);
+  click(board.querySelector(".clear"));
+  assert.ok(board.querySelector(".clear-undo"));
+  assert.equal(page.state.selection.state, null);
+  timers.flush(8000);
+  assert.equal(board.querySelector(".clear-undo"), null);
+  assert.equal(page.state.clearUndo, null);
+  page.undoClear();
+  assert.equal(page.state.selection.state, null);
   window.close();
 });
 
