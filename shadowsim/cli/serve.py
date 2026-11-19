@@ -1156,10 +1156,8 @@ def _install_tls(server: HTTPServer, context: ssl.SSLContext) -> None:
     server.socket = context.wrap_socket(server.socket, server_side=True)
 
 
-def build_parser() -> argparse.ArgumentParser:
-    """Build the ``shadowsim`` argument parser."""
-    parser = argparse.ArgumentParser(prog="shadowsim", description="ShadowSim commands.")
-    subparsers = parser.add_subparsers(dest="command", required=True)
+def add_serve_parser(subparsers: argparse._SubParsersAction) -> None:
+    """Register the ``serve`` subcommand on ``subparsers``."""
     serve_parser = subparsers.add_parser("serve", help="Open the local builder page.")
     serve_parser.add_argument(
         "--host",
@@ -1186,7 +1184,20 @@ def build_parser() -> argparse.ArgumentParser:
         help="Directory save and export paths must stay under (default: results).",
     )
     serve_parser.add_argument("--no-browser", action="store_true", help="Do not open a browser window.")
-    return parser
+    serve_parser.set_defaults(handler=run_serve)
+
+
+def run_serve(args: argparse.Namespace) -> int:
+    """Run ``serve`` from a parsed ``serve`` subcommand namespace."""
+    return serve(
+        args.host,
+        args.port,
+        open_browser=not args.no_browser,
+        allow_remote=args.allow_remote,
+        output_dir=args.output_dir,
+        tls_cert=args.tls_cert,
+        tls_key=args.tls_key,
+    )
 
 
 def serve(
@@ -1293,19 +1304,8 @@ def serve(
     return 0
 
 
-def main(argv: list[str] | None = None) -> int:
-    """Run the ``shadowsim`` command-line interface."""
-    args = build_parser().parse_args(argv)
-    return serve(
-        args.host,
-        args.port,
-        open_browser=not args.no_browser,
-        allow_remote=args.allow_remote,
-        output_dir=args.output_dir,
-        tls_cert=args.tls_cert,
-        tls_key=args.tls_key,
-    )
-
-
 if __name__ == "__main__":  # pragma: no cover
-    raise SystemExit(main())
+    parser = argparse.ArgumentParser(prog="shadowsim", description="ShadowSim commands.")
+    subparsers = parser.add_subparsers(dest="command", required=True)
+    add_serve_parser(subparsers)
+    raise SystemExit(run_serve(parser.parse_args()))
