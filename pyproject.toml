@@ -51,6 +51,7 @@ all = [
 Repository = "https://github.com/simsaidan/ShadowSim.py"
 
 [project.scripts]
+new-backend = "shadowsim.cli.new_backend:main"
 new-simulator = "shadowsim.cli.new_simulator:main"
 shadowsim = "shadowsim.cli.main:main"
 

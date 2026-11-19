@@ -18,7 +18,7 @@ from shadowsim.cli.new_simulator import (
     patch_init_file,
     render_stub,
 )
-from shadowsim.core import Hamiltonian, State
+from shadowsim.core import Hamiltonian, Operator, State
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
@@ -351,17 +351,23 @@ def test_main_rejects_invalid_name(capsys):
     assert "error:" in err
 
 
-def test_main_prompts_for_name(tmp_path, monkeypatch, capsys):
-    root = _fake_repo(tmp_path)
-
-    def _create(raw_name, *, repo_root=None):
-        return create_simulator(raw_name, repo_root=root)
+def _bind_repo(monkeypatch: pytest.MonkeyPatch, root: Path) -> None:
+    def _create(raw_name, *, repo_root=None, kind="circuit", closed_system=False):
+        return create_simulator(raw_name, repo_root=root, kind=kind, closed_system=closed_system)
 
     monkeypatch.setattr(ns, "create_simulator", _create)
-    monkeypatch.setattr("builtins.input", lambda _prompt: "Prompted")
+
+
+def test_main_prompts_for_name(tmp_path, monkeypatch, capsys):
+    root = _fake_repo(tmp_path)
+    answers = iter(["Prompted", "circuit"])
+
+    _bind_repo(monkeypatch, root)
+    monkeypatch.setattr("builtins.input", lambda _prompt: next(answers))
     assert main([]) == 0
     out = capsys.readouterr().out
     assert "Created PromptedSimulator" in out
+    assert "kind:   circuit" in out
 
 
 def test_prompt_name_eof(monkeypatch):
@@ -377,13 +383,11 @@ def test_main_success_on_fake_repo(tmp_path, monkeypatch, capsys):
     root = _fake_repo(tmp_path)
     monkeypatch.chdir(root)
 
-    def _create(raw_name, *, repo_root=None):
-        return create_simulator(raw_name, repo_root=root)
-
-    monkeypatch.setattr(ns, "create_simulator", _create)
-    assert main(["--name", "Baz"]) == 0
+    _bind_repo(monkeypatch, root)
+    assert main(["--name", "Baz", "--kind", "circuit"]) == 0
     out = capsys.readouterr().out
     assert "Created BazSimulator" in out
+    assert "kind:   circuit" in out
     assert (root / "shadowsim" / "simulators" / "baz_simulator.py").is_file()
 
 
@@ -406,3 +410,138 @@ def test_render_stub_contains_todo():
     assert 'raise NotImplementedError("TODO: implement your simulator here")' in text
     assert "SimulationResult" in text
     assert "self._make_result" in text
+    assert "observables" not in text
+
+
+def test_normalize_kind_and_lindblads():
+    assert ns.normalize_kind(" Classical ") == "classical"
+    assert ns.normalize_kind("circuit") == "circuit"
+    with pytest.raises(ScaffoldError, match="Kind must"):
+        ns.normalize_kind("ode")
+    assert ns.normalize_lindblads("Y") is True
+    assert ns.normalize_lindblads("yes") is True
+    assert ns.normalize_lindblads("n") is False
+    assert ns.normalize_lindblads("no") is False
+    with pytest.raises(ScaffoldError, match="yes"):
+        ns.normalize_lindblads("")
+
+
+def test_create_simulator_rejects_unknown_kind(tmp_path):
+    root = _fake_repo(tmp_path)
+    with pytest.raises(ScaffoldError, match="Kind must"):
+        create_simulator("Foo", repo_root=root, kind="ode")
+    assert not (root / "shadowsim" / "simulators" / "foo_simulator.py").exists()
+
+
+def test_create_simulator_rejects_closed_circuit(tmp_path):
+    root = _fake_repo(tmp_path)
+    with pytest.raises(ScaffoldError, match="closed_system"):
+        create_simulator("Foo", repo_root=root, kind="circuit", closed_system=True)
+    assert not (root / "shadowsim" / "simulators" / "foo_simulator.py").exists()
+
+
+@pytest.mark.parametrize("closed_system", [True, False])
+def test_generated_classical_stub_imports(tmp_path, closed_system):
+    root = _fake_repo(tmp_path)
+    create_simulator("Bar", repo_root=root, kind="classical", closed_system=closed_system)
+    stub = root / "shadowsim" / "simulators" / "bar_simulator.py"
+    test = root / "test" / "simulators" / "test_bar_simulator.py"
+    flag = "True" if closed_system else "False"
+    summary = "closed quantum dynamics" if closed_system else "open or closed quantum dynamics"
+
+    stub_text = stub.read_text(encoding="utf-8")
+    assert f"closed_system = {flag}" in stub_text
+    assert summary in stub_text
+    assert "observables: list[Operator]" in stub_text
+    assert "circuit_backend" not in stub_text
+    test_text = test.read_text(encoding="utf-8")
+    assert "[Operator(Z)]" in test_text
+    assert f"sim.closed_system is {flag}" in test_text
+
+    spec = importlib.util.spec_from_file_location(f"bar_classical_{flag}", stub)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+
+    z = np.diag([1.0, -1.0]).astype(np.complex128)
+    sim = module.BarSimulator(
+        [Hamiltonian(z)],
+        [],
+        State(np.array([1.0, 0.0], dtype=np.complex128), 1),
+        [Operator(z)],
+        num_qubits=1,
+        total_time=0.1,
+        time_steps=3,
+    )
+    assert sim.closed_system is closed_system
+    assert len(sim.observables) == 1
+    assert "observable_count=1" in str(sim)
+    assert "observables=" in repr(sim)
+    with pytest.raises(NotImplementedError, match="TODO: implement"):
+        sim.simulate()
+
+
+def test_main_prompts_kind_then_lindblads(tmp_path, monkeypatch, capsys):
+    root = _fake_repo(tmp_path)
+    prompts: list[str] = []
+    answers = iter(["classical", "no"])
+
+    def _input(prompt: str) -> str:
+        prompts.append(prompt)
+        return next(answers)
+
+    _bind_repo(monkeypatch, root)
+    monkeypatch.setattr("builtins.input", _input)
+    assert main(["--name", "Ode"]) == 0
+    assert prompts == [
+        "Simulator kind (classical/circuit): ",
+        "Accept Lindblad operators? (yes/no): ",
+    ]
+    assert "lindblads: no" in capsys.readouterr().out
+    stub = (root / "shadowsim" / "simulators" / "ode_simulator.py").read_text(encoding="utf-8")
+    assert "closed_system = True" in stub
+
+
+def test_main_classical_open_from_flags(tmp_path, monkeypatch, capsys):
+    root = _fake_repo(tmp_path)
+    _bind_repo(monkeypatch, root)
+    assert main(["--name", "Ode", "--kind", "classical", "--lindblads", "yes"]) == 0
+    assert "lindblads: yes" in capsys.readouterr().out
+    stub = (root / "shadowsim" / "simulators" / "ode_simulator.py").read_text(encoding="utf-8")
+    assert "closed_system = False" in stub
+    assert "Simulate open or closed quantum dynamics with Ode." in stub
+
+
+def test_main_kind_eof(monkeypatch, capsys):
+    def _eof(_prompt=""):
+        raise EOFError
+
+    monkeypatch.setattr("builtins.input", _eof)
+    assert main(["--name", "Ode"]) == 1
+    assert "No kind provided" in capsys.readouterr().err
+
+
+def test_main_lindblads_eof(monkeypatch, capsys):
+    def _eof(_prompt=""):
+        raise EOFError
+
+    monkeypatch.setattr("builtins.input", _eof)
+    assert main(["--name", "Ode", "--kind", "classical"]) == 1
+    assert "No Lindblad answer provided" in capsys.readouterr().err
+
+
+def test_main_rejects_bad_kind(monkeypatch, capsys):
+    monkeypatch.setattr("builtins.input", lambda _prompt: "ode")
+    assert main(["--name", "Ode"]) == 1
+    assert "Kind must" in capsys.readouterr().err
+
+
+def test_main_rejects_bad_lindblads(monkeypatch, capsys):
+    monkeypatch.setattr("builtins.input", lambda _prompt: "maybe")
+    assert main(["--name", "Ode", "--kind", "classical"]) == 1
+    assert "yes" in capsys.readouterr().err
+
+
+def test_main_rejects_lindblads_for_circuit(capsys):
+    assert main(["--name", "Ode", "--kind", "circuit", "--lindblads", "no"]) == 1
+    assert "--lindblads applies only to a classical simulator" in capsys.readouterr().err

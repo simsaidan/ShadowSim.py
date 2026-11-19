@@ -86,21 +86,54 @@ uv run --group types mypy
 
 ## Adding a simulator
 
-From a development install, scaffold a new backend with:
+From a development install, scaffold a new simulator with:
 
 ```bash
 uv sync --all-extras
-uv run --all-extras new-simulator --name WaveMatrix
+uv run --all-extras new-simulator --name WaveMatrix --kind circuit
+uv run --all-extras new-simulator --name OdeSolver --kind classical --lindblads no
 ```
 
-Omit `--name` to be prompted. The name must be **PascalCase** (no spaces).
-Names that already exist are refused. The command writes:
+Omit `--name`, `--kind`, or `--lindblads` to be prompted. The name must be
+**PascalCase** (no spaces). `--kind classical` writes a reference solver that
+records `observables` and takes no circuit backend, the same shape as QuTiP.
+`--lindblads no` sets `closed_system = True` on that class; `--lindblads yes`
+leaves the solver able to take Lindblad operators. `--kind circuit` keeps a
+backend-shaped stub. Names that already exist are refused. The command writes:
 
 - `shadowsim/simulators/{name}_simulator.py` — stub with
   `# TODO: implement your simulator here`
 - an export in `shadowsim/simulators/__init__.py`
 - `test/simulators/test_{name}_simulator.py` — minimal tests that pass until you
   implement `simulate()`
+
+## Adding a backend
+
+From a development install, scaffold a new circuit backend with:
+
+```bash
+uv sync --all-extras
+uv run --all-extras new-backend --name Cirq --kind expectation
+uv run --all-extras new-backend --name Aer --kind sampling
+```
+
+Omit `--name` or `--kind` to be prompted. The name must be **PascalCase** (no
+spaces). A trailing `CircuitBackend` or `Backend` is stripped, so `Cirq` and
+`CirqCircuitBackend` both become `CirqCircuitBackend`. `Backend`, `Circuit`, and
+`CircuitBackend` are reserved. Names that already exist are refused.
+`--kind expectation` writes a backend with no `shots` attribute, the same shape
+as NumPy. `--kind sampling` writes a backend that stores `shots`, the same
+shape as Aer. The command writes:
+
+- `shadowsim/backends/{name}.py` — stub whose `run_counts`, `z_expectations`,
+  and `x_expectations` raise `NotImplementedError`
+- an export in `shadowsim/backends/__init__.py` (`_EXPORTS`, the
+  `TYPE_CHECKING` import, and `__all__`)
+- `test/backends/test_{name}_backend.py` — minimal tests that pass until you
+  implement those three methods
+
+The export records no optional extra. Adding a library later means editing that
+extra and `pyproject.toml`.
 
 ## Pull requests
 
