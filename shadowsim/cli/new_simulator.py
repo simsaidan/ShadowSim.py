@@ -5,6 +5,7 @@ import re
 import sys
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Literal
 
 _PASCAL_RE = re.compile(r"^[A-Z][A-Za-z0-9]*$")
 _EXPORTS_START_RE = re.compile(r"^_EXPORTS\b[^\n]*=\s*\{", re.MULTILINE)
@@ -42,6 +43,11 @@ class ScaffoldError(Exception):
     """Raised when simulator scaffolding cannot proceed."""
 
 
+Kind = Literal["classical", "circuit"]
+_YES = frozenset({"yes", "y"})
+_NO = frozenset({"no", "n"})
+
+
 def pascal_to_snake(name: str) -> str:
     """Convert a PascalCase name to snake_case."""
     return re.sub(r"(?<!^)(?=[A-Z])", "_", name).lower()
@@ -66,6 +72,38 @@ def normalize_base_name(raw: str) -> str:
     if name == "Simulator":
         raise ScaffoldError("Name 'Simulator' is reserved for the base class")
     return name
+
+
+def normalize_kind(raw: str) -> Kind:
+    """Validate a simulator kind.
+
+    ``classical`` records observables and takes no circuit backend, the same
+    shape as QuTiP. ``circuit`` keeps a backend-shaped stub.
+    """
+    kind = raw.strip().lower()
+    if kind == "classical":
+        return "classical"
+    if kind == "circuit":
+        return "circuit"
+    raise ScaffoldError("Kind must be 'classical' or 'circuit'")
+
+
+def normalize_lindblads(raw: str) -> bool:
+    """Return whether a classical simulator accepts Lindblad operators."""
+    answer = raw.strip().lower()
+    if answer in _YES:
+        return True
+    if answer in _NO:
+        return False
+    raise ScaffoldError("Answer must be 'yes' or 'no'")
+
+
+def _resolve_kind(kind: str, *, closed_system: bool) -> Kind:
+    """Return a validated kind, rejecting a closed circuit simulator."""
+    resolved = normalize_kind(kind)
+    if resolved == "circuit" and closed_system:
+        raise ScaffoldError("closed_system applies only to a classical simulator")
+    return resolved
 
 
 def derive_names(raw: str) -> SimulatorNames:
@@ -132,8 +170,16 @@ def check_collisions(repo_root: Path, names: SimulatorNames) -> None:
         raise ScaffoldError("Name already exists:\n- " + "\n- ".join(problems))
 
 
-def render_stub(names: SimulatorNames) -> str:
+def render_stub(names: SimulatorNames, *, kind: str = "circuit", closed_system: bool = False) -> str:
     """Return the source for a new simulator stub module."""
+    resolved = _resolve_kind(kind, closed_system=closed_system)
+    if resolved == "classical":
+        return _render_classical_stub(names, closed_system=closed_system)
+    return _render_circuit_stub(names)
+
+
+def _render_circuit_stub(names: SimulatorNames) -> str:
+    """Return the source for a circuit-backend simulator stub."""
     return f'''"""{names.base_name} simulator backend stub."""
 
 from time import perf_counter
@@ -211,8 +257,111 @@ class {names.class_name}(Simulator):
 '''
 
 
-def render_test(names: SimulatorNames) -> str:
+def _render_classical_stub(names: SimulatorNames, *, closed_system: bool) -> str:
+    """Return the source for a classical reference simulator stub."""
+    if closed_system:
+        summary = f"Simulate closed quantum dynamics with {names.base_name}."
+    else:
+        summary = f"Simulate open or closed quantum dynamics with {names.base_name}."
+    flag = "True" if closed_system else "False"
+    return f'''"""{names.base_name} simulator backend stub."""
+
+from time import perf_counter
+
+from shadowsim.core.hamiltonian import Hamiltonian
+from shadowsim.core.operator import Operator
+from shadowsim.core.state import State
+from shadowsim.simulators.result import SimulationResult
+from shadowsim.simulators.simulator import Simulator
+
+
+class {names.class_name}(Simulator):
+    """{summary}
+
+    TODO: replace this docstring with a real description of the backend.
+    """
+
+    title = "{names.base_name}"
+    closed_system = {flag}
+
+    def __init__(
+        self,
+        hamiltonians: list[Hamiltonian],
+        lindblads: list[Operator],
+        initial_state: State,
+        observables: list[Operator],
+        *,
+        num_qubits: int,
+        total_time: float,
+        time_steps: int,
+    ):
+        """Initialize a {names.class_name} for the given model."""
+        super().__init__(
+            hamiltonians,
+            lindblads,
+            initial_state,
+            num_qubits=num_qubits,
+            total_time=total_time,
+            time_steps=time_steps,
+            id="{names.simulator_id}",
+        )
+        self.observables = observables
+
+    def simulate(self) -> SimulationResult:
+        """Evolve the system, store traces in ``self.results``, return ``SimulationResult``.
+
+        Use ``self._make_result(traces, runtime=..., seed=...)`` after setting
+        ``self.results`` so metadata (version, params, runtime) is retained.
+        Record one expectation trace per entry of ``self.observables``.
+        """
+        # TODO: implement your simulator here
+        # started = perf_counter()
+        # ... compute one expectation trace per observable ...
+        # self.results = traces
+        # return self._make_result(
+        #     traces,
+        #     runtime=perf_counter() - started,
+        #     observable_count=len(self.observables),
+        #     lindblad_count=len(self.lindblads),
+        # )
+        raise NotImplementedError("TODO: implement your simulator here")
+
+    def __str__(self):
+        """Return a short string representation of the simulator."""
+        return (
+            "{names.class_name}("
+            f"num_qubits={{self.num_qubits}}, "
+            f"observable_count={{len(self.observables)}}, "
+            f"time_steps={{self.time_steps}}"
+            ")"
+        )
+
+    def __repr__(self):
+        """Return a detailed string representation of the simulator."""
+        return (
+            "{names.class_name}("
+            f"hamiltonians={{self.hamiltonians!r}}, "
+            f"lindblads={{self.lindblads!r}}, "
+            f"initial_state={{self.initial_state!r}}, "
+            f"observables={{self.observables!r}}, "
+            f"num_qubits={{self.num_qubits}}, "
+            f"total_time={{self.total_time}}, "
+            f"time_steps={{self.time_steps}}"
+            ")"
+        )
+'''
+
+
+def render_test(names: SimulatorNames, *, kind: str = "circuit", closed_system: bool = False) -> str:
     """Return the source for a minimal simulator test scaffold."""
+    resolved = _resolve_kind(kind, closed_system=closed_system)
+    if resolved == "classical":
+        return _render_classical_test(names, closed_system=closed_system)
+    return _render_circuit_test(names)
+
+
+def _render_circuit_test(names: SimulatorNames) -> str:
+    """Return the source for a circuit-backend simulator test."""
     return f'''import numpy as np
 import pytest
 
@@ -250,6 +399,55 @@ def test_{names.snake_name}_simulator_str_and_repr():
     sim = _tiny()
     assert "{names.class_name}(" in str(sim)
     assert "num_qubits=1" in str(sim)
+    assert "{names.class_name}(" in repr(sim)
+    assert "time_steps=3" in repr(sim)
+'''
+
+
+def _render_classical_test(names: SimulatorNames, *, closed_system: bool) -> str:
+    """Return the source for a classical reference simulator test."""
+    flag = "True" if closed_system else "False"
+    return f'''import numpy as np
+import pytest
+
+from shadowsim.core import Hamiltonian, Operator, State
+from shadowsim.simulators import {names.class_name}
+from shadowsim.simulators.simulator import Simulator
+
+Z = np.diag([1.0, -1.0]).astype(np.complex128)
+
+
+def _tiny():
+    return {names.class_name}(
+        [Hamiltonian(Z)],
+        [],
+        State(np.array([1.0, 0.0], dtype=np.complex128), 1),
+        [Operator(Z)],
+        num_qubits=1,
+        total_time=0.1,
+        time_steps=3,
+    )
+
+
+def test_{names.snake_name}_simulator_is_simulator():
+    sim = _tiny()
+    assert isinstance(sim, Simulator)
+    assert sim.id == "{names.simulator_id}"
+    assert sim.closed_system is {flag}
+    assert len(sim.observables) == 1
+
+
+def test_{names.snake_name}_simulator_simulate_not_implemented():
+    sim = _tiny()
+    with pytest.raises(NotImplementedError, match="TODO: implement"):
+        sim.simulate()
+
+
+def test_{names.snake_name}_simulator_str_and_repr():
+    sim = _tiny()
+    assert "{names.class_name}(" in str(sim)
+    assert "num_qubits=1" in str(sim)
+    assert "observable_count=1" in str(sim)
     assert "{names.class_name}(" in repr(sim)
     assert "time_steps=3" in repr(sim)
 '''
@@ -315,9 +513,21 @@ def patch_init_file(path: Path, names: SimulatorNames) -> None:
     path.write_text(content[:body_start] + updated + content[body_end:], encoding="utf-8")
 
 
-def create_simulator(raw_name: str, *, repo_root: Path | None = None) -> SimulatorNames:
-    """Validate, check collisions, and write stub + export + test scaffold."""
+def create_simulator(
+    raw_name: str,
+    *,
+    repo_root: Path | None = None,
+    kind: str = "circuit",
+    closed_system: bool = False,
+) -> SimulatorNames:
+    """Validate, check collisions, and write stub + export + test scaffold.
+
+    ``kind="classical"`` writes a QuTiP-shaped constructor that takes
+    ``observables``. ``closed_system`` is set on that class from the Lindblad
+    answer. A circuit scaffold leaves both at the backend-shaped default.
+    """
     names = derive_names(raw_name)
+    resolved = _resolve_kind(kind, closed_system=closed_system)
     root = repo_root if repo_root is not None else default_repo_root()
     check_collisions(root, names)
 
@@ -327,10 +537,10 @@ def create_simulator(raw_name: str, *, repo_root: Path | None = None) -> Simulat
 
     test.parent.mkdir(parents=True, exist_ok=True)
     init_before = init.read_text(encoding="utf-8")
-    stub.write_text(render_stub(names), encoding="utf-8")
+    stub.write_text(render_stub(names, kind=resolved, closed_system=closed_system), encoding="utf-8")
     try:
         patch_init_file(init, names)
-        test.write_text(render_test(names), encoding="utf-8")
+        test.write_text(render_test(names, kind=resolved, closed_system=closed_system), encoding="utf-8")
     except Exception:
         if stub.exists():
             stub.unlink()
@@ -351,6 +561,42 @@ def _prompt_name() -> str:
         raise ScaffoldError("No name provided") from exc
 
 
+def _prompt_kind() -> Kind:
+    """Ask whether the simulator is a classical reference or a circuit backend."""
+    try:
+        answer = input("Simulator kind (classical/circuit): ")
+    except EOFError as exc:
+        raise ScaffoldError("No kind provided") from exc
+    return normalize_kind(answer)
+
+
+def _prompt_lindblads() -> bool:
+    """Ask whether a classical simulator accepts Lindblad operators."""
+    try:
+        answer = input("Accept Lindblad operators? (yes/no): ")
+    except EOFError as exc:
+        raise ScaffoldError("No Lindblad answer provided") from exc
+    return normalize_lindblads(answer)
+
+
+def _scaffold_choices(args: argparse.Namespace) -> tuple[str, Kind, bool]:
+    """Return the name, kind, and closed-system flag for this invocation.
+
+    A missing name, kind, or (for a classical simulator) Lindblad answer is
+    read from the prompt. ``closed_system`` is true when a classical simulator
+    does not accept Lindblad operators.
+    """
+    raw_name = args.name if args.name is not None else _prompt_name()
+    derive_names(raw_name)
+    kind = normalize_kind(args.kind) if args.kind is not None else _prompt_kind()
+    if kind == "circuit":
+        if args.lindblads is not None:
+            raise ScaffoldError("--lindblads applies only to a classical simulator")
+        return raw_name, kind, False
+    accepts = normalize_lindblads(args.lindblads) if args.lindblads is not None else _prompt_lindblads()
+    return raw_name, kind, not accepts
+
+
 def build_parser() -> argparse.ArgumentParser:
     """Build the CLI argument parser."""
     parser = argparse.ArgumentParser(
@@ -361,6 +607,18 @@ def build_parser() -> argparse.ArgumentParser:
         "--name",
         help="PascalCase simulator name (e.g. WaveMatrix). Prompted if omitted.",
     )
+    parser.add_argument(
+        "--kind",
+        choices=["classical", "circuit"],
+        help=(
+            "classical records observables and takes no circuit backend; circuit uses a backend. Prompted if omitted."
+        ),
+    )
+    parser.add_argument(
+        "--lindblads",
+        choices=["yes", "no"],
+        help=("Whether a classical simulator accepts Lindblad operators. Prompted for classical when omitted."),
+    )
     return parser
 
 
@@ -369,13 +627,16 @@ def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
     try:
-        raw_name = args.name if args.name is not None else _prompt_name()
-        names = create_simulator(raw_name)
+        raw_name, kind, closed_system = _scaffold_choices(args)
+        names = create_simulator(raw_name, kind=kind, closed_system=closed_system)
     except ScaffoldError as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 1
 
     print(f"Created {names.class_name}")
+    print(f"  kind:   {kind}")
+    if kind == "classical":
+        print(f"  lindblads: {'no' if closed_system else 'yes'}")
     print(f"  module: shadowsim/simulators/{names.stub_filename}")
     print("  export: shadowsim/simulators/__init__.py")
     print(f"  test:   test/simulators/{names.test_filename}")
