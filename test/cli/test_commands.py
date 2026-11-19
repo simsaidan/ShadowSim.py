@@ -47,18 +47,27 @@ def _compare_argv(*extra: str) -> list[str]:
     ]
 
 
-def test_build_parser_registers_research_commands() -> None:
+def test_build_parser_registers_core_commands() -> None:
     parser = build_parser()
     choices = parser._subparsers._group_actions[0].choices  # type: ignore[attr-defined]
     assert set(choices) == {"serve", "model", "simulate", "compare", "run"}
-    samples = {
+    for name, argv in {
         "serve": ["serve", "--no-browser"],
         "model": ["model", "ising"],
+        "run": ["run", "experiment.json"],
+    }.items():
+        args = parser.parse_args(argv)
+        assert args.command == name
+        assert callable(args.handler)
+
+
+@pytest.mark.circuits
+def test_build_parser_registers_simulate_and_compare() -> None:
+    parser = build_parser()
+    for name, argv in {
         "simulate": _simulate_argv(),
         "compare": _compare_argv(),
-        "run": ["run", "experiment.json"],
-    }
-    for name, argv in samples.items():
+    }.items():
         args = parser.parse_args(argv)
         assert args.command == name
         assert callable(args.handler)
@@ -87,6 +96,7 @@ def test_main_maps_model_argument_errors(capsys: pytest.CaptureFixture[str]) -> 
     assert "model ising does not take nu" in capsys.readouterr().err
 
 
+@pytest.mark.circuits
 def test_simulate_print_document_skips_run_page(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -100,6 +110,7 @@ def test_simulate_print_document_skips_run_page(
     assert document["simulators"][0]["backend"]["id"] == "numpy"
 
 
+@pytest.mark.circuits
 def test_simulate_text_and_json(capsys: pytest.CaptureFixture[str]) -> None:
     assert main(_simulate_argv("--format", "text")) == 0
     text = capsys.readouterr().out
@@ -112,6 +123,7 @@ def test_simulate_text_and_json(capsys: pytest.CaptureFixture[str]) -> None:
     assert "resources" in payload
 
 
+@pytest.mark.circuits
 def test_simulate_save_under_output_dir(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
     save_to = tmp_path / "run1"
     assert (
@@ -132,6 +144,9 @@ def test_simulate_save_under_output_dir(tmp_path: Path, capsys: pytest.CaptureFi
     assert save_to.exists()
 
 
+@pytest.mark.circuits
+@pytest.mark.qiskit
+@pytest.mark.cross_extra
 def test_compare_runs_benchmark(capsys: pytest.CaptureFixture[str]) -> None:
     assert main(_compare_argv("--format", "text")) == 0
     out = capsys.readouterr().out
@@ -139,11 +154,13 @@ def test_compare_runs_benchmark(capsys: pytest.CaptureFixture[str]) -> None:
     assert "errors:" in out
 
 
+@pytest.mark.circuits
 def test_compare_rejects_a_single_backend(capsys: pytest.CaptureFixture[str]) -> None:
     assert main([*_compare_argv()[:-1], "numpy"]) == 1
     assert "at least two backends" in capsys.readouterr().err
 
 
+@pytest.mark.circuits
 def test_run_loads_json_document(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
     document = build_run_document(
         model="ising",
@@ -173,6 +190,7 @@ def test_run_missing_file(capsys: pytest.CaptureFixture[str], tmp_path: Path) ->
     assert "error:" in capsys.readouterr().err
 
 
+@pytest.mark.qutip
 def test_simulate_rejects_unknown_simulator_field(capsys: pytest.CaptureFixture[str]) -> None:
     # qutip only takes time_steps among chip fields; seed is invalid for it.
     assert (
@@ -196,6 +214,7 @@ def test_simulate_rejects_unknown_simulator_field(capsys: pytest.CaptureFixture[
     assert "simulator qutip does not take seed" in capsys.readouterr().err
 
 
+@pytest.mark.circuits
 def test_simulate_parses_state_value_and_sites(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -257,6 +276,7 @@ def test_simulate_parses_state_value_and_sites(
     assert "errors:" in out
 
 
+@pytest.mark.circuits
 def test_simulate_parses_json_state_and_sites(monkeypatch: pytest.MonkeyPatch) -> None:
     seen: dict[str, object] = {}
 
@@ -299,6 +319,7 @@ def test_simulate_parses_json_state_and_sites(monkeypatch: pytest.MonkeyPatch) -
     assert document["measure"]["sites"] == [0]
 
 
+@pytest.mark.circuits
 def test_format_text_falls_back_for_empty_payload(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -375,6 +396,7 @@ def test_unknown_model_record_raises() -> None:
         commands._model_record("nope")
 
 
+@pytest.mark.circuits
 def test_save_and_export_infer_action_ids(monkeypatch: pytest.MonkeyPatch) -> None:
     seen: dict[str, object] = {}
 

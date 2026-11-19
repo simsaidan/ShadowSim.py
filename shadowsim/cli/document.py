@@ -303,14 +303,22 @@ def _model_record(model_id: str) -> Mapping[str, object]:
 
 
 def _simulator_record(simulator_id: str) -> Mapping[str, object]:
-    for item in listed_simulators():
+    try:
+        listed = listed_simulators()
+    except ImportError:
+        listed = []
+    for item in listed:
         if item["id"] == simulator_id:
             return item
     raise ValueError(f"unknown simulator {simulator_id}")
 
 
 def _backend_record(backend_id: str) -> Mapping[str, object]:
-    for item in listed_backends():
+    try:
+        listed = listed_backends()
+    except ImportError:
+        listed = []
+    for item in listed:
         if item["id"] == backend_id:
             return item
     raise ValueError(f"unknown backend {backend_id}")

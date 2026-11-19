@@ -444,7 +444,11 @@ def _model_record(model_id: str) -> Mapping[str, Any]:
 
 
 def _simulator_record(simulator_id: str) -> Mapping[str, Any]:
-    for item in listed_simulators():
+    try:
+        listed = listed_simulators()
+    except ImportError:
+        listed = []
+    for item in listed:
         if item["id"] == simulator_id:
             return item
     raise ValueError(f"unknown simulator {simulator_id}")

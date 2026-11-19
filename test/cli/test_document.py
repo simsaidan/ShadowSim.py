@@ -33,7 +33,8 @@ def test_model_section_fills_n_qubits_for_ising() -> None:
         model_section("nope")
 
 
-def test_simulator_entry_and_compare_expansion() -> None:
+@pytest.mark.circuits
+def test_simulator_entry_and_compare_validation() -> None:
     entry = simulator_entry(
         "trotterization",
         arguments={"time_steps": 5, "num_steps": 4},
@@ -44,6 +45,16 @@ def test_simulator_entry_and_compare_expansion() -> None:
         "arguments": {"time_steps": 5, "num_steps": 4},
         "backend": {"id": "numpy", "arguments": {}},
     }
+    with pytest.raises(ValueError, match="at least two backends"):
+        expand_compare_backends("trotterization", ["numpy"])
+    with pytest.raises(ValueError, match="unique"):
+        expand_compare_backends("trotterization", ["numpy", "numpy"])
+
+
+@pytest.mark.circuits
+@pytest.mark.qiskit
+@pytest.mark.cross_extra
+def test_compare_expansion_across_backends() -> None:
     expanded = expand_compare_backends(
         "trotterization",
         ["numpy", "aer"],
@@ -52,12 +63,9 @@ def test_simulator_entry_and_compare_expansion() -> None:
     )
     assert [item["backend"]["id"] for item in expanded] == ["numpy", "aer"]
     assert expanded[1]["backend"]["arguments"] == {"shots": 128}
-    with pytest.raises(ValueError, match="at least two backends"):
-        expand_compare_backends("trotterization", ["numpy"])
-    with pytest.raises(ValueError, match="unique"):
-        expand_compare_backends("trotterization", ["numpy", "numpy"])
 
 
+@pytest.mark.circuits
 def test_build_run_document_simulate_shape_passes_check_page() -> None:
     document = build_run_document(
         model="ising",
@@ -84,6 +92,9 @@ def test_build_run_document_compare_rejects_backend_and_backends() -> None:
         )
 
 
+@pytest.mark.circuits
+@pytest.mark.qiskit
+@pytest.mark.cross_extra
 def test_build_run_document_compare_expands_backends() -> None:
     document = build_run_document(
         model="ising",
@@ -123,6 +134,7 @@ def test_model_stub_is_model_only() -> None:
     }
 
 
+@pytest.mark.circuits
 def test_load_document_json(tmp_path: Path) -> None:
     document = build_run_document(
         model="ising",
@@ -156,6 +168,7 @@ def test_load_document_yaml_without_extra(tmp_path: Path, monkeypatch: pytest.Mo
         load_document(path)
 
 
+@pytest.mark.circuits
 def test_load_document_yaml_when_available(tmp_path: Path) -> None:
     yaml = pytest.importorskip("yaml")
     document = build_run_document(
@@ -171,6 +184,7 @@ def test_load_document_yaml_when_available(tmp_path: Path) -> None:
     assert load_document(path)["model"]["id"] == "ising"
 
 
+@pytest.mark.qutip
 def test_simulator_entry_allows_missing_backend() -> None:
     entry = simulator_entry("qutip", arguments={"time_steps": 2})
     assert entry["backend"] is None
@@ -183,8 +197,9 @@ def test_build_document_rejects_empty_simulators() -> None:
         build_document(model=model_section("ising", qubits=2), simulators=[])
 
 
+@pytest.mark.circuits
 def test_build_document_measure_expression_and_actions() -> None:
-    from shadowsim.cli.document import build_document, model_section, simulator_entry
+    from shadowsim.cli.document import build_document, model_section
 
     document = build_document(
         model=model_section("ising", qubits=2),
