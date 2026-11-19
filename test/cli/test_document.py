@@ -219,7 +219,7 @@ def test_load_document_rejects_non_object(tmp_path: Path) -> None:
         load_document(path)
 
 
-def test_document_catalog_lookups_reject_unknown_ids() -> None:
+def test_document_catalog_lookups_reject_unknown_ids(monkeypatch: pytest.MonkeyPatch) -> None:
     from shadowsim.cli import document
 
     with pytest.raises(ValueError, match="unknown simulator"):
@@ -230,6 +230,21 @@ def test_document_catalog_lookups_reject_unknown_ids() -> None:
         document._state_record("nope")
     with pytest.raises(ValueError, match="unknown measurement"):
         document._measurement_record("nope")
+
+    monkeypatch.setattr(
+        document,
+        "listed_simulators",
+        lambda: (_ for _ in ()).throw(ImportError("no simulators")),
+    )
+    monkeypatch.setattr(
+        document,
+        "listed_backends",
+        lambda: (_ for _ in ()).throw(ImportError("no backends")),
+    )
+    with pytest.raises(ValueError, match="unknown simulator"):
+        document._simulator_record("nope")
+    with pytest.raises(ValueError, match="unknown backend"):
+        document._backend_record("nope")
 
 
 def test_n_qubits_and_default_state_helpers() -> None:

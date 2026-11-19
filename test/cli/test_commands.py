@@ -347,9 +347,17 @@ def test_catalog_helpers_tolerate_import_errors(monkeypatch: pytest.MonkeyPatch)
     assert commands._backend_field_names() == []
 
 
-def test_unknown_simulator_record_raises() -> None:
+def test_unknown_simulator_record_raises(monkeypatch: pytest.MonkeyPatch) -> None:
     from shadowsim.cli import commands
 
+    with pytest.raises(ValueError, match="unknown simulator"):
+        commands._simulator_record("nope")
+
+    monkeypatch.setattr(
+        commands,
+        "listed_simulators",
+        lambda: (_ for _ in ()).throw(ImportError("no simulators")),
+    )
     with pytest.raises(ValueError, match="unknown simulator"):
         commands._simulator_record("nope")
 
