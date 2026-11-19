@@ -12,7 +12,7 @@ ShadowSim.py is an open-source Python library with two main purposes:
 
 **Note:** “Shadow” here means *shadow Hamiltonian simulation* ([Somma et al., arXiv:2407.21775](https://arxiv.org/abs/2407.21775)), **not** classical shadow tomography / randomized measurement protocols.
 
-**When to use:** Use ShadowSim to build and inspect shadow Hamiltonians for small qubit systems, and to benchmark open- or closed-system simulation algorithms against a classical reference (e.g. QuTiP).
+**When to use:** Use ShadowSim to build and inspect shadow Hamiltonians for small qubit systems, and to benchmark open- or closed-system simulation algorithms against a classical reference (e.g. QuTiP). The [simulation builder](#simulation-builder) is the local page for that work.
 
 ## Installation
 
@@ -50,12 +50,32 @@ see [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## Usage
 
-### Command-line interface
+### Simulation builder
 
-The `shadowsim` console script opens the local builder (`serve`) or runs research commands (`model`, `simulate`, `compare`, `run`) against the same version 1 run documents. Examples and the document schema are in the [CLI docs](https://simsaidan.github.io/ShadowSim.py/cli/).
+`shadowsim serve` opens the simulation builder, a local page for assembling and running a simulation. Cards come from the same catalogs as the research commands. Drag a card into a lane, or tap it to place it. Lanes run left to right.
+
+| Lane | What you set |
+| --- | --- |
+| Initial state | Basis, Gray, angle, or amplitude |
+| Model | A preexisting model, or operators you add |
+| Method | One or more simulators. Circuit methods take a backend; a classical reference such as QuTiP does not. The first row is the reference when several methods are compared |
+| Measure | Pauli expectations, counts, or the measurements the model defines |
+| Then | Plot the curves, save arrays and metadata, or export runtime and shot budget as JSON |
+
+The page checks the run as you edit it and shows the version 1 document in a code preview. **Run simulation** runs that document, and the curves appear in the results panel. Save and export paths stay under `results/` (change the root with `--output-dir`). **Export board** downloads the layout as JSON, and **Import board** loads one back. The page is laid out for a desktop window.
 
 ```bash
 shadowsim serve
+shadowsim serve --host 127.0.0.1 --port 8000 --output-dir results --no-browser
+```
+
+The server binds `127.0.0.1:8000`, prints a one-time URL that carries a startup token, and opens that URL in the default browser. A non-loopback address requires `--allow-remote` together with `--tls-cert` and `--tls-key`. Anyone who has the startup token can submit a run. A method or backend whose extra is not installed is left off the page. `shadowsim serve --help` lists every flag, and the run-document schema is in the [CLI docs](https://simsaidan.github.io/ShadowSim.py/cli/).
+
+### Command-line interface
+
+Research commands (`model`, `simulate`, `compare`, `run`) build and run the same version 1 documents as the [simulation builder](#simulation-builder). Examples and the document schema are in the [CLI docs](https://simsaidan.github.io/ShadowSim.py/cli/).
+
+```bash
 shadowsim model ising --qubits 4 --J 1.0
 shadowsim simulate --model ising --qubits 2 --simulator trotterization --time-steps 2 --num-steps 1 --backend numpy
 shadowsim compare --model ising --qubits 2 --simulator trotterization --time-steps 2 --num-steps 1 --backends numpy,aer
@@ -120,7 +140,7 @@ jl.seval("using Pkg")
 jl.seval('Pkg.add(url="https://github.com/SparqleSim/PauliPropagation.jl", rev="6e8c1ae")')
 ```
 
-`readqasm` on that revision accepts OpenQASM 2 / `qelib1` gates, skips `barrier` and `id`, and rejects `measure`, `reset`, and unknown gates. Qubit indexes are 0-based, and each method returns one float per index in that order. `shots` and `seed` are accepted and ignored. `max_weight` defaults to `inf`, so every Pauli weight is kept, and `min_abs_coeff` defaults to `1e-10`. The builder card edits both before a run.
+`readqasm` on that revision accepts OpenQASM 2 / `qelib1` gates, skips `barrier` and `id`, and rejects `measure`, `reset`, and unknown gates. Qubit indexes are 0-based, and each method returns one float per index in that order. `shots` and `seed` are accepted and ignored. `max_weight` defaults to `inf`, so every Pauli weight is kept, and `min_abs_coeff` defaults to `1e-10`. The [simulation builder](#simulation-builder) card edits both before a run.
 
 ```python
 import numpy as np
@@ -136,7 +156,7 @@ backend.z_expectations(program, [0], shots=1, seed=None)  # [cos(0.4)]
 backend.x_expectations(program, [0], shots=1, seed=None)  # [0.0]
 ```
 
-`RX(0.4)` applied to `|0⟩` stays in the YZ plane, so ⟨X⟩ is 0. `run_counts` raises `NotImplementedError`. `TrotterizationSimulator` and the builder can run a closed Trotter program on this backend: product states are prepared with single-qubit gates, the program is translated to Qiskit and transpiled into gates the reader accepts, and every qubit returns the expectation of its `basis` letter. It is an expectation backend, so it has no shot counts (see [Measurements](#measurements)). Split JMatrix and Hybrid WML sample an ancilla and stay on Aer.
+`RX(0.4)` applied to `|0⟩` stays in the YZ plane, so ⟨X⟩ is 0. `run_counts` raises `NotImplementedError`. `TrotterizationSimulator` and the [simulation builder](#simulation-builder) can run a closed Trotter program on this backend: product states are prepared with single-qubit gates, the program is translated to Qiskit and transpiled into gates the reader accepts, and every qubit returns the expectation of its `basis` letter. It is an expectation backend, so it has no shot counts (see [Measurements](#measurements)). Split JMatrix and Hybrid WML sample an ancilla and stay on Aer.
 
 ### Simulation results
 
