@@ -27,6 +27,7 @@ python -m pip install "shadowsim[viz] @ git+https://github.com/simsaidan/ShadowS
 python -m pip install "shadowsim[pauli_propagation] @ git+https://github.com/simsaidan/ShadowSim.py.git"
 python -m pip install "shadowsim[qulacs] @ git+https://github.com/simsaidan/ShadowSim.py.git"
 python -m pip install "shadowsim[cirq] @ git+https://github.com/simsaidan/ShadowSim.py.git"
+python -m pip install "shadowsim[yaml] @ git+https://github.com/simsaidan/ShadowSim.py.git"
 python -m pip install "shadowsim[all] @ git+https://github.com/simsaidan/ShadowSim.py.git"
 ```
 
@@ -39,7 +40,8 @@ python -m pip install "shadowsim[all] @ git+https://github.com/simsaidan/ShadowS
 | `pauli_propagation` | `PauliPropagationBackend` (`juliacall` 0.9.36). Julia 1.10+ and the Julia package are a separate install; see [PauliPropagation](#paulipropagation) |
 | `qulacs` | `QulacsCircuitBackend` |
 | `cirq` | `CirqCircuitBackend` |
-| `all` | `qutip`, `qiskit`, `circuits`, `viz`, `qulacs`, and `cirq` |
+| `yaml` | Load YAML experiment files with `shadowsim run` (`pyyaml`) |
+| `all` | `qutip`, `qiskit`, `circuits`, `viz`, `qulacs`, `cirq`, and `yaml` |
 
 The package can then be imported as `shadowsim`. Importing a backend or plot helper without its extra raises an `ImportError` that names the extra to install.
 
@@ -47,6 +49,20 @@ For a local development install (`uv sync --all-extras`, tests, lint, scaffoldin
 see [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## Usage
+
+### Command-line interface
+
+The `shadowsim` console script opens the local builder (`serve`) or runs research commands (`model`, `simulate`, `compare`, `run`) against the same version 1 run documents. Examples and the document schema are in the [CLI docs](https://simsaidan.github.io/ShadowSim.py/cli/).
+
+```bash
+shadowsim serve
+shadowsim model ising --qubits 4 --J 1.0
+shadowsim simulate --model ising --qubits 2 --simulator trotterization --time-steps 2 --num-steps 1 --backend numpy
+shadowsim compare --model ising --qubits 2 --simulator trotterization --time-steps 2 --num-steps 1 --backends numpy,aer
+shadowsim run experiment.json
+```
+
+### Python API
 
 Public objects are imported from their domain subpackages:
 ```python
@@ -606,6 +622,7 @@ uv run python examples/coupled_oscillators.py
 ## Documentation
 
 - [API / site docs](https://simsaidan.github.io/ShadowSim.py/) (`docs/`; preview with `uv sync --group docs --extra qutip --extra qiskit && uv run mkdocs serve`)
+- [Command-line interface](https://simsaidan.github.io/ShadowSim.py/cli/)
 - [Contributing](CONTRIBUTING.md)
 
 ## Contributing
