@@ -418,8 +418,7 @@ For practical scale limits (sparse vs dense, closure size, simulators), see
 
 ### Not yet / still heavy
 
-GPU-backed shadows, open-system Lindblad shadow extensions, and a reduced smoke
-grid for Example 2 are not provided yet. For shadow construction, use the
+For shadow construction, use the
 [sparse / Pauli-label path](#sparse--pauli-label-shadow-construction) whenever
 you already have a Pauli decomposition.
 

@@ -823,8 +823,9 @@ def _qutip_simulator(
     """Build an observables simulator for the posted measurement.
 
     ``model`` records the factory ``e_ops``. An added Hamiltonian records one
-    Pauli on each selected qubit. QuTiP is imported when ``cls`` is omitted, so
-    a test can replace this function without importing that extra.
+    Pauli on each selected qubit. A class with ``closed_system`` set rejects a
+    model that has Lindblad operators. QuTiP is imported when ``cls`` is
+    omitted, so a test can replace this function without importing that extra.
     """
     if measure_id == "model":
         observables = _model_records(cast(_FactoryModel, model))[0]
@@ -833,6 +834,8 @@ def _qutip_simulator(
     if cls is None:
         qutip_simulator = import_optional("shadowsim.simulators.qutip_simulator", extra="qutip")
         cls = qutip_simulator.QutipSimulator
+    if getattr(cls, "closed_system", False) and model.c_ops_full:
+        raise ValueError(f"{cls.__name__.removesuffix('Simulator')} is closed-system only")
     return cls(
         model.full_hamiltonians,
         model.c_ops_full,

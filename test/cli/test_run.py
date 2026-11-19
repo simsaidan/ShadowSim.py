@@ -422,6 +422,47 @@ def test_an_exported_observables_simulator_uses_posted_time_steps(monkeypatch: p
     assert simulator.time_steps == 7
 
 
+def test_a_closed_observables_simulator_rejects_lindblads(monkeypatch: pytest.MonkeyPatch, forbid_qutip: None) -> None:
+    class OdeSimulator:
+        """An observables simulator that can refuse Lindblad operators."""
+
+        def __init__(
+            self,
+            hamiltonians: object,
+            lindblads: object,
+            state: object,
+            observables: object,
+            **kwargs: object,
+        ) -> None:
+            del hamiltonians, state, observables, kwargs
+            self.lindblads = lindblads
+
+    module = types.ModuleType("custom.ode")
+    module.OdeSimulator = OdeSimulator  # type: ignore[attr-defined]
+    from shadowsim import simulators
+
+    monkeypatch.setitem(simulators._EXPORTS, "OdeSimulator", ("custom.ode", None))
+    monkeypatch.setitem(sys.modules, "custom.ode", module)
+    OdeSimulator.closed_system = True  # type: ignore[attr-defined]
+
+    closed = build_simulator(_selection(simulator="ode", time_steps=4))
+    assert closed.lindblads == []
+    lindblad_terms = [
+        {"id": "hamiltonian", "matrix": _Z_MATRIX},
+        {"id": "lindblad", "matrix": _JUMP, "sites": [0]},
+    ]
+    with pytest.raises(ValueError, match="Ode is closed-system only"):
+        build_simulator(_selection(simulator="ode", model="tavis_cummings", basis="100"))
+    with pytest.raises(ValueError, match="Ode is closed-system only"):
+        build_simulator(_added(simulator="ode", terms=lindblad_terms))
+
+    del OdeSimulator.closed_system  # type: ignore[attr-defined]
+    opened = build_simulator(_added(simulator="ode", terms=lindblad_terms))
+    embedded = opened.lindblads[0].matrix
+    assert embedded.shape == (2, 2)
+    assert embedded[0, 1] == 1
+
+
 def test_an_export_that_is_not_a_class_is_rejected(monkeypatch: pytest.MonkeyPatch) -> None:
     module = types.ModuleType("custom.notaclass")
     module.Widget = "nope"  # type: ignore[attr-defined]

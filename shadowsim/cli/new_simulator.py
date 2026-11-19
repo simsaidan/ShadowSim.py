@@ -261,8 +261,15 @@ def _render_classical_stub(names: SimulatorNames, *, closed_system: bool) -> str
     """Return the source for a classical reference simulator stub."""
     if closed_system:
         summary = f"Simulate closed quantum dynamics with {names.base_name}."
+        closed_note = "\n\n    ``closed_system`` is true, so Lindblad operators are rejected."
+        rejection = (
+            "        if self.lindblads:\n"
+            f'            raise ValueError("{names.class_name} is closed-system only; lindblads must be empty")\n'
+        )
     else:
         summary = f"Simulate open or closed quantum dynamics with {names.base_name}."
+        closed_note = ""
+        rejection = ""
     flag = "True" if closed_system else "False"
     return f'''"""{names.base_name} simulator backend stub."""
 
@@ -276,7 +283,7 @@ from shadowsim.simulators.simulator import Simulator
 
 
 class {names.class_name}(Simulator):
-    """{summary}
+    """{summary}{closed_note}
 
     TODO: replace this docstring with a real description of the backend.
     """
@@ -305,7 +312,7 @@ class {names.class_name}(Simulator):
             time_steps=time_steps,
             id="{names.simulator_id}",
         )
-        self.observables = observables
+{rejection}        self.observables = observables
 
     def simulate(self) -> SimulationResult:
         """Evolve the system, store traces in ``self.results``, return ``SimulationResult``.
@@ -407,6 +414,22 @@ def test_{names.snake_name}_simulator_str_and_repr():
 def _render_classical_test(names: SimulatorNames, *, closed_system: bool) -> str:
     """Return the source for a classical reference simulator test."""
     flag = "True" if closed_system else "False"
+    if closed_system:
+        lindblad_test = f"""
+def test_{names.snake_name}_simulator_rejects_lindblads():
+    with pytest.raises(ValueError, match="closed-system only"):
+        {names.class_name}(
+            [Hamiltonian(Z)],
+            [Operator(Z)],
+            State(np.array([1.0, 0.0], dtype=np.complex128), 1),
+            [Operator(Z)],
+            num_qubits=1,
+            total_time=0.1,
+            time_steps=3,
+        )
+"""
+    else:
+        lindblad_test = ""
     return f'''import numpy as np
 import pytest
 
@@ -450,7 +473,7 @@ def test_{names.snake_name}_simulator_str_and_repr():
     assert "observable_count=1" in str(sim)
     assert "{names.class_name}(" in repr(sim)
     assert "time_steps=3" in repr(sim)
-'''
+{lindblad_test}'''
 
 
 def _registration_conflict(text: str, path: Path, names: SimulatorNames) -> str | None:
