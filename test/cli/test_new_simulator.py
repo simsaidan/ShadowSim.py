@@ -454,9 +454,19 @@ def test_generated_classical_stub_imports(tmp_path, closed_system):
     assert summary in stub_text
     assert "observables: list[Operator]" in stub_text
     assert "circuit_backend" not in stub_text
+    note = "``closed_system`` is true, so Lindblad operators are rejected."
+    rejection = 'raise ValueError("BarSimulator is closed-system only; lindblads must be empty")'
     test_text = test.read_text(encoding="utf-8")
     assert "[Operator(Z)]" in test_text
     assert f"sim.closed_system is {flag}" in test_text
+    if closed_system:
+        assert note in stub_text
+        assert rejection in stub_text
+        assert "def test_bar_simulator_rejects_lindblads" in test_text
+    else:
+        assert note not in stub_text
+        assert "closed-system only" not in stub_text
+        assert "rejects_lindblads" not in test_text
 
     spec = importlib.util.spec_from_file_location(f"bar_classical_{flag}", stub)
     assert spec is not None and spec.loader is not None
@@ -479,6 +489,30 @@ def test_generated_classical_stub_imports(tmp_path, closed_system):
     assert "observables=" in repr(sim)
     with pytest.raises(NotImplementedError, match="TODO: implement"):
         sim.simulate()
+
+    jump = Operator(z)
+    if closed_system:
+        with pytest.raises(ValueError, match="closed-system only"):
+            module.BarSimulator(
+                [Hamiltonian(z)],
+                [jump],
+                State(np.array([1.0, 0.0], dtype=np.complex128), 1),
+                [jump],
+                num_qubits=1,
+                total_time=0.1,
+                time_steps=3,
+            )
+    else:
+        opened = module.BarSimulator(
+            [Hamiltonian(z)],
+            [jump],
+            State(np.array([1.0, 0.0], dtype=np.complex128), 1),
+            [jump],
+            num_qubits=1,
+            total_time=0.1,
+            time_steps=3,
+        )
+        assert len(opened.lindblads) == 1
 
 
 def test_main_prompts_kind_then_lindblads(tmp_path, monkeypatch, capsys):
