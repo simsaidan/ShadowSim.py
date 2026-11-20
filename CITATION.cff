@@ -12,3 +12,8 @@ url: https://simsaidan.github.io/ShadowSim.py/
 abstract: Tools for quantum simulation benchmarking and shadow Hamiltonian research.
 license: MIT
 version: 1.0.0
+date-released: 2026-11-20
+identifiers:
+  - type: doi
+    value: 10.5281/zenodo.24384458
+    description: Zenodo DOI for version 1.0.0
