@@ -1,0 +1,14 @@
+cff-version: 1.2.0
+message: If you use this software, please cite it using the metadata from this file.
+title: ShadowSim.py
+type: software
+authors:
+  - family-names: Sims
+    given-names: Aidan
+    email: simsaidan@gmail.com
+    orcid: https://orcid.org/0009-0005-7680-9310
+repository-code: https://github.com/simsaidan/ShadowSim.py
+url: https://simsaidan.github.io/ShadowSim.py/
+abstract: Tools for quantum simulation benchmarking and shadow Hamiltonian research.
+license: MIT
+version: 1.0.0

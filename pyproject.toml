@@ -1,16 +1,16 @@
 [project]
 name = "shadowsim"
-version = "0.1.0"
+version = "1.0.0"
 description = "Tools for shadow Hamiltonian research and quantum simulation benchmarking."
 readme = "README.md"
 requires-python = ">=3.12"
 license = "MIT"
 license-files = ["LICENSE"]
 authors = [
-    { name = "Aidan Sims" },
+    { name = "Aidan Sims", email = "simsaidan@gmail.com" },
 ]
 classifiers = [
-    "Development Status :: 3 - Alpha",
+    "Development Status :: 5 - Production/Stable",
     "Intended Audience :: Science/Research",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.12",
@@ -30,7 +30,7 @@ qiskit = ["qiskit", "qiskit-aer", "scipy>=1.14"]
 viz = ["matplotlib"]
 # 0.9.37 requires CondaPkg 0.2.38, which needs JSON 1.2. The PauliPropagation
 # revision allows only JSON 0.21, so this extra stays on the previous release.
-pauli_propagation = ["juliacall==0.9.37"]
+pauli_propagation = ["juliacall==0.9.36"]
 qulacs = ["qulacs"]
 cirq = ["cirq"]
 # Product-formula simulators need SciPy for expm. Core stays NumPy-only.
@@ -49,6 +49,8 @@ all = [
 
 [project.urls]
 Repository = "https://github.com/simsaidan/ShadowSim.py"
+Documentation = "https://simsaidan.github.io/ShadowSim.py/"
+Changelog = "https://github.com/simsaidan/ShadowSim.py/blob/main/CHANGELOG.md"
 
 [project.scripts]
 new-backend = "shadowsim.cli.new_backend:main"

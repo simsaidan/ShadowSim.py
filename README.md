@@ -19,16 +19,16 @@ ShadowSim.py is an open-source Python library with two main purposes:
 The core package depends only on NumPy. Product-formula simulators need the `circuits` extra (SciPy). QuTiP, Qiskit, Matplotlib, Julia's PauliPropagation, Qulacs, and Cirq are optional:
 
 ```bash
-python -m pip install git+https://github.com/simsaidan/ShadowSim.py.git
-python -m pip install "shadowsim[qutip] @ git+https://github.com/simsaidan/ShadowSim.py.git"
-python -m pip install "shadowsim[qiskit] @ git+https://github.com/simsaidan/ShadowSim.py.git"
-python -m pip install "shadowsim[circuits] @ git+https://github.com/simsaidan/ShadowSim.py.git"
-python -m pip install "shadowsim[viz] @ git+https://github.com/simsaidan/ShadowSim.py.git"
-python -m pip install "shadowsim[pauli_propagation] @ git+https://github.com/simsaidan/ShadowSim.py.git"
-python -m pip install "shadowsim[qulacs] @ git+https://github.com/simsaidan/ShadowSim.py.git"
-python -m pip install "shadowsim[cirq] @ git+https://github.com/simsaidan/ShadowSim.py.git"
-python -m pip install "shadowsim[yaml] @ git+https://github.com/simsaidan/ShadowSim.py.git"
-python -m pip install "shadowsim[all] @ git+https://github.com/simsaidan/ShadowSim.py.git"
+python -m pip install shadowsim
+python -m pip install "shadowsim[qutip]"
+python -m pip install "shadowsim[qiskit]"
+python -m pip install "shadowsim[circuits]"
+python -m pip install "shadowsim[viz]"
+python -m pip install "shadowsim[pauli_propagation]"
+python -m pip install "shadowsim[qulacs]"
+python -m pip install "shadowsim[cirq]"
+python -m pip install "shadowsim[yaml]"
+python -m pip install "shadowsim[all]"
 ```
 
 | Extra | Provides |
@@ -655,7 +655,7 @@ This project is licensed under the MIT License. See `LICENSE` for details.
 
 ## Citing
 
-DOI coming soon.
+Cite this software with the metadata in [`CITATION.cff`](CITATION.cff). The DOI is added there after the GitHub release mints it. See the [changelog](CHANGELOG.md) for what 1.0.0 keeps stable.
 
 ## References
 

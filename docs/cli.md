@@ -8,7 +8,7 @@ The `shadowsim` entry point covers two workflows:
 Install the package so the console script is on your `PATH` (a normal pip/`uv` install is enough). Product-formula runs need the `circuits` extra; Aer comparison needs `qiskit`; YAML experiment files need `yaml`:
 
 ```bash
-python -m pip install "shadowsim[circuits,qiskit,yaml] @ git+https://github.com/simsaidan/ShadowSim.py.git"
+python -m pip install "shadowsim[circuits,qiskit,yaml]"
 shadowsim --help
 ```
 

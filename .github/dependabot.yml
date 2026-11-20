@@ -4,6 +4,9 @@ updates:
     directory: /
     schedule:
       interval: weekly
+    ignore:
+      # 0.9.37 requires CondaPkg 0.2.38 (JSON.jl 1.2). PauliPropagation rev 6e8c1ae allows JSON 0.21 only.
+      - dependency-name: juliacall
   - package-ecosystem: github-actions
     directory: /
     schedule:
