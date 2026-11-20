@@ -2,6 +2,7 @@
 [run]
 source = shadowsim
 branch = True
+relative_files = True
 
 [report]
 show_missing = True
