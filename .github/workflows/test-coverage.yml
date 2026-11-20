@@ -113,16 +113,19 @@ jobs:
           path: coverage.xml
           if-no-files-found: error
 
-  # Codecov is the only step that needs an OIDC token. This job does not
-  # check out the pull request or run the package tests.
+  # Codecov matches the report to files in the git checkout. This job still
+  # does not run the package tests. The OIDC token is only for the upload.
   coverage:
     needs: test
     if: ${{ !cancelled() }}
     runs-on: ubuntu-latest
     permissions:
+      contents: read
       actions: read
       id-token: write
     steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Download coverage report
         id: coverage
         continue-on-error: true
