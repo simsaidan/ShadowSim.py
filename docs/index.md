@@ -28,8 +28,8 @@ hide:
 
 ---
 
-!!! note "Work in progress"
-    Public APIs are still **draft** until a stable release. Expect changes.
+!!! note "Version 1.0"
+    The documented Python packages, the version 1 run document, `shadowsim serve` and the research commands, the builder lanes and actions, `new-backend` and `new-simulator`, the documented examples, and the named extras stay compatible through the 1.x line. A break to that surface is a new major version. Details are in the [changelog](https://github.com/simsaidan/ShadowSim.py/blob/main/CHANGELOG.md).
 
 ## Background
 
