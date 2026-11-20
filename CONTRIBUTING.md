@@ -37,7 +37,8 @@ Pushes and pull requests run [`.github/workflows/test-coverage.yml`](.github/wor
   (coverage upload from Ubuntu 3.12 only)
 - Core-only install on Ubuntu for 3.12 and 3.13 (`check_core_install.py` plus
   tests without optional-extra markers)
-- One-extra jobs on Ubuntu 3.12 for `qutip`, `qiskit`, and `viz`
+- One-extra jobs on Ubuntu 3.12 for `qutip`, `qiskit`, `viz`, and `circuits`
+- A circuits-isolation job on Ubuntu 3.12 installs `circuits` alone, `circuits` with `qulacs`, and `circuits` with `cirq`, each without Qiskit, and runs one closed Trotter step (`check_circuits_install.py`)
 - NumPy/SciPy floor (`numpy==2.0.0`, `scipy==1.14.0`) and newest compatible
   releases on Ubuntu 3.12 with all extras
 - mypy on Ubuntu for Python 3.12 (`uv sync --locked --all-extras --group types`)

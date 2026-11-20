@@ -37,7 +37,7 @@ python -m pip install "shadowsim[all]"
 | `qiskit` | `AerCircuitBackend` and the Qiskit translation used by `PauliPropagationBackend` (`qiskit`, `qiskit-aer`, and `scipy`) |
 | `circuits` | Trotterization, Split JMatrix, Hybrid WML, and `run_shadow_simulation` (`scipy`) |
 | `viz` | Matplotlib plots (`plot_results` and benchmark figures) |
-| `pauli_propagation` | `PauliPropagationBackend` (`juliacall` 0.9.37). Julia 1.10+ and the Julia package are a separate install; see [PauliPropagation](#paulipropagation) |
+| `pauli_propagation` | `PauliPropagationBackend` (`juliacall` 0.9.36). Julia 1.10+ and the Julia package are a separate install; see [PauliPropagation](#paulipropagation) |
 | `qulacs` | `QulacsCircuitBackend` |
 | `cirq` | `CirqCircuitBackend` |
 | `yaml` | Load YAML experiment files with `shadowsim run` (`pyyaml`) |
@@ -128,7 +128,7 @@ Override with `kind=` when needed (e.g. `kind="hamiltonian"` for a unit-trace pr
 
 ### PauliPropagation
 
-`PauliPropagationBackend` returns ⟨Z⟩ and ⟨X⟩ for selected qubits of one program, following [Rudolph et al., arXiv:2505.21606](https://arxiv.org/abs/2505.21606). It translates that program to OpenQASM 2, so the `qiskit` extra is required as well. The `pauli_propagation` extra installs `juliacall` 0.9.37. Julia 1.10 or newer has to be available already. That juliacall release is the one that resolves next to the PauliPropagation revision below.
+`PauliPropagationBackend` returns ⟨Z⟩ and ⟨X⟩ for selected qubits of one program, following [Rudolph et al., arXiv:2505.21606](https://arxiv.org/abs/2505.21606). It translates that program to OpenQASM 2, so the `qiskit` extra is required as well. The `pauli_propagation` extra installs `juliacall` 0.9.36. Julia 1.10 or newer has to be available already. That juliacall release is the one that resolves next to the PauliPropagation revision below.
 
 In the Julia project juliacall uses for this Python environment, install the OpenQASM reader:
 
