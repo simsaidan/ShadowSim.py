@@ -655,7 +655,7 @@ This project is licensed under the MIT License. See `LICENSE` for details.
 
 ## Citing
 
-Cite this software with the metadata in [`CITATION.cff`](CITATION.cff). The DOI is added there after the GitHub release mints it. See the [changelog](CHANGELOG.md) for what 1.0.0 keeps stable.
+Cite ShadowSim.py 1.0.0 with the metadata in [`CITATION.cff`](CITATION.cff). The Zenodo DOI for this version is [10.5281/zenodo.24384458](https://doi.org/10.5281/zenodo.24384458). See the [changelog](CHANGELOG.md) for what 1.0.0 keeps stable.
 
 ## References
 
