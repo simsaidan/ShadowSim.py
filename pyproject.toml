@@ -75,10 +75,10 @@ docs = [
     # mkdocs-bibtex formats citations through pandoc.
     "pypandoc-binary",
     # Needed so mkdocstrings can format signatures during the docs build.
-    "ruff==0.17.5",
+    "ruff==0.17.6",
 ]
 lint = [
-    "ruff==0.17.5",
+    "ruff==0.17.6",
 ]
 types = [
     "mypy>=1.15",
